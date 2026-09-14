@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>__ATLASMAP_TITLE__</title>
+  </head>
+  <body>
+    <canvas id="viewport"></canvas>
+
+    <div id="crosshair" hidden></div>
+    <p id="hud"></p>
+
+    <div id="overlay">
+      <p class="prompt">Click to fly</p>
+      <ul class="keys">
+        <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>move</span></li>
+        <li><kbd>Space</kbd><span>up</span></li>
+        <li><kbd>Shift</kbd><span>down</span></li>
+        <li><kbd>Mouse</kbd><span>look</span></li>
+        <li><kbd>Scroll</kbd><span>flight speed</span></li>
+        <li><kbd>Tab</kbd><span>overview: orbit the whole map, press again to fly</span></li>
+        <li><kbd>Esc</kbd><span>release pointer</span></li>
+      </ul>
+      <p id="notice" hidden></p>
+    </div>
+
+    <script id="atlasmap-map" type="application/json">__ATLASMAP_PAYLOAD__</script>
+    <script type="module" src="/src/viewer.js"></script>
+  </body>
+</html>

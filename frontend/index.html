@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AtlasMap</title>
+  </head>
+  <body>
+    <canvas id="viewport"></canvas>
+
+    <div id="crosshair" hidden></div>
+    <p id="hud"></p>
+
+    <div id="radial-menu" hidden></div>
+    <div id="editor" hidden></div>
+
+    <div id="overlay">
+      <p class="prompt">Click to fly</p>
+      <ul class="keys">
+        <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>move</span></li>
+        <li><kbd>Space</kbd><span>up</span></li>
+        <li><kbd>Shift</kbd><span>down</span></li>
+        <li><kbd>Mouse</kbd><span>look</span></li>
+        <li><kbd>Double-click</kbd><span>new node in open space</span></li>
+        <li><kbd>Hold right</kbd><span>menu on the targeted node or edge, move to choose</span></li>
+        <li><kbd>B</kbd><span>balance the layout, press again to stop</span></li>
+        <li><kbd>Tab</kbd><span>overview: orbit the whole map, press again to fly</span></li>
+        <li><kbd>Ctrl/⌘</kbd><kbd>S</kbd><span>save to a file</span></li>
+        <li><kbd>Ctrl/⌘</kbd><kbd>O</kbd><span>open a file</span></li>
+        <li><kbd>Ctrl/⌘</kbd><kbd>E</kbd><span>export a view-only .html anyone can open</span></li>
+        <li><kbd>Esc</kbd><span>release pointer</span></li>
+      </ul>
+      <p id="notice" hidden></p>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

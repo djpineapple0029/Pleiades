@@ -1,0 +1,11 @@
+.venv/
+.idea/
+__pycache__/
+*.py[cod]
+
+node_modules/
+server/static/
+frontend/.viewer-build/
+
+*.atlasmap
+.DS_Store
