@@ -1,6 +1,8 @@
 # AtlasMap
 
-3D galaxy-style mind mapping tool. Design and build order: `atlasmap-build-plan.md`.
+3D galaxy-style mind mapping tool: fly through your notes as stars, link them,
+let a force-directed layout auto-cluster related ideas, and save the whole map
+to an encrypted local file.
 
 ## Setup
 
