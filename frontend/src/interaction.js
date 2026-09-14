@@ -366,12 +366,11 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
   }
 
   function openMenu(target) {
-    const title = describe(target)
-    if (!title) return
+    if (!describe(target)) return
     menuTarget = target
     mode = 'menu'
     beginModal()
-    menu.open(title, target.kind === 'node' ? nodeMenu(graph.getNode(target.id)) : EDGE_MENU)
+    menu.open(target.kind === 'node' ? nodeMenu(graph.getNode(target.id)) : EDGE_MENU)
   }
 
   function closeMenu() {

@@ -126,42 +126,46 @@ kbd {
 }
 
 #radial-menu .wedge path {
-  fill: rgba(17, 22, 32, 0.86);
-  stroke: #2a3140;
+  fill: rgba(23, 29, 41, 0.9);
+  stroke: #3a4356;
   stroke-width: 1;
 }
 
 #radial-menu .wedge text {
-  fill: var(--ink-dim);
+  fill: #9aa7ba;
   font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.08em;
 }
 
 #radial-menu .wedge.armed path {
-  fill: rgba(45, 78, 116, 0.92);
-  stroke: #6fc7ff;
+  fill: rgba(45, 92, 138, 0.95);
+  stroke: #8fd6ff;
 }
 
 #radial-menu .wedge.armed text {
-  fill: #e2ecff;
+  fill: #f2f7ff;
 }
 
-#radial-menu .title,
-#radial-menu .caption {
-  font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  text-anchor: middle;
+/* Opaque backing for the donut hole — hides whatever glowing scene content
+   sits behind the menu so it can't wash out the armed wedge or the spoke. */
+#radial-menu .hub {
+  fill: #0c0f17;
+  stroke: #3a4356;
+  stroke-width: 1;
 }
 
-#radial-menu .title {
+#radial-menu .spoke {
+  stroke: rgba(143, 214, 255, 0.65);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+#radial-menu .pivot {
   fill: var(--ink);
 }
 
-#radial-menu .caption {
-  fill: var(--ink-dim);
-}
-
 #radial-menu .indicator {
-  fill: #6fc7ff;
+  fill: #8fd6ff;
 }
 
 .editor-panel {

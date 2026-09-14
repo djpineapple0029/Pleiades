@@ -48,13 +48,13 @@ export function createRadialMenu(container) {
   let travelX = 0
   let travelY = 0
   let indicator = null
-  let caption = null
+  let spoke = null
 
   function clear() {
     svg.replaceChildren()
     wedges = []
     indicator = null
-    caption = null
+    spoke = null
   }
 
   function highlight(index) {
@@ -62,19 +62,25 @@ export function createRadialMenu(container) {
     wedges[selected]?.group.classList.remove('armed')
     wedges[index]?.group.classList.add('armed')
     selected = index
-    if (caption) caption.textContent = items[index]?.label ?? ''
   }
 
-  /**
-   * `title` names what the menu acts on; `menuItems` are `{ key, label }`,
-   * laid out clockwise from the top.
-   */
-  function open(title, menuItems) {
+  /** `menuItems` are `{ key, label }`, laid out clockwise from the top. */
+  function open(menuItems) {
     clear()
     items = menuItems
     selected = -1
     travelX = 0
     travelY = 0
+
+    // Backs the donut hole with an opaque disc: the node/edge behind the menu
+    // (often a bright, bloom-lit sphere) would otherwise show through and wash
+    // out whichever wedge is armed, plus anything drawn at the centre.
+    const hub = document.createElementNS(SVG_NS, 'circle')
+    hub.setAttribute('class', 'hub')
+    hub.setAttribute('r', INNER_RADIUS)
+    hub.setAttribute('cx', CENTER)
+    hub.setAttribute('cy', CENTER)
+    svg.append(hub)
 
     const step = (Math.PI * 2) / items.length
     items.forEach((item, index) => {
@@ -98,20 +104,22 @@ export function createRadialMenu(container) {
       wedges.push({ group })
     })
 
-    const heading = document.createElementNS(SVG_NS, 'text')
-    heading.setAttribute('class', 'title')
-    heading.setAttribute('x', CENTER)
-    heading.setAttribute('y', CENTER - 8)
-    heading.setAttribute('text-anchor', 'middle')
-    heading.textContent = title
-    svg.append(heading)
+    // Spoke from the fixed hub centre out to the drag indicator, so the
+    // indicator's position on the wheel reads as a direction, not a stray dot.
+    spoke = document.createElementNS(SVG_NS, 'line')
+    spoke.setAttribute('class', 'spoke')
+    spoke.setAttribute('x1', CENTER)
+    spoke.setAttribute('y1', CENTER)
+    spoke.setAttribute('x2', CENTER)
+    spoke.setAttribute('y2', CENTER)
+    svg.append(spoke)
 
-    caption = document.createElementNS(SVG_NS, 'text')
-    caption.setAttribute('class', 'caption')
-    caption.setAttribute('x', CENTER)
-    caption.setAttribute('y', CENTER + 12)
-    caption.setAttribute('text-anchor', 'middle')
-    svg.append(caption)
+    const pivot = document.createElementNS(SVG_NS, 'circle')
+    pivot.setAttribute('class', 'pivot')
+    pivot.setAttribute('r', 3)
+    pivot.setAttribute('cx', CENTER)
+    pivot.setAttribute('cy', CENTER)
+    svg.append(pivot)
 
     indicator = document.createElementNS(SVG_NS, 'circle')
     indicator.setAttribute('class', 'indicator')
@@ -131,8 +139,12 @@ export function createRadialMenu(container) {
     const distance = Math.hypot(travelX, travelY)
     const drawn = Math.min(distance, TRAVEL_CLAMP)
     const scale = distance > 0 ? drawn / distance : 0
-    indicator.setAttribute('cx', CENTER + travelX * scale)
-    indicator.setAttribute('cy', CENTER + travelY * scale)
+    const ix = CENTER + travelX * scale
+    const iy = CENTER + travelY * scale
+    indicator.setAttribute('cx', ix)
+    indicator.setAttribute('cy', iy)
+    spoke.setAttribute('x2', ix)
+    spoke.setAttribute('y2', iy)
 
     if (distance < DEADZONE) {
       highlight(-1)
