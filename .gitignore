@@ -9,3 +9,7 @@ frontend/.viewer-build/
 
 *.atlasmap
 .DS_Store
+
+# Planning docs — not for the repo
+V2.md
+atlasmap-build-plan.md
