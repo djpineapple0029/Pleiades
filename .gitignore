@@ -23,10 +23,5 @@ coverage/
 .env*
 artifacts/
 
-# Working planning docs — not for the repo. Listed individually, not as a
-# blanket `context/` ignore: git can't re-include a file under an ignored
-# directory, and context/shipped/ (completed-work writeups for future
-# agents) needs to be trackable.
-context/V2.md
-context/atlasmap-build-plan.md
-context/DONE.md
+# Local-only planning/context docs — not published in the repo.
+context/
