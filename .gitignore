@@ -8,8 +8,23 @@ server/static/
 frontend/.viewer-build/
 
 *.atlasmap
+!**/tests/fixtures/*.atlasmap
 .DS_Store
 
-# Planning docs — not for the repo
-V2.md
-atlasmap-build-plan.md
+.vite/
+frontend/test-results/
+frontend/playwright-report/
+coverage/
+.pytest_cache/
+.ruff_cache/
+*.log
+.env*
+artifacts/
+
+# Working planning docs — not for the repo. Listed individually, not as a
+# blanket `context/` ignore: git can't re-include a file under an ignored
+# directory, and context/shipped/ (completed-work writeups for future
+# agents) needs to be trackable.
+context/V2.md
+context/atlasmap-build-plan.md
+context/DONE.md
