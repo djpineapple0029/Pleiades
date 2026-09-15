@@ -1,12 +1,21 @@
 /**
- * `.atlasmap` files: assembling the payload, the two API calls, and the
- * browser's own save/open dialogs. Plus the standalone `.html` export.
+ * `.atlasmap` files: assembling the payload, saving/opening, and the
+ * browser's own file dialogs. Plus the standalone `.html` export.
  *
  * There is no server-side folder — the user owns the file's location entirely.
- * Saving is a download, opening is an upload, and the password lives in the
- * closure below for the length of the session and goes nowhere but these two
- * endpoints.
+ * Saving is a download, opening is an upload.
+ *
+ * **Crypto happens here, not on the server, whenever the page is a secure
+ * context** (`cryptoAvailable()` — localhost or HTTPS): `save`/`open` call
+ * `format/container.js` directly, so the password and the plaintext map never
+ * leave the tab, and there's no network round trip either. Only when the page
+ * is plain-HTTP-over-LAN (no `crypto.subtle`) do these fall back to POSTing to
+ * `/api/save`/`/api/open`, exactly as v1 always did — same server, same
+ * endpoints, just now writing/reading the v2 container so a blank password
+ * still works from there too. Either way the password lives only in the
+ * closure below for the length of the session.
  */
+import { cryptoAvailable, peekHeader, readContainer, writeContainer, ContainerPasswordError } from './format/container.js'
 
 const SUFFIX = '.atlasmap'
 const DEFAULT_FILENAME = `map${SUFFIX}`
@@ -83,13 +92,26 @@ export function createFiles({ graph, view, camera, physics }) {
     restoreCamera(payload.camera)
   }
 
-  /** Posts the current graph and downloads what comes back. */
+  /**
+   * Encrypts (or, with a blank password, just frames) the current graph and
+   * downloads it. Local and network-free in a secure context; otherwise the
+   * same server round trip v1 always used, now writing v2 there too.
+   */
   async function save() {
+    if (cryptoAvailable()) {
+      try {
+        const blob = await writeContainer(toPayload(), password ?? '')
+        triggerDownload(new Blob([blob], { type: 'application/octet-stream' }), filename)
+        return { ok: true }
+      } catch (error) {
+        return { ok: false, error: error.message || 'could not encrypt the file' }
+      }
+    }
     try {
       const response = await fetch('/api/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password, filename, payload: toPayload() }),
+        body: JSON.stringify({ password: password ?? '', filename, payload: toPayload() }),
       })
       if (!response.ok) return { ok: false, error: await errorFrom(response) }
       triggerDownload(await response.blob(), filename)
@@ -100,10 +122,49 @@ export function createFiles({ graph, view, camera, physics }) {
   }
 
   /**
-   * Uploads a file to be decrypted and, if it holds a graph, swaps it in.
-   * `wrongPassword` separates the one failure worth re-prompting for.
+   * Peeks a file's header without reading a password or touching the
+   * network — cheap enough to call before ever showing a password prompt.
+   * A v2 file with no encryption reports `needsPassword: false`; everything
+   * else (v1, or v2 that is actually encrypted) reports `true`. Returns
+   * `null` if the bytes don't look like an `.atlasmap` file at all, so the
+   * caller can fall through to its normal "wrong file" handling.
+   */
+  async function probe(file) {
+    // The largest header either version reads before it knows more is v2's
+    // fixed-size crypto header; anything shorter is definitely just a magic
+    // + version + mode (or too short to be a file at all).
+    const head = new Uint8Array(await file.slice(0, 64).arrayBuffer())
+    try {
+      const { version, mode } = peekHeader(head)
+      return { needsPassword: !(version === 2 && mode === 0) }
+    } catch (error) {
+      return null
+    }
+  }
+
+  /**
+   * Reads and, if it holds a graph, swaps in a file. Local and network-free
+   * whenever possible: a v2 no-password file never needs a password *or* the
+   * network, and a secure context reads anything else locally too. Only an
+   * insecure context falls back to `/api/open`. `wrongPassword` separates the
+   * one failure worth re-prompting for.
    */
   async function open(file, attempt) {
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    const secretRequired = (await probe(file))?.needsPassword ?? true
+
+    if (!secretRequired || cryptoAvailable()) {
+      try {
+        applyPayload(await readContainer(bytes, attempt))
+      } catch (error) {
+        if (error instanceof ContainerPasswordError) return { ok: false, wrongPassword: true, error: error.message }
+        return { ok: false, error: error.message || 'the file does not hold a graph' }
+      }
+      password = attempt
+      filename = file.name.endsWith(SUFFIX) ? file.name : `${file.name}${SUFFIX}`
+      return { ok: true }
+    }
+
     const form = new FormData()
     form.append('file', file, file.name)
     form.append('password', attempt)
@@ -203,16 +264,20 @@ export function createFiles({ graph, view, camera, physics }) {
   return {
     save,
     open,
+    probe,
     exportHtml,
     pickFile,
     applyPayload,
     toPayload,
     setCredentials(nextPassword, nextFilename) {
-      password = nextPassword
+      // `''` is a real, deliberate credential (a file saved with no
+      // password) — distinct from `null`, "nothing has been set up yet".
+      password = nextPassword ?? ''
       const trimmed = (nextFilename ?? '').trim()
       filename = !trimmed ? DEFAULT_FILENAME : trimmed.endsWith(SUFFIX) ? trimmed : `${trimmed}${SUFFIX}`
     },
-    get hasPassword() {
+    /** Whether credentials have been established at all — even a blank password counts. */
+    get hasCredentials() {
       return password !== null
     },
     get filename() {
