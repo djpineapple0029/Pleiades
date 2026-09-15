@@ -336,6 +336,30 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     controls.enabled = false
   }
 
+  /**
+   * For the editor panel specifically: pointer lock hides the system cursor
+   * entirely (see style.css's note on #editor), so a text form under it is
+   * keyboard-only unless this runs first. The radial menu is deliberately
+   * exempt from ever calling this — it is a per-click affordance, and
+   * Chrome's ~1.25s pointer-lock reacquisition cooldown would make releasing
+   * it there unusable.
+   *
+   * **Must fully settle before `editor.open()` runs.** `onUnlock` below
+   * cancels any already-open editor session on every unlock, including one
+   * this same release is about to cause — calling `controls.unlock()` and
+   * opening the editor in the same tick races that handler, and loses.
+   * `openMap` gets this for free today because a native file-picker dialog
+   * sits in between; awaiting the real `unlock` event buys everyone else the
+   * same gap.
+   */
+  function releaseLockForEditor() {
+    if (!controls.isLocked) return Promise.resolve()
+    return new Promise((resolve) => {
+      controls.addEventListener('unlock', resolve, { once: true })
+      controls.unlock()
+    })
+  }
+
   function endModal() {
     mode = 'idle'
     flight.setEnabled(true)
@@ -343,6 +367,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
   }
 
   async function editNode(node) {
+    await releaseLockForEditor()
     mode = 'editing'
     beginModal()
     const values = await editor.open(`node ${nodeName(node)}`, [
@@ -357,6 +382,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
   }
 
   async function editEdge(edge) {
+    await releaseLockForEditor()
     mode = 'editing'
     beginModal()
     const values = await editor.open('edge', [{ key: 'label', label: 'Label', value: edge.label }])
@@ -366,19 +392,22 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
   }
 
   /** Opens the editor panel as a modal and hands back what it collected. */
-  async function prompt(title, fields, note) {
+  async function prompt(title, fields, note, commitLabel) {
+    await releaseLockForEditor()
     mode = 'editing'
     beginModal()
-    const values = await editor.open(title, fields, note)
+    const values = await editor.open(title, fields, note, commitLabel)
     endModal()
     return values
   }
 
   /**
    * `Ctrl/Cmd+S`. The first save asks for a name and a password, and confirms
-   * the password: a typo in it produces a file nobody can ever open again.
-   * Afterwards the session holds both and this is a single keystroke, until
-   * `Shift` asks for them again.
+   * the password: a typo in it produces a file nobody can ever open again. A
+   * blank password saves an unencrypted file — no confirmation step, that's a
+   * deliberate choice by whoever's typing, not something to nag about.
+   * Afterwards the session holds both (even a deliberately blank password
+   * counts) and this is a single keystroke, until `Shift` asks again.
    */
   async function saveMap({ reprompt }) {
     if (busy) return
@@ -388,21 +417,22 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     // user the name they typed into a different field.
     let name = files.filename
     try {
-      while (!files.hasPassword || reprompt) {
+      while (!files.hasCredentials || reprompt) {
         const values = await prompt(
-          files.hasPassword ? 'save as' : 'save map',
+          files.hasCredentials ? 'save as' : 'save map',
           [
             { key: 'filename', label: 'File name', value: name },
-            { key: 'password', label: 'Password', type: 'password' },
+            { key: 'password', label: 'Password (optional)', type: 'password' },
             { key: 'confirm', label: 'Confirm password', type: 'password' },
           ],
-          note
+          note,
+          'Save'
         )
         if (!values) return
         name = values.filename
         if (!values.password) {
-          note = 'Enter a password.'
-          continue
+          files.setCredentials('', values.filename)
+          break
         }
         if (values.password !== values.confirm) {
           note = 'Passwords do not match.'
@@ -434,9 +464,29 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
       const file = await files.pickFile()
       if (!file) return
 
+      // A file saved with no password needs no prompt at all — and reading
+      // the header costs nothing, so there's no reason to ask first.
+      const probed = await files.probe(file)
+      if (probed && !probed.needsPassword) {
+        setStatus(`opening ${file.name}`)
+        const result = await files.open(file, '')
+        if (result.ok) {
+          setStatus(`opened ${file.name} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`)
+          overview.refit()
+          return
+        }
+        setStatus(`open failed: ${result.error}`)
+        return
+      }
+
       let note = null
       for (;;) {
-        const values = await prompt(`open ${file.name}`, [{ key: 'password', label: 'Password', type: 'password' }], note)
+        const values = await prompt(
+          `open ${file.name}`,
+          [{ key: 'password', label: 'Password', type: 'password' }],
+          note,
+          'Open'
+        )
         if (!values) return
 
         setStatus(`opening ${file.name}`)

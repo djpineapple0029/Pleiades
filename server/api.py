@@ -10,7 +10,7 @@ import io
 
 from flask import Blueprint, Response, jsonify, request, send_file
 
-from .atlasfile import FormatError, PasswordError, decode, encode
+from .atlasfile import FormatError, PasswordError, decode_any, encode_v2
 
 api = Blueprint("api", __name__, url_prefix="/api")
 
@@ -58,15 +58,15 @@ def save() -> Response | tuple[Response, int]:
     if not isinstance(body, dict):
         return fail("Expected a JSON object body.", 400)
 
-    password = body.get("password")
+    password = body.get("password") or ""
     payload = body.get("payload")
-    if not isinstance(password, str) or not password:
-        return fail("A password is required.", 400)
+    if not isinstance(password, str):
+        return fail("`password` must be a string.", 400)
     if not isinstance(payload, dict):
         return fail("`payload` must be a JSON object.", 400)
 
     try:
-        blob = encode(payload, password)
+        blob = encode_v2(payload, password)
     except FormatError as exc:
         return fail(str(exc), 400)
 
@@ -81,14 +81,12 @@ def save() -> Response | tuple[Response, int]:
 @api.post("/open")
 def open_file() -> Response | tuple[Response, int]:
     upload = request.files.get("file")
-    password = request.form.get("password")
+    password = request.form.get("password") or ""
     if upload is None:
         return fail("No file uploaded.", 400)
-    if not password:
-        return fail("A password is required.", 400)
 
     try:
-        payload = decode(upload.read(), password)
+        payload = decode_any(upload.read(), password)
     except PasswordError as exc:
         return fail(str(exc), 401)
     except FormatError as exc:

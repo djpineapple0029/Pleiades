@@ -232,6 +232,40 @@ kbd {
 }
 
 .editor-hint {
-  margin: 0;
+  margin: 0 0 12px;
   color: var(--ink-dim);
+}
+
+.editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.editor-button {
+  padding: 6px 14px;
+  border-radius: 3px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.editor-button--secondary {
+  border: 1px solid #2a3140;
+  background: transparent;
+  color: var(--ink-dim);
+}
+
+.editor-button--secondary:hover {
+  border-color: #3a4356;
+  color: var(--ink);
+}
+
+.editor-button--primary {
+  border: 1px solid #6fc7ff;
+  background: #17324a;
+  color: #d7ecff;
+}
+
+.editor-button--primary:hover {
+  background: #1d3f5c;
 }
