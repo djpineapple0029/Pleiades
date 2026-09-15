@@ -5,7 +5,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && vite build --config vite.viewer.config.js && node scripts/build-viewer.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:e2e": "playwright test --project=swiftshader",
+    "test:e2e:headed": "playwright test --project=headed-lock",
+    "test:e2e:prod": "playwright test --config=playwright.prod.config.js",
+    "test:all": "npm run test && npm run test:e2e"
   },
   "dependencies": {
     "@fontsource/jost": "^5.3.0",
@@ -15,6 +20,8 @@
     "three": "^0.180.0"
   },
   "devDependencies": {
-    "vite": "^7.0.0"
+    "@playwright/test": "^1.63.0",
+    "vite": "^7.0.0",
+    "vitest": "^5.0.1"
   }
 }
