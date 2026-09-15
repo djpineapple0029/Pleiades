@@ -40,6 +40,20 @@ const files = createFiles({ graph, view, camera, physics })
 // Drives the same camera as flight does — the bloom pipeline captured that one.
 const overview = createOverview({ camera, canvas, graph, view, controls: flight.controls })
 
+// Minimal, in-memory only: freezes the star-pulse clock read by the frame
+// loop below. No other visible motion in the scene is clock-driven.
+let reducedMotion = false
+let frozenElapsed = 0
+const renderSettings = {
+  get reducedMotion() {
+    return reducedMotion
+  },
+  toggleReducedMotion() {
+    reducedMotion = !reducedMotion
+    if (reducedMotion) frozenElapsed = clock.elapsedTime
+  },
+}
+
 const interaction = createInteraction({
   camera,
   controls: flight.controls,
@@ -49,6 +63,7 @@ const interaction = createInteraction({
   physics,
   files,
   overview,
+  renderSettings,
   menu: createRadialMenu(document.getElementById('radial-menu')),
   editor: createEditor(document.getElementById('editor')),
   hud,
@@ -103,7 +118,9 @@ renderer.setAnimationLoop(() => {
   // nodes are this frame, not where they were last frame.
   physics.update()
   interaction.update()
-  view.update(clock.elapsedTime, camera) // getDelta above has just advanced it
+  // getDelta above has just advanced elapsedTime; reduced motion freezes only
+  // this reading, so the star pulse stops while everything else keeps timing.
+  view.update(reducedMotion ? frozenElapsed : clock.elapsedTime, camera)
   bloom.render() // the whole frame, stars and bloom included
 })
 

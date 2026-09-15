@@ -523,6 +523,17 @@ export function createGraphView(graph, scene, renderer) {
   pendingLine.visible = false
   root.add(pendingLine)
 
+  // A translucent stand-in for a node being moved. Not the InstancedMesh: its
+  // shared shader hardcodes full opacity, so a single translucent instance
+  // can't be drawn inside it. Left off STAR_LAYER on purpose, so it renders
+  // unbloomed and reads as a hologram rather than another star.
+  const ghostMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 24, 16),
+    new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.35, depthWrite: false })
+  )
+  ghostMesh.visible = false
+  root.add(ghostMesh)
+
   /**
    * Replaces the node mesh with one of at least `needed` slots. An
    * `InstancedMesh` cannot be resized, and its star attributes have to live on
@@ -753,6 +764,17 @@ export function createGraphView(graph, scene, renderer) {
     pendingLine.visible = true
   }
 
+  /** Shows the ghost at `point`, sized to match the real node it stands in for. */
+  function setGhost(nodeId, point) {
+    ghostMesh.position.set(point.x, point.y, point.z)
+    ghostMesh.scale.setScalar(radiusOf(nodeId))
+    ghostMesh.visible = true
+  }
+
+  function clearGhost() {
+    ghostMesh.visible = false
+  }
+
   const pickSphere = new THREE.Sphere()
   const pickPoint = new THREE.Vector3()
 
@@ -831,6 +853,8 @@ export function createGraphView(graph, scene, renderer) {
     labels.dispose()
     pendingGeometry.dispose()
     pendingLine.material.dispose()
+    ghostMesh.geometry.dispose()
+    ghostMesh.material.dispose()
     hoverHalo.material.dispose()
     sourceHalo.material.dispose()
   }
@@ -843,6 +867,8 @@ export function createGraphView(graph, scene, renderer) {
     setHover,
     setSource,
     setPending,
+    setGhost,
+    clearGhost,
     raycast,
     radiusOf,
     update,

@@ -146,6 +146,23 @@ kbd {
   fill: #f2f7ff;
 }
 
+/* Held on a submenu wedge (More…/Back) without releasing: pulses once over
+   the dwell window in interaction.js (SUBMENU_DWELL_MS) as it charges toward
+   the automatic ring swap. Keep this duration matched to that constant. */
+#radial-menu .wedge.charging path {
+  animation: wedge-charge 850ms ease-in-out;
+}
+
+@keyframes wedge-charge {
+  0%,
+  100% {
+    fill: rgba(45, 92, 138, 0.95);
+  }
+  50% {
+    fill: rgba(143, 214, 255, 0.95);
+  }
+}
+
 /* Opaque backing for the donut hole — hides whatever glowing scene content
    sits behind the menu so it can't wash out the armed wedge or the spoke. */
 #radial-menu .hub {

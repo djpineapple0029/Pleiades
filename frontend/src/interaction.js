@@ -3,6 +3,10 @@ import { NODE_RADIUS } from './graphView.js'
 
 const SPAWN_DISTANCE = 90 // world units ahead of the camera for a new node
 const DOUBLE_CLICK_MS = 320
+// Holding a submenu wedge (More…/Back) this long without releasing swaps the
+// ring automatically. A quick arm-then-release still swaps instantly via the
+// existing key dispatch below — this is only for staying on the wedge.
+const SUBMENU_DWELL_MS = 850
 // How long a save/open result holds the HUD before it goes back to reporting
 // what the crosshair is on.
 const STATUS_MS = 5000
@@ -13,6 +17,7 @@ const STATUS_MS = 5000
 const nodeMenu = (node) => [
   { key: 'connect', label: 'Connect' },
   { key: 'edit', label: 'Edit' },
+  { key: 'move', label: 'Move' },
   { key: 'core', label: node.is_core ? 'Unmark core' : 'Mark core' },
   { key: 'delete', label: 'Delete' },
 ]
@@ -21,6 +26,29 @@ const EDGE_MENU = [
   { key: 'edit', label: 'Edit' },
   { key: 'delete', label: 'Delete' },
 ]
+
+// Right-click on empty space: no node/edge under the crosshair.
+const MAP_MENU = [
+  { key: 'new', label: 'New' },
+  { key: 'open', label: 'Open' },
+  { key: 'save', label: 'Save' },
+  { key: 'export', label: 'Export' },
+  { key: 'balance', label: 'Balance' },
+  { key: 'more', label: 'More…' },
+]
+
+// "Motion: on/off" takes the top wedge, which has the most horizontal room;
+// "Overview" is short enough to sit comfortably in the tighter side slot.
+const MORE_MENU = (reducedMotion) => [
+  { key: 'reduced-motion', label: reducedMotion ? 'Motion: off' : 'Motion: on' },
+  { key: 'overview', label: 'Overview' },
+  { key: 'back', label: 'Back' },
+]
+
+// Sentinels for `menuTarget` when the menu isn't over a node or edge. Distinct
+// object identities, never compared to `null` (which means "menu closed").
+const MAP_TARGET = { kind: 'map', ring: 'top' }
+const MAP_TARGET_MORE = { kind: 'map', ring: 'more' }
 
 const nodeName = (node) => node.label || node.id
 
@@ -45,16 +73,21 @@ function sameTarget(a, b) {
  * the password panel, and the panel is a modal surface — only this module knows
  * whether one is already up, and only this module can suspend flight for it.
  */
-export function createInteraction({ camera, controls, flight, graph, view, physics, files, overview, menu, editor, hud }) {
+export function createInteraction({ camera, controls, flight, graph, view, physics, files, overview, renderSettings, menu, editor, hud }) {
   const raycaster = new THREE.Raycaster()
   const crosshair = new THREE.Vector2(0, 0) // dead centre of the viewport
   const forward = new THREE.Vector3()
   const point = new THREE.Vector3()
 
-  let mode = 'idle' // idle | connecting | menu | editing
+  let mode = 'idle' // idle | connecting | menu | editing | moving
   let hover = null // { kind, id } under the crosshair
   let sourceId = null // connection origin while mode is 'connecting'
+  let moveId = null // node being relocated while mode is 'moving'
+  let moveDistance = 0 // camera-to-node distance captured when the move started
+  const lastGhostPoint = new THREE.Vector3()
   let menuTarget = null
+  let dwellKey = null // submenu wedge ('more' or 'back') currently being held
+  let dwellSince = 0
   let lastLeftDown = 0
   let hudText = null
   let status = null // transient HUD line: the result of a save or an open
@@ -100,6 +133,9 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
       if (mode === 'connecting') {
         const source = graph.getNode(sourceId)
         text = `connecting from ${nodeName(source)} · left-click a node to link · right-click to cancel`
+      } else if (mode === 'moving') {
+        const node = graph.getNode(moveId)
+        text = `moving ${nodeName(node)} · left-click to place · right-click to cancel`
       } else if (mode === 'idle') {
         const counts = `${graph.nodes.size} nodes · ${graph.edges.size} edges`
         // The overview hides the overlay, so the HUD is the only thing left
@@ -128,7 +164,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
       setStatus(`flight speed ${speed.toFixed(2)}x`)
     }
 
-    if (mode === 'idle' || mode === 'connecting') {
+    if (mode === 'idle' || mode === 'connecting' || mode === 'moving') {
       if (!controls.isLocked) {
         if (hover) clearHover()
       } else {
@@ -146,6 +182,51 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
       if (end) point.set(end.x, end.y, end.z)
       else aheadOfCamera(point)
       view.setPending(sourceId, point)
+    }
+
+    if (mode === 'moving') {
+      const node = graph.getNode(moveId)
+      if (node) {
+        const anchor = hover?.kind === 'node' && hover.id !== moveId ? graph.getNode(hover.id) : null
+        forward.set(0, 0, -1).applyQuaternion(camera.quaternion)
+        if (anchor) {
+          // Snap-to-touch, mirroring spawnNode's anchor logic: place just off
+          // the hovered node's surface, toward the camera.
+          const offset = view.radiusOf(anchor.id) + view.radiusOf(moveId)
+          point.set(anchor.x, anchor.y, anchor.z).addScaledVector(forward, -offset)
+        } else {
+          // Plane-tracking at the distance captured in startMove: pitch/yaw
+          // swings the node around the camera at constant radius; flying
+          // forward/back reels it in or pushes it out.
+          point.copy(camera.position).addScaledVector(forward, moveDistance)
+        }
+        view.setGhost(moveId, point)
+        lastGhostPoint.copy(point)
+      }
+    }
+
+    if (mode === 'menu' && menuTarget?.kind === 'map') {
+      // Held on the ring's submenu wedge without releasing: charge, then
+      // auto-swap. A quick arm-then-release still swaps instantly through
+      // the ordinary key dispatch in closeMenu — this only covers staying.
+      const submenuKey = menuTarget.ring === 'top' ? 'more' : 'back'
+      if (menu.armed === submenuKey) {
+        if (dwellKey !== submenuKey) {
+          dwellKey = submenuKey
+          dwellSince = performance.now()
+          menu.charge(true)
+        } else if (performance.now() - dwellSince >= SUBMENU_DWELL_MS) {
+          dwellKey = null
+          menu.charge(false)
+          openMapMenu(menuTarget.ring === 'top' ? 'more' : 'top')
+        }
+      } else if (dwellKey !== null) {
+        dwellKey = null
+        menu.charge(false)
+      }
+    } else if (dwellKey !== null) {
+      dwellKey = null
+      menu.charge(false)
     }
 
     updateHud()
@@ -194,8 +275,42 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     cancelConnect()
   }
 
+  // Flight stays enabled throughout, exactly like connecting: re-aiming by
+  // looking or flying is the only way to steer the ghost with no free cursor.
+  function startMove(nodeId) {
+    mode = 'moving'
+    moveId = nodeId
+    const node = graph.getNode(nodeId)
+    moveDistance = camera.position.distanceTo(new THREE.Vector3(node.x, node.y, node.z))
+    lastGhostPoint.set(node.x, node.y, node.z) // ghost starts exactly at the node — no jump
+  }
+
+  function cancelMove() {
+    mode = 'idle'
+    moveId = null
+    view.clearGhost()
+  }
+
+  function commitMove() {
+    const node = graph.getNode(moveId)
+    if (node) {
+      node.x = lastGhostPoint.x
+      node.y = lastGhostPoint.y
+      node.z = lastGhostPoint.z
+      // Position-only change, like a physics tick: syncNodes moves the star,
+      // updateEdgePositions moves its incident lines to follow it.
+      view.syncNodes()
+      view.updateEdgePositions()
+      physics.invalidate() // matches every other mutator; no-ops if not running
+    }
+    moveId = null
+    view.clearGhost()
+    mode = 'idle'
+  }
+
   function deleteNode(nodeId) {
     if (sourceId === nodeId) cancelConnect()
+    if (moveId === nodeId) cancelMove()
     graph.removeNode(nodeId)
     clearHover()
     // Not `view.sync()`, which snaps sizes: the deleted node's neighbours
@@ -373,6 +488,16 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     menu.open(target.kind === 'node' ? nodeMenu(graph.getNode(target.id)) : EDGE_MENU)
   }
 
+  // `ring` re-opens the widget with a different item array rather than
+  // teaching it to nest: `menu.close()` has already hidden/cleared the SVG by
+  // the time "More…" is dispatched, so this is a clean re-open, not a stack.
+  function openMapMenu(ring = 'top') {
+    menuTarget = ring === 'top' ? MAP_TARGET : MAP_TARGET_MORE
+    mode = 'menu'
+    beginModal() // idempotent if already modal from the ring we're leaving — do not guard it
+    menu.open(ring === 'top' ? MAP_MENU : MORE_MENU(renderSettings.reducedMotion))
+  }
+
   function closeMenu() {
     const key = menu.close()
     const target = menuTarget
@@ -380,11 +505,28 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     endModal()
     if (!key || !target) return
 
+    if (target.kind === 'map') {
+      if (target.ring === 'top') {
+        if (key === 'more') return openMapMenu('more')
+        if (key === 'new') spawnNode()
+        else if (key === 'open') openMap()
+        else if (key === 'save') saveMap({ reprompt: false })
+        else if (key === 'export') exportMap()
+        else if (key === 'balance') physics.toggle()
+        return
+      }
+      if (key === 'back') return openMapMenu('top')
+      if (key === 'overview') overview.toggle()
+      else if (key === 'reduced-motion') renderSettings.toggleReducedMotion()
+      return
+    }
+
     if (target.kind === 'node') {
       const node = graph.getNode(target.id)
       if (!node) return
       if (key === 'connect') startConnect(node.id)
       else if (key === 'edit') editNode(node)
+      else if (key === 'move') startMove(node.id)
       else if (key === 'core') toggleCore(node)
       else if (key === 'delete') deleteNode(node.id)
       return
@@ -408,11 +550,18 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
       event.preventDefault()
       if (mode === 'menu') return
       if (mode === 'connecting') cancelConnect()
+      else if (mode === 'moving') cancelMove()
       else if (hover) openMenu(hover)
+      else openMapMenu()
       return
     }
 
     if (event.button !== 0 || mode === 'menu') return
+
+    if (mode === 'moving') {
+      commitMove()
+      return
+    }
 
     const now = performance.now()
     // Reset rather than carry forward, so a third click can't chain a spawn.
@@ -473,7 +622,10 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
       return
     }
 
-    if (event.key === 'Escape' && mode === 'connecting') cancelConnect()
+    if (event.key === 'Escape') {
+      if (mode === 'connecting') cancelConnect()
+      else if (mode === 'moving') cancelMove()
+    }
     // Balance is a toggle: pressing it again abandons the run wherever it got
     // to, which is the only way to stop a layout that is going somewhere you
     // don't want. It works in the overview too, which is the natural place to
@@ -493,6 +645,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     if (editor.isOpen) editor.cancel()
     menuTarget = null
     if (mode === 'connecting') cancelConnect()
+    else if (mode === 'moving') cancelMove() // never commit on lock loss
     endModal()
     clearHover()
   }

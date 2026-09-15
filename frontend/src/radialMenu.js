@@ -1,35 +1,111 @@
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
-const CENTER = 130 // half the viewBox — the wheel is square and centred
-const INNER_RADIUS = 44
-const OUTER_RADIUS = 112
-const LABEL_RADIUS = (INNER_RADIUS + OUTER_RADIUS) / 2
+const CENTER = 130 // half the viewBox — the wheel is square and centred, fixed regardless of item count
+
+// Drawing geometry scales with item count via these two profiles; a menu of
+// 2-4 items (today's node/edge menus) renders pixel-identical to before.
+// 5-6 items (the map menu, and the node menu once Move is added) get a
+// slightly smaller hub and larger ring, buying more arc length per wedge.
+const RADIUS_PROFILES = {
+  default: { inner: 44, outer: 112 },
+  wide: { inner: 40, outer: 118 },
+}
+const profileFor = (count) => (count <= 4 ? RADIUS_PROFILES.default : RADIUS_PROFILES.wide)
 
 // Accumulated pointer travel, in screen pixels, before a wedge arms. Below it
-// the gesture is a plain right-click, which cancels.
+// the gesture is a plain right-click, which cancels. Gesture feel, not
+// drawing geometry — independent of item count.
 const DEADZONE = 32
 const TRAVEL_CLAMP = 96 // how far the indicator can drift from the centre
 const DELTA_CLAMP = 120 // per-event guard: pointer lock occasionally spikes
+
+// Label sizing: matches the current CSS default exactly, so 4-item wedges are
+// unchanged; shrinks toward the floor before falling back to two lines.
+const BASE_FONT_PX = 12
+const MIN_FONT_PX = 9
+const LABEL_PADDING = 0.85 // fraction of the raw chord width used as the fit target
 
 /** Screen-space polar to SVG cartesian: angle 0 points up, grows clockwise. */
 function polar(angle, radius) {
   return [CENTER + Math.sin(angle) * radius, CENTER - Math.cos(angle) * radius]
 }
 
-function wedgePath(from, to) {
+function wedgePath(from, to, inner, outer) {
   const largeArc = to - from > Math.PI ? 1 : 0
-  const [ox1, oy1] = polar(from, OUTER_RADIUS)
-  const [ox2, oy2] = polar(to, OUTER_RADIUS)
-  const [ix1, iy1] = polar(from, INNER_RADIUS)
-  const [ix2, iy2] = polar(to, INNER_RADIUS)
+  const [ox1, oy1] = polar(from, outer)
+  const [ox2, oy2] = polar(to, outer)
+  const [ix1, iy1] = polar(from, inner)
+  const [ix2, iy2] = polar(to, inner)
   return [
     `M ${ix1} ${iy1}`,
     `L ${ox1} ${oy1}`,
-    `A ${OUTER_RADIUS} ${OUTER_RADIUS} 0 ${largeArc} 1 ${ox2} ${oy2}`,
+    `A ${outer} ${outer} 0 ${largeArc} 1 ${ox2} ${oy2}`,
     `L ${ix2} ${iy2}`,
-    `A ${INNER_RADIUS} ${INNER_RADIUS} 0 ${largeArc} 0 ${ix1} ${iy1}`,
+    `A ${inner} ${inner} 0 ${largeArc} 0 ${ix1} ${iy1}`,
     'Z',
   ].join(' ')
+}
+
+/**
+ * How much horizontal room a label has at `angle`/`radius` inside a wedge of
+ * the given angular span and inner/outer radii. Two independent constraints
+ * bound it, and the tighter one wins:
+ * - the wedge's own two straight edges (the old chord estimate) — tight for
+ *   an angularly narrow wedge, regardless of where it sits on the ring;
+ * - the ring's curved inner/outer edges — tight near the left/right of the
+ *   ring, where horizontal text runs along the ring's radial *thickness*
+ *   rather than its circumference, however wide the wedge's angle is. The
+ *   original code only checked the first, so a wide-but-side-sitting wedge
+ *   (e.g. a 3-item ring's middle item) let text run at full size straight
+ *   past the ring's own edge.
+ */
+function availableWidth(angle, radius, angleSpan, inner, outer) {
+  const chordWidth = 2 * radius * Math.sin(angleSpan / 2)
+  // Vertical distance from the ring's centre to the label's row: the two arcs
+  // are symmetric across it, so this alone determines how far each reaches.
+  const dy = Math.abs(Math.cos(angle)) * radius
+  const reach = (r) => Math.sqrt(Math.max(r * r - dy * dy, 0))
+  const outerReach = reach(outer) - reach(radius)
+  const innerReach = dy <= inner ? reach(radius) - reach(inner) : Infinity
+  const arcWidth = 2 * Math.min(outerReach, innerReach)
+  return Math.min(chordWidth, arcWidth)
+}
+
+/**
+ * Fits `label` into `available` px, shrinking font-size first and falling
+ * back to two lines (split on the label's own space) only if it still
+ * doesn't fit at the floor size. Requires `text` to already be attached to
+ * the SVG document, since `getComputedTextLength()` needs real layout.
+ */
+function layoutLabel(text, label, available) {
+  text.textContent = ''
+  available *= LABEL_PADDING
+
+  const line = document.createElementNS(SVG_NS, 'tspan')
+  line.textContent = label
+  text.append(line)
+
+  let fontPx = BASE_FONT_PX
+  line.style.fontSize = `${fontPx}px`
+  while (line.getComputedTextLength() > available && fontPx > MIN_FONT_PX) {
+    fontPx -= 1
+    line.style.fontSize = `${fontPx}px`
+  }
+
+  const words = label.split(' ')
+  if (fontPx === MIN_FONT_PX && line.getComputedTextLength() > available && words.length > 1) {
+    text.textContent = ''
+    const mid = Math.ceil(words.length / 2)
+    const lines = [words.slice(0, mid).join(' '), words.slice(mid).join(' ')]
+    lines.forEach((content, i) => {
+      const tspan = document.createElementNS(SVG_NS, 'tspan')
+      tspan.textContent = content
+      tspan.setAttribute('x', text.getAttribute('x'))
+      tspan.setAttribute('dy', i === 0 ? '-0.55em' : '1.1em')
+      tspan.style.fontSize = `${BASE_FONT_PX}px`
+      text.append(tspan)
+    })
+  }
 }
 
 /**
@@ -64,6 +140,18 @@ export function createRadialMenu(container) {
     selected = index
   }
 
+  /**
+   * Visual cue for a dwell-triggered transition (e.g. a submenu wedge held
+   * without releasing): `true` starts the pulse on the armed wedge, `false`
+   * clears it from every wedge — not just the current one, since the armed
+   * wedge may have already changed by the time the caller cancels a dwell
+   * that was building on a different one.
+   */
+  function charge(active) {
+    if (active) wedges[selected]?.group.classList.add('charging')
+    else wedges.forEach((w) => w.group.classList.remove('charging'))
+  }
+
   /** `menuItems` are `{ key, label }`, laid out clockwise from the top. */
   function open(menuItems) {
     clear()
@@ -71,13 +159,15 @@ export function createRadialMenu(container) {
     selected = -1
     travelX = 0
     travelY = 0
+    const { inner, outer } = profileFor(items.length)
+    const labelRadius = (inner + outer) / 2
 
     // Backs the donut hole with an opaque disc: the node/edge behind the menu
     // (often a bright, bloom-lit sphere) would otherwise show through and wash
     // out whichever wedge is armed, plus anything drawn at the centre.
     const hub = document.createElementNS(SVG_NS, 'circle')
     hub.setAttribute('class', 'hub')
-    hub.setAttribute('r', INNER_RADIUS)
+    hub.setAttribute('r', inner)
     hub.setAttribute('cx', CENTER)
     hub.setAttribute('cy', CENTER)
     svg.append(hub)
@@ -88,19 +178,20 @@ export function createRadialMenu(container) {
       group.setAttribute('class', 'wedge')
 
       const path = document.createElementNS(SVG_NS, 'path')
-      path.setAttribute('d', wedgePath(index * step - step / 2, index * step + step / 2))
+      path.setAttribute('d', wedgePath(index * step - step / 2, index * step + step / 2, inner, outer))
       group.append(path)
 
-      const [lx, ly] = polar(index * step, LABEL_RADIUS)
+      const angle = index * step
+      const [lx, ly] = polar(angle, labelRadius)
       const text = document.createElementNS(SVG_NS, 'text')
       text.setAttribute('x', lx)
       text.setAttribute('y', ly)
       text.setAttribute('text-anchor', 'middle')
       text.setAttribute('dominant-baseline', 'middle')
-      text.textContent = item.label
       group.append(text)
+      svg.append(group) // attached before measuring: getComputedTextLength() needs real layout
+      layoutLabel(text, item.label, availableWidth(angle, labelRadius, step, inner, outer))
 
-      svg.append(group)
       wedges.push({ group })
     })
 
@@ -171,6 +262,11 @@ export function createRadialMenu(container) {
     open,
     track,
     close,
+    charge,
+    /** The currently armed item's key, or null if none is armed. */
+    get armed() {
+      return items[selected]?.key ?? null
+    },
     get isOpen() {
       return !container.hidden
     },
