@@ -2,6 +2,8 @@
 .idea/
 __pycache__/
 *.py[cod]
+.claude
+CLAUDE.md
 
 node_modules/
 server/static/
