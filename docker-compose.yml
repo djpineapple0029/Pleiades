@@ -1,0 +1,14 @@
+services:
+  pleiades:
+    build: .
+    restart: unless-stopped
+    networks:
+      - caddy
+    labels:
+      caddy: ":80"
+      caddy.handle_path: "/pleiades*"
+      caddy.handle_path.0_reverse_proxy: "{{upstreams 5051}}"
+
+networks:
+  caddy:
+    external: true

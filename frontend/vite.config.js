@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 
 // Build output lands in server/static/ so Flask can serve it directly.
 export default defineConfig({
-  base: '/',
+  base: '/pleiades/',
   build: {
     outDir: '../server/static',
     emptyOutDir: true,
