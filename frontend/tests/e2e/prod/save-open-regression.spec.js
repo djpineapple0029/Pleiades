@@ -58,7 +58,7 @@ test('save through the password panel, then open the same file back in', async (
   }
 
   await page.waitForTimeout(600)
-  expect.soft(/saved regress\.atlasmap/.test(await page.textContent('#hud')), 'HUD reports the save').toBe(true)
+  expect.soft(/downloaded regress\.atlasmap/.test(await page.textContent('#hud')), 'HUD reports the save').toBe(true)
 
   // ---- open it straight back
   if (saved) {

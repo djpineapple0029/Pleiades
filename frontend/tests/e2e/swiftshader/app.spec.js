@@ -48,7 +48,7 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   expect.soft(await t(page, 'hud()'), 'back on n1, not core').toBe('node n1 · 1 links')
   const UP = -70 // 0.14 rad: ~12.6 units at 90, outside 5.75, inside 15
   await t(page, `look(0, ${UP})`); await settle(page)
-  expect.soft(await t(page, 'hud()'), 'above plain n1 is empty space').toBe('3 nodes · 2 edges')
+  expect.soft(await t(page, 'hud()'), 'above plain n1 is empty space').toBe('map.atlasmap · unsaved · 3 nodes · 2 edges')
   await t(page, `look(0, ${-UP})`); await settle(page)
   await page.screenshot({ path: testInfo.outputPath('app_before.png') })
 
@@ -67,7 +67,7 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   expect.soft(await t(page, 'hud()'), 'HUD drops core').toBe('node n1 · 1 links')
   await settle(page, 700)
   await t(page, `look(0, ${UP})`); await settle(page)
-  expect.soft(await t(page, 'hud()'), 'shrunk back: offset misses again').toBe('3 nodes · 2 edges')
+  expect.soft(await t(page, 'hud()'), 'shrunk back: offset misses again').toBe('map.atlasmap · unsaved · 3 nodes · 2 edges')
   await t(page, `look(0, ${-UP})`); await settle(page)
 
   // Name n1 through the Edit wedge: its label appears under it, in the hover

@@ -17,6 +17,7 @@ export function createEditor(container) {
   // field — see `createPasswordInput` below for why that matters.
   let entries = []
   let resolve = null
+  let choices = null // [{ key, label }] while a confirm panel is open, else null
 
   const inputs = () => entries.map((entry) => entry.input)
 
@@ -25,7 +26,9 @@ export function createEditor(container) {
     const done = resolve
     resolve = null
     entries = []
+    choices = null
     panel.replaceChildren()
+    panel.removeAttribute('tabindex')
     container.hidden = true
     done(value)
   }
@@ -53,6 +56,15 @@ export function createEditor(container) {
 
     if (event.key === 'Escape') {
       finish(null)
+      return
+    }
+
+    if (choices) {
+      // Keyed-choice mode: no input fields, so none of the Tab-cycling or
+      // per-field Enter logic below applies — just match the pressed key
+      // against each choice's letter.
+      const hit = choices.find((choice) => choice.key.toLowerCase() === event.key.toLowerCase())
+      if (hit) finish(hit.key)
       return
     }
 
@@ -230,8 +242,58 @@ export function createEditor(container) {
     })
   }
 
+  /**
+   * A modal panel with no input fields: a title, an optional one-line note,
+   * and a row of keyed choices (`{ key, label }`) shown as buttons. Resolves
+   * with the chosen key, or null on Escape/cancel. There is no field to
+   * focus, so the panel itself takes focus — it needs `tabIndex` for that,
+   * since it holds no naturally focusable element.
+   */
+  function confirm(title, note, choiceList) {
+    finish(null)
+    choices = choiceList
+
+    const heading = document.createElement('p')
+    heading.className = 'editor-title'
+    heading.textContent = title
+    panel.append(heading)
+
+    if (note) {
+      const warning = document.createElement('p')
+      warning.className = 'editor-note'
+      warning.textContent = note
+      panel.append(warning)
+    }
+
+    const actions = document.createElement('div')
+    actions.className = 'editor-actions'
+    for (const choice of choiceList) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'editor-button editor-button--secondary'
+      button.textContent = choice.label
+      button.addEventListener('click', () => finish(choice.key))
+      actions.append(button)
+    }
+    panel.append(actions)
+
+    const hint = document.createElement('p')
+    hint.className = 'editor-hint'
+    hint.textContent = [...choiceList.map((choice) => choice.label), 'Esc: cancel'].join(' · ')
+    panel.append(hint)
+
+    container.hidden = false
+    panel.tabIndex = -1
+    panel.focus()
+
+    return new Promise((settle) => {
+      resolve = settle
+    })
+  }
+
   return {
     open,
+    confirm,
     cancel: () => finish(null),
     get isOpen() {
       return resolve !== null

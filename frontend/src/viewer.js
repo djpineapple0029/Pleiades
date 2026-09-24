@@ -31,6 +31,7 @@ const overlay = document.getElementById('overlay')
 const crosshair = document.getElementById('crosshair')
 const notice = document.getElementById('notice')
 const hud = document.getElementById('hud')
+const speed = document.getElementById('speed')
 
 /**
  * The embedded map, or null if this page has none.
@@ -73,6 +74,7 @@ const interaction = createViewerInteraction({
   view,
   overview,
   hud,
+  speedEl: speed,
 })
 
 const payload = readPayload()

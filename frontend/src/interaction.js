@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { NODE_RADIUS } from './graphView.js'
+import { createStatus } from './status.js'
 
 const SPAWN_DISTANCE = 90 // world units ahead of the camera for a new node
 const DOUBLE_CLICK_MS = 320
@@ -7,9 +8,6 @@ const DOUBLE_CLICK_MS = 320
 // ring automatically. A quick arm-then-release still swaps instantly via the
 // existing key dispatch below — this is only for staying on the wedge.
 const SUBMENU_DWELL_MS = 850
-// How long a save/open result holds the HUD before it goes back to reporting
-// what the crosshair is on.
-const STATUS_MS = 5000
 
 // Clockwise from the top. The core toggle takes the bottom wedge: the side
 // wedges are too narrow for its label, and Edit and Delete keep the sides they
@@ -73,11 +71,12 @@ function sameTarget(a, b) {
  * the password panel, and the panel is a modal surface — only this module knows
  * whether one is already up, and only this module can suspend flight for it.
  */
-export function createInteraction({ camera, controls, flight, graph, view, physics, files, overview, renderSettings, menu, editor, hud }) {
+export function createInteraction({ camera, controls, flight, graph, view, physics, files, overview, renderSettings, menu, editor, hud, speedEl }) {
   const raycaster = new THREE.Raycaster()
   const crosshair = new THREE.Vector2(0, 0) // dead centre of the viewport
   const forward = new THREE.Vector3()
   const point = new THREE.Vector3()
+  const status = createStatus(hud)
 
   let mode = 'idle' // idle | connecting | menu | editing | moving
   let hover = null // { kind, id } under the crosshair
@@ -89,11 +88,14 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
   let dwellKey = null // submenu wedge ('more' or 'back') currently being held
   let dwellSince = 0
   let lastLeftDown = 0
-  let hudText = null
-  let status = null // transient HUD line: the result of a save or an open
-  let statusUntil = 0
-  let lastSpeed = flight.getSpeed()
+  let lastSpeedText = null
   let busy = false // a file flow is somewhere between its first prompt and its result
+  // True only across a `files.open()` await: closes the gap where `endModal()`
+  // has already returned `mode` to 'idle' (the moment a password is submitted)
+  // but the decrypt-and-swap it triggered hasn't resolved yet. `isModal` below
+  // stays true through it, so a click can't re-lock and edit the old graph
+  // right before it's replaced.
+  let loading = false
 
   function aheadOfCamera(target) {
     forward.set(0, 0, -1).applyQuaternion(camera.quaternion)
@@ -117,52 +119,58 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     return edge.label ? `edge ${edge.label} · ${ends}` : `edge ${ends}`
   }
 
-  function setStatus(text) {
-    status = text
-    statusUntil = performance.now() + STATUS_MS
+  /** The persistent part of the HUD: where the crosshair is, or what's
+   *  happening. `status.js` layers transient save/open/export messages over
+   *  whatever this returns, rather than replacing it. */
+  function stateLine() {
+    if (mode === 'connecting') {
+      const source = graph.getNode(sourceId)
+      // Instruction first, so it survives an ellipsis on a narrow window.
+      return `left-click a node to link · right-click to cancel · from ${nodeName(source)}`
+    }
+    if (mode === 'moving') {
+      const node = graph.getNode(moveId)
+      return `moving ${nodeName(node)} · left-click to place · right-click to cancel`
+    }
+
+    let text
+    if (overview.isActive) {
+      // The overview hides the overlay, so the HUD is the only thing left
+      // saying how to get out of it.
+      text = `overview · ${graph.nodes.size} nodes · ${graph.edges.size} edges · Tab to fly`
+    } else {
+      // Unlocked there is no crosshair to describe, but the fallback still
+      // says what's open, behind the overlay.
+      const described = controls.isLocked && describe(hover)
+      if (described) {
+        text = described
+      } else {
+        const dirty = files.isDirty ? ' · unsaved' : ''
+        text = `${files.filename}${dirty} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`
+      }
+    }
+    if (physics.isRunning) {
+      const count = graph.clusterCount
+      const clusters = count ? ` · ${count} cluster${count === 1 ? '' : 's'}` : ''
+      text += ` · balancing ${Math.round(physics.progress * 100)}%${clusters}`
+    }
+    return text
   }
 
   function updateHud() {
-    let text = ''
-    if (status !== null && performance.now() < statusUntil) {
-      // A save or open result owns the line for its few seconds. This runs every
-      // frame, so it goes back to the graph state on its own once that is up.
-      text = status
-    } else {
-      status = null
-      if (mode === 'connecting') {
-        const source = graph.getNode(sourceId)
-        text = `connecting from ${nodeName(source)} · left-click a node to link · right-click to cancel`
-      } else if (mode === 'moving') {
-        const node = graph.getNode(moveId)
-        text = `moving ${nodeName(node)} · left-click to place · right-click to cancel`
-      } else if (mode === 'idle') {
-        const counts = `${graph.nodes.size} nodes · ${graph.edges.size} edges`
-        // The overview hides the overlay, so the HUD is the only thing left
-        // saying how to get out of it.
-        if (overview.isActive) text = `overview · ${counts} · Tab to fly`
-        // Unlocked there is no crosshair to describe, but the counts still say
-        // what was just opened, behind the overlay.
-        else text = (controls.isLocked && describe(hover)) || counts
-      }
-      if (physics.isRunning) {
-        const count = graph.clusterCount
-        const clusters = count ? ` · ${count} cluster${count === 1 ? '' : 's'}` : ''
-        const progress = `balancing ${Math.round(physics.progress * 100)}%${clusters}`
-        text = text ? `${text} · ${progress}` : progress
-      }
-    }
-    if (text === hudText) return
-    hudText = text
-    hud.textContent = text
+    status.setState(stateLine())
+    status.tick()
+  }
+
+  function updateSpeedReadout() {
+    const speedText = `${flight.getSpeed().toFixed(2)}x`
+    if (speedText === lastSpeedText) return
+    lastSpeedText = speedText
+    speedEl.textContent = speedText
   }
 
   function update() {
-    const speed = flight.getSpeed()
-    if (speed !== lastSpeed) {
-      lastSpeed = speed
-      setStatus(`flight speed ${speed.toFixed(2)}x`)
-    }
+    updateSpeedReadout()
 
     if (mode === 'idle' || mode === 'connecting' || mode === 'moving') {
       if (!controls.isLocked) {
@@ -302,6 +310,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
       view.syncNodes()
       view.updateEdgePositions()
       physics.invalidate() // matches every other mutator; no-ops if not running
+      graph.touchContent() // a manual move is saved data, unlike a physics tick
     }
     moveId = null
     view.clearGhost()
@@ -377,8 +386,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     endModal()
     // The node can be gone if the session was torn down mid-edit.
     if (!values || !graph.getNode(node.id)) return
-    node.label = values.label
-    node.notes = values.notes
+    graph.setNodeText(node.id, values.label, values.notes)
   }
 
   async function editEdge(edge) {
@@ -388,7 +396,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     const values = await editor.open('edge', [{ key: 'label', label: 'Label', value: edge.label }])
     endModal()
     if (!values || !graph.getEdge(edge.id)) return
-    edge.label = values.label
+    graph.setEdgeLabel(edge.id, values.label)
   }
 
   /** Opens the editor panel as a modal and hands back what it collected. */
@@ -410,7 +418,10 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
    * counts) and this is a single keystroke, until `Shift` asks again.
    */
   async function saveMap({ reprompt }) {
-    if (busy) return
+    if (busy) {
+      status.info('a file operation is still in progress')
+      return { ok: false }
+    }
     busy = true
     let note = null
     // Carried across retries: a mistyped confirmation should not also cost the
@@ -428,7 +439,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
           note,
           'Save'
         )
-        if (!values) return
+        if (!values) return { ok: false }
         name = values.filename
         if (!values.password) {
           files.setCredentials('', values.filename)
@@ -442,9 +453,13 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
         break
       }
 
-      setStatus(`saving ${files.filename}`)
+      status.busy(`saving ${files.filename}`)
       const result = await files.save()
-      setStatus(result.ok ? `saved ${files.filename}` : `save failed: ${result.error}`)
+      // "saved" would claim more than is true the instant this resolves — the
+      // browser hasn't necessarily finished writing the download yet.
+      if (result.ok) status.success(`downloaded ${files.filename}`)
+      else status.error(`save failed: ${result.error}`)
+      return result
     } finally {
       busy = false
     }
@@ -457,25 +472,40 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
    * instead of being unwound mid-flow. The user clicks to fly again afterwards.
    */
   async function openMap() {
-    if (busy) return
+    if (busy) {
+      status.info('a file operation is still in progress')
+      return
+    }
+    // Lock goes first and stays gone, whether or not a file actually gets
+    // picked or the map turns out to be dirty — the file dialog and any
+    // confirm panel are both native/modal surfaces the browser would drop it
+    // for anyway.
+    if (controls.isLocked) controls.unlock()
+    const file = await files.pickFile()
+    if (!file) return
+
+    // Ask before pickFile settles, not before: a cancelled picker should
+    // never nag about a map it isn't going to touch.
+    if (!(await confirmDirty('Opening replaces this map.'))) return
+
+    // Taken only now that a file is actually going to be opened — a pick
+    // that never settles leaks a promise but blocks nothing.
     busy = true
     try {
-      if (controls.isLocked) controls.unlock()
-      const file = await files.pickFile()
-      if (!file) return
-
       // A file saved with no password needs no prompt at all — and reading
       // the header costs nothing, so there's no reason to ask first.
       const probed = await files.probe(file)
       if (probed && !probed.needsPassword) {
-        setStatus(`opening ${file.name}`)
+        loading = true
+        status.busy(`opening ${file.name}`)
         const result = await files.open(file, '')
+        loading = false
         if (result.ok) {
-          setStatus(`opened ${file.name} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`)
+          status.success(`opened ${file.name} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`)
           overview.refit()
           return
         }
-        setStatus(`open failed: ${result.error}`)
+        status.error(`open failed: ${result.error}`)
         return
       }
 
@@ -489,10 +519,16 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
         )
         if (!values) return
 
-        setStatus(`opening ${file.name}`)
+        // `endModal()` above already returned `mode` to 'idle' the instant
+        // the password was submitted — `loading` is what keeps `isModal`
+        // true for the decrypt-and-swap that's about to run, so a click
+        // can't re-lock and edit the old graph moments before it's replaced.
+        loading = true
+        status.busy(`opening ${file.name}`)
         const result = await files.open(file, values.password)
+        loading = false
         if (result.ok) {
-          setStatus(`opened ${file.name} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`)
+          status.success(`opened ${file.name} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`)
           // A no-op unless the overview is up, where the orbit would otherwise
           // still be circling the previous map's centre.
           overview.refit()
@@ -501,13 +537,14 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
         // A wrong password is the one failure worth another go at the panel;
         // a corrupt file or a dead server will not read any differently.
         if (!result.wrongPassword) {
-          setStatus(`open failed: ${result.error}`)
+          status.error(`open failed: ${result.error}`)
           return
         }
         note = result.error
       }
     } finally {
       busy = false
+      loading = false
     }
   }
 
@@ -519,15 +556,61 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
    * and it does not adopt a filename or credentials.
    */
   async function exportMap() {
-    if (busy) return
+    if (busy) {
+      status.info('a file operation is still in progress')
+      return
+    }
     busy = true
     try {
-      setStatus('exporting')
+      status.busy('exporting')
       const result = await files.exportHtml()
-      setStatus(result.ok ? `exported ${result.filename}` : `export failed: ${result.error}`)
+      if (result.ok) status.success(`exported ${result.filename}`)
+      else status.error(`export failed: ${result.error}`)
     } finally {
       busy = false
     }
+  }
+
+  /**
+   * Guards Open and New map against silently discarding unsaved work.
+   * Resolves `true` if it's safe to proceed — nothing was dirty, the user
+   * chose to discard, or a save-first succeeded — or `false` if the caller
+   * should stop: the user cancelled, or a save-first failed.
+   */
+  async function confirmDirty(note) {
+    if (!files.isDirty) return true
+    await releaseLockForEditor()
+    mode = 'editing'
+    beginModal()
+    const choice = await editor.confirm(`unsaved changes in ${files.filename}`, note, [
+      { key: 's', label: 'S: save first' },
+      { key: 'd', label: 'D: discard' },
+    ])
+    endModal()
+    if (choice === 'd') return true
+    if (choice === 's') {
+      const result = await saveMap({ reprompt: false })
+      return Boolean(result?.ok)
+    }
+    return false // Esc, or the panel was torn down by a lock loss
+  }
+
+  /** The map menu's New: replaces the graph, mirroring `files.applyPayload`'s
+   *  own reset order, then forgets any password/filename this session had. */
+  async function newMap() {
+    if (!(await confirmDirty('Starting a new map replaces this map.'))) return
+    physics.stop()
+    // Dead under today's UI — a right-click already cancels connect/move
+    // before the map menu can even open — kept as cheap insurance.
+    if (mode === 'connecting') cancelConnect()
+    else if (mode === 'moving') cancelMove()
+    graph.load({ nodes: [], edges: [] })
+    physics.reset()
+    view.sync()
+    files.clearCredentials()
+    files.reset()
+    clearHover()
+    overview.refit()
   }
 
   function openMenu(target) {
@@ -558,7 +641,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     if (target.kind === 'map') {
       if (target.ring === 'top') {
         if (key === 'more') return openMapMenu('more')
-        if (key === 'new') spawnNode()
+        if (key === 'new') newMap()
         else if (key === 'open') openMap()
         else if (key === 'save') saveMap({ reprompt: false })
         else if (key === 'export') exportMap()
@@ -719,9 +802,11 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
   return {
     update,
     dispose,
-    /** True while a panel owns the keyboard — nothing should steal focus back. */
+    /** True while a panel owns the keyboard, or a file is being decrypted and
+     *  swapped in — nothing should steal focus back, or re-lock and edit the
+     *  graph that's about to be replaced. */
     get isModal() {
-      return mode === 'menu' || mode === 'editing'
+      return mode === 'menu' || mode === 'editing' || loading
     },
   }
 }

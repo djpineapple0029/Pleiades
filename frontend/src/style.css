@@ -106,6 +106,31 @@ kbd {
   text-overflow: ellipsis;
 }
 
+/* A sticky error is worth reading in full, so it's allowed to wrap instead
+   of being cut off with an ellipsis like a transient message. */
+#hud.hud--error {
+  color: #d99a6c;
+}
+
+#hud.hud--wrap {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* Flight speed is a permanent readout, not a status message — it must never
+   share the HUD's message channel, or a scroll-wheel change would stomp
+   whatever result/error text is showing there. */
+#speed {
+  position: fixed;
+  z-index: 2;
+  right: 16px;
+  bottom: 14px;
+  margin: 0;
+  color: var(--ink-dim);
+  pointer-events: none;
+}
+
 /* Both modal surfaces sit under the crosshair: there is no cursor to aim with,
    so screen centre is the only place the user is already looking. */
 #radial-menu,
@@ -193,6 +218,13 @@ kbd {
   border-radius: 4px;
   background: rgba(9, 11, 17, 0.96);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+/* The confirm/keyed-choice panel has no input to focus, so the panel itself
+   takes focus — it needs no visible ring, since the on-screen hint already
+   states the key bindings. */
+.editor-panel:focus {
+  outline: none;
 }
 
 .editor-title {
