@@ -152,3 +152,91 @@ describe('rejections leave the previous graph untouched', () => {
     expect(g7.nodes.size === 1 && g7.getNode('keep').x === 5).toBe(true)
   })
 })
+
+describe('graph restore primitives (undo, V2.md §2.4.10)', () => {
+  it('removeNode hands back copies that restoreNode puts back under the same ids', () => {
+    const g = createGraph()
+    const a = g.addNode({ x: 1, y: 2, z: 3, label: 'hub', notes: 'n' })
+    const b = g.addNode({ x: 4, y: 5, z: 6 })
+    const e = g.addEdge(a.id, b.id)
+    g.setCore(a.id, true)
+    // A restored item goes back in at the end of its Map; order carries no meaning.
+    const sorted = () => {
+      const { nodes, edges } = g.toPayload()
+      const byId = (x, y) => x.id.localeCompare(y.id)
+      return JSON.stringify({ nodes: nodes.sort(byId), edges: edges.sort(byId) })
+    }
+    const before = sorted()
+
+    const snap = g.removeNode(a.id)
+    expect(snap.node.id).toBe(a.id)
+    expect(snap.edges.map((edge) => edge.id)).toEqual([e.id])
+    expect(g.nodes.size).toBe(1)
+    expect(g.edges.size).toBe(0)
+
+    expect(g.restoreNode(snap)).toBe(true)
+    expect(sorted()).toBe(before)
+    // Restored from a copy: editing the snapshot can't reach into the graph.
+    snap.node.label = 'changed'
+    expect(g.getNode(a.id).label).toBe('hub')
+    expect(g.degree(a.id)).toBe(1)
+    expect(g.degree(b.id)).toBe(1)
+  })
+
+  it('restore refuses a taken id and an edge with a missing end', () => {
+    const g = createGraph()
+    const a = g.addNode({ x: 0, y: 0, z: 0 })
+    const b = g.addNode({ x: 0, y: 0, z: 0 })
+    const e = g.addEdge(a.id, b.id)
+    expect(g.restoreNode({ node: { ...a }, edges: [] })).toBe(false)
+    const edgeSnap = g.removeEdge(e.id)
+    g.removeNode(b.id)
+    expect(g.restoreEdge(edgeSnap)).toBe(false)
+    expect(g.edges.size).toBe(0)
+  })
+
+  it('removeNode/removeEdge return null for an unknown id', () => {
+    const g = createGraph()
+    expect(g.removeNode('n99')).toBe(null)
+    expect(g.removeEdge('e99')).toBe(null)
+  })
+
+  it('setNodePosition is saved data but not an appearance change', () => {
+    const g = createGraph()
+    const a = g.addNode({ x: 0, y: 0, z: 0 })
+    const revision = g.revision
+    const token = g.contentRevision
+    g.setNodePosition(a.id, 7, 8, 9)
+    expect(g.getNode(a.id)).toMatchObject({ x: 7, y: 8, z: 9 })
+    expect(g.revision).toBe(revision)
+    expect(g.contentRevision).not.toBe(token)
+  })
+
+  it('applyLayout bumps revision only when a colour moves', () => {
+    const g = createGraph()
+    const a = g.addNode({ x: 0, y: 0, z: 0 })
+    const snap = g.layoutSnapshot()
+    g.getNode(a.id).x = 50
+    let revision = g.revision
+    g.applyLayout(snap)
+    expect(g.getNode(a.id).x).toBe(0)
+    expect(g.revision).toBe(revision)
+
+    g.getNode(a.id).cluster_color_id = 4
+    revision = g.revision
+    g.applyLayout(snap)
+    expect(g.getNode(a.id).cluster_color_id).toBe(0)
+    expect(g.revision).toBeGreaterThan(revision)
+  })
+
+  it('content tokens are never handed out twice, even after one is put back', () => {
+    const g = createGraph()
+    const t0 = g.contentRevision
+    g.addNode({ x: 0, y: 0, z: 0 })
+    const t1 = g.contentRevision
+    g.setContentRevision(t0)
+    g.addNode({ x: 0, y: 0, z: 0 })
+    expect(g.contentRevision).not.toBe(t0)
+    expect(g.contentRevision).not.toBe(t1)
+  })
+})

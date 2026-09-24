@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { NODE_RADIUS } from './graphView.js'
 import { createStatus } from './status.js'
+import { createHistory } from './history.js'
+import { createCommands } from './commands.js'
 
 const SPAWN_DISTANCE = 90 // world units ahead of the camera for a new node
 const DOUBLE_CLICK_MS = 320
@@ -64,8 +66,9 @@ function sameTarget(a, b) {
  * exceptions are opening a file and Tab into the overview, both of which are
  * deliberate mode switches rather than per-click actions.
  *
- * Every structural change also pokes `physics`, so a balance run in flight
- * settles the new shape rather than the one it started with.
+ * Every change to the map goes through `commands.js`, which does the view and
+ * physics syncing and records it on the undo stack — this module decides
+ * *when* an edit happens, never how the rest of the app catches up with it.
  *
  * Saving and opening live here too rather than in `files.js`, because both need
  * the password panel, and the panel is a modal surface — only this module knows
@@ -77,6 +80,8 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
   const forward = new THREE.Vector3()
   const point = new THREE.Vector3()
   const status = createStatus(hud)
+  // Every edit goes through here, which is what makes it undoable.
+  const commands = createCommands({ graph, view, physics, history: createHistory() })
 
   let mode = 'idle' // idle | connecting | menu | editing | moving
   let hover = null // { kind, id } under the crosshair
@@ -254,9 +259,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     } else {
       aheadOfCamera(point)
     }
-    graph.addNode({ x: point.x, y: point.y, z: point.z })
-    view.syncNodes()
-    physics.invalidate()
+    commands.spawn(point)
   }
 
   function startConnect(nodeId) {
@@ -276,10 +279,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     // Anything but another node leaves the connection pending — only
     // right-click and Esc cancel it.
     if (hover?.kind !== 'node' || hover.id === sourceId) return
-    if (graph.addEdge(sourceId, hover.id)) {
-      view.syncEdges()
-      physics.invalidate()
-    }
+    commands.connect(sourceId, hover.id)
     cancelConnect()
   }
 
@@ -300,18 +300,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
   }
 
   function commitMove() {
-    const node = graph.getNode(moveId)
-    if (node) {
-      node.x = lastGhostPoint.x
-      node.y = lastGhostPoint.y
-      node.z = lastGhostPoint.z
-      // Position-only change, like a physics tick: syncNodes moves the star,
-      // updateEdgePositions moves its incident lines to follow it.
-      view.syncNodes()
-      view.updateEdgePositions()
-      physics.invalidate() // matches every other mutator; no-ops if not running
-      graph.touchContent() // a manual move is saved data, unlike a physics tick
-    }
+    commands.move(moveId, lastGhostPoint)
     moveId = null
     view.clearGhost()
     mode = 'idle'
@@ -320,23 +309,8 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
   function deleteNode(nodeId) {
     if (sourceId === nodeId) cancelConnect()
     if (moveId === nodeId) cancelMove()
-    graph.removeNode(nodeId)
+    commands.deleteNode(nodeId)
     clearHover()
-    // Not `view.sync()`, which snaps sizes: the deleted node's neighbours
-    // should ease down to their new ones like after any other edit.
-    view.syncNodes()
-    view.syncEdges()
-    physics.invalidate()
-  }
-
-  /**
-   * Sizes are derived from the flag, so the view picks this up by itself on
-   * its next frame; physics needs telling, because collision radii and link
-   * lengths are only read when a run is seeded.
-   */
-  function toggleCore(node) {
-    graph.setCore(node.id, !node.is_core)
-    physics.invalidate()
   }
 
   // Both modal surfaces need the keyboard and the mouse to themselves.
@@ -386,7 +360,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     endModal()
     // The node can be gone if the session was torn down mid-edit.
     if (!values || !graph.getNode(node.id)) return
-    graph.setNodeText(node.id, values.label, values.notes)
+    commands.setNodeText(node.id, values.label, values.notes)
   }
 
   async function editEdge(edge) {
@@ -396,7 +370,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     const values = await editor.open('edge', [{ key: 'label', label: 'Label', value: edge.label }])
     endModal()
     if (!values || !graph.getEdge(edge.id)) return
-    graph.setEdgeLabel(edge.id, values.label)
+    commands.setEdgeLabel(edge.id, values.label)
   }
 
   /** Opens the editor panel as a modal and hands back what it collected. */
@@ -501,6 +475,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
         const result = await files.open(file, '')
         loading = false
         if (result.ok) {
+          commands.clear()
           status.success(`opened ${file.name} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`)
           overview.refit()
           return
@@ -528,6 +503,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
         const result = await files.open(file, values.password)
         loading = false
         if (result.ok) {
+          commands.clear()
           status.success(`opened ${file.name} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`)
           // A no-op unless the overview is up, where the orbit would otherwise
           // still be circling the previous map's centre.
@@ -572,6 +548,26 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
   }
 
   /**
+   * Ctrl/Cmd+Z and its redo chords. Works flying, in the overview and
+   * unlocked; never under a menu or panel (the caller's guard), so native
+   * undo inside a text field is left alone. A connect or move in progress is
+   * dropped first — it may hang off the very node the step removes.
+   */
+  function stepHistory(direction) {
+    if (loading) {
+      status.info('a file is being opened')
+      return
+    }
+    if (mode === 'connecting') cancelConnect()
+    else if (mode === 'moving') cancelMove()
+    const label = direction === 'undo' ? commands.undo() : commands.redo()
+    // The step may have removed whatever was under the crosshair; the next
+    // frame's raycast picks up whatever is there now.
+    clearHover()
+    status.info(label ? `${direction}: ${label}` : `nothing to ${direction}`)
+  }
+
+  /**
    * Guards Open and New map against silently discarding unsaved work.
    * Resolves `true` if it's safe to proceed — nothing was dirty, the user
    * chose to discard, or a save-first succeeded — or `false` if the caller
@@ -607,6 +603,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     graph.load({ nodes: [], edges: [] })
     physics.reset()
     view.sync()
+    commands.clear()
     files.clearCredentials()
     files.reset()
     clearHover()
@@ -645,7 +642,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
         else if (key === 'open') openMap()
         else if (key === 'save') saveMap({ reprompt: false })
         else if (key === 'export') exportMap()
-        else if (key === 'balance') physics.toggle()
+        else if (key === 'balance') commands.toggleBalance()
         return
       }
       if (key === 'back') return openMapMenu('top')
@@ -660,7 +657,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
       if (key === 'connect') startConnect(node.id)
       else if (key === 'edit') editNode(node)
       else if (key === 'move') startMove(node.id)
-      else if (key === 'core') toggleCore(node)
+      else if (key === 'core') commands.toggleCore(node.id)
       else if (key === 'delete') deleteNode(node.id)
       return
     }
@@ -669,10 +666,8 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     if (!edge) return
     if (key === 'edit') editEdge(edge)
     else if (key === 'delete') {
-      graph.removeEdge(edge.id)
+      commands.deleteEdge(edge.id)
       clearHover()
-      view.syncEdges()
-      physics.invalidate()
     }
   }
 
@@ -744,6 +739,15 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
         if (!event.repeat) exportMap()
         return
       }
+      // `key`, unlike the chords above: undo should follow the letter printed
+      // on the keyboard (Z sits elsewhere on AZERTY/QWERTZ). Ctrl+Y is the
+      // Windows/Linux redo; Cmd+Y is left alone, it opens Chrome's History.
+      const letter = event.key.toLowerCase()
+      if (letter === 'z' || (letter === 'y' && event.ctrlKey && !event.metaKey)) {
+        event.preventDefault()
+        if (!event.repeat) stepHistory(letter === 'y' || event.shiftKey ? 'redo' : 'undo')
+        return
+      }
     }
 
     // The one mode switch that releases pointer lock, so it is also the one
@@ -764,7 +768,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     // don't want. It works in the overview too, which is the natural place to
     // watch a layout settle from.
     if (event.code === 'KeyB' && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
-      physics.toggle()
+      commands.toggleBalance()
     }
   }
 

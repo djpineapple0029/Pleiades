@@ -58,8 +58,11 @@ const escapeHtml = (text) =>
 export function createFiles({ graph, view, camera, physics }) {
   let password = null
   let filename = DEFAULT_FILENAME
-  // The graph.contentRevision as of the last successful save or open (or a
-  // fresh New map) — a freshly constructed, untouched graph starts clean.
+  // The graph.contentRevision token as of the last successful save or open
+  // (or a fresh New map) — a freshly constructed, untouched graph starts
+  // clean. Undo can put this exact token back, which reads as clean again.
+  // null after a save taken mid-Balance: the run kept moving nodes past what
+  // went into the file, so no later state matches it.
   let savedRevision = graph.contentRevision
 
   function cameraBlock() {
@@ -106,7 +109,7 @@ export function createFiles({ graph, view, camera, physics }) {
     // Balance run keeps moving nodes while this is in flight. Those changes
     // must still leave the map dirty afterward, so only the revision as it
     // stood *at the request* counts as saved.
-    const revisionAtSave = graph.contentRevision
+    const revisionAtSave = physics.isRunning ? null : graph.contentRevision
     if (cryptoAvailable()) {
       try {
         const blob = await writeContainer(toPayload(), password ?? '')
@@ -301,9 +304,11 @@ export function createFiles({ graph, view, camera, physics }) {
     markClean() {
       savedRevision = graph.contentRevision
     },
-    /** Whether the graph holds changes since the last successful save, open, or New map. */
+    /** Whether the graph holds changes since the last successful save, open,
+     *  or New map. A Balance run in progress always counts: it is rewriting
+     *  positions every frame without taking new tokens for them. */
     get isDirty() {
-      return graph.contentRevision !== savedRevision
+      return Boolean(physics.isRunning) || graph.contentRevision !== savedRevision
     },
     /** Whether credentials have been established at all — even a blank password counts. */
     get hasCredentials() {
