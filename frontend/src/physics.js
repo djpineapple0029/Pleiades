@@ -293,6 +293,7 @@ export function createPhysics(graph, view) {
   }
 
   function stop() {
+    if (running) graph.touchContent()
     running = false
   }
 
@@ -322,6 +323,7 @@ export function createPhysics(graph, view) {
     seed(true)
     simulation.alpha(1)
     running = true
+    graph.touchContent()
     return true
   }
 

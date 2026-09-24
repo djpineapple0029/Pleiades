@@ -58,6 +58,9 @@ const escapeHtml = (text) =>
 export function createFiles({ graph, view, camera, physics }) {
   let password = null
   let filename = DEFAULT_FILENAME
+  // The graph.contentRevision as of the last successful save or open (or a
+  // fresh New map) — a freshly constructed, untouched graph starts clean.
+  let savedRevision = graph.contentRevision
 
   function cameraBlock() {
     return {
@@ -90,6 +93,7 @@ export function createFiles({ graph, view, camera, physics }) {
     physics.reset()
     view.sync()
     restoreCamera(payload.camera)
+    savedRevision = graph.contentRevision
   }
 
   /**
@@ -98,10 +102,16 @@ export function createFiles({ graph, view, camera, physics }) {
    * same server round trip v1 always used, now writing v2 there too.
    */
   async function save() {
+    // Read before the async work starts: saving doesn't pause editing, and a
+    // Balance run keeps moving nodes while this is in flight. Those changes
+    // must still leave the map dirty afterward, so only the revision as it
+    // stood *at the request* counts as saved.
+    const revisionAtSave = graph.contentRevision
     if (cryptoAvailable()) {
       try {
         const blob = await writeContainer(toPayload(), password ?? '')
         triggerDownload(new Blob([blob], { type: 'application/octet-stream' }), filename)
+        savedRevision = revisionAtSave
         return { ok: true }
       } catch (error) {
         return { ok: false, error: error.message || 'could not encrypt the file' }
@@ -115,6 +125,7 @@ export function createFiles({ graph, view, camera, physics }) {
       })
       if (!response.ok) return { ok: false, error: await errorFrom(response) }
       triggerDownload(await response.blob(), filename)
+      savedRevision = revisionAtSave
       return { ok: true }
     } catch (error) {
       return { ok: false, error: error.message || 'could not reach the server' }
@@ -275,6 +286,24 @@ export function createFiles({ graph, view, camera, physics }) {
       password = nextPassword ?? ''
       const trimmed = (nextFilename ?? '').trim()
       filename = !trimmed ? DEFAULT_FILENAME : trimmed.endsWith(SUFFIX) ? trimmed : `${trimmed}${SUFFIX}`
+    },
+    /** Forgets password and filename — used when New map starts a fresh document. */
+    clearCredentials() {
+      password = null
+      filename = DEFAULT_FILENAME
+    },
+    /** Re-baselines the dirty check against the graph's current content
+     *  revision, without a save or open — New map's "this is now clean". */
+    reset() {
+      savedRevision = graph.contentRevision
+    },
+    /** Same mechanism as `reset`, distinct name for the post-save/open call site. */
+    markClean() {
+      savedRevision = graph.contentRevision
+    },
+    /** Whether the graph holds changes since the last successful save, open, or New map. */
+    get isDirty() {
+      return graph.contentRevision !== savedRevision
     },
     /** Whether credentials have been established at all — even a blank password counts. */
     get hasCredentials() {

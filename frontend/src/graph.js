@@ -58,12 +58,24 @@ export function createGraph() {
   // Bumped by every change that can move a node's size: structure, a load, a
   // core flag. Consumers compare it to the value they last saw.
   let revision = 0
+  // Bumped by every change worth saving: everything `revision` tracks, plus
+  // label/notes text and a manual node move — neither of which affects size
+  // or tint, so `revision` must not move for them. `files.js`'s dirty check
+  // compares this against the value at the last successful save or open.
+  let contentRevision = 0
   let sizes = null // id -> size multiplier, rebuilt on demand
   let clusterCount = 0 // communities that earned a colour in the last run
 
   function changed() {
     revision++
+    contentRevision++
     sizes = null
+  }
+
+  /** Bumps only contentRevision — for a change that's worth saving but has no
+   *  size/tint effect: a physics run starting or stopping, a manual move. */
+  function touchContent() {
+    contentRevision++
   }
 
   // A loaded file can hold ids this counter would otherwise hand out again —
@@ -130,6 +142,26 @@ export function createGraph() {
     incident.delete(id)
     nodes.delete(id)
     changed()
+    return true
+  }
+
+  /** Assigns label/notes in place (labels.js polls `node.label`, so it must
+   *  stay the same object) and marks the map dirty. Never bumps `revision`:
+   *  text doesn't change a node's size or tint. */
+  function setNodeText(id, label, notes) {
+    const node = nodes.get(id)
+    if (!node) return false
+    node.label = label
+    node.notes = notes
+    contentRevision++
+    return true
+  }
+
+  function setEdgeLabel(id, label) {
+    const edge = edges.get(id)
+    if (!edge) return false
+    edge.label = label
+    contentRevision++
     return true
   }
 
@@ -275,6 +307,9 @@ export function createGraph() {
     removeNode,
     removeEdge,
     setCore,
+    setNodeText,
+    setEdgeLabel,
+    touchContent,
     sizeOf,
     recluster,
     toPayload,
@@ -284,6 +319,9 @@ export function createGraph() {
     degree: (id) => incident.get(id)?.size ?? 0,
     get revision() {
       return revision
+    },
+    get contentRevision() {
+      return contentRevision
     },
     /** Clusters in the last partition. 0 until the first Balance run. */
     get clusterCount() {

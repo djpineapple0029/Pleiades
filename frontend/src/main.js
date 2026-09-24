@@ -21,6 +21,7 @@ const overlay = document.getElementById('overlay')
 const crosshair = document.getElementById('crosshair')
 const notice = document.getElementById('notice')
 const hud = document.getElementById('hud')
+const speed = document.getElementById('speed')
 
 const { renderer, scene, camera, dispose: disposeScene } = createScene(canvas)
 const skybox = createSkybox(renderer)
@@ -67,6 +68,7 @@ const interaction = createInteraction({
   menu: createRadialMenu(document.getElementById('radial-menu')),
   editor: createEditor(document.getElementById('editor')),
   hud,
+  speedEl: speed,
 })
 
 flight.controls.addEventListener('lock', () => {
@@ -108,6 +110,16 @@ document.addEventListener('pointerlockerror', () => {
 
 const clock = new THREE.Clock()
 
+// `files.js` is the one thing here the viewer bundle never has, so the tab
+// title is owned here, not in interaction.js or viewerInteraction.js.
+let lastTitle = null
+function updateTitle() {
+  const title = `${files.isDirty ? '• ' : ''}${files.filename} — AtlasMap`
+  if (title === lastTitle) return
+  lastTitle = title
+  document.title = title
+}
+
 renderer.setAnimationLoop(() => {
   const delta = Math.min(clock.getDelta(), MAX_FRAME_DELTA)
   flight.update(delta)
@@ -122,7 +134,19 @@ renderer.setAnimationLoop(() => {
   // this reading, so the star pulse stops while everything else keeps timing.
   view.update(reducedMotion ? frozenElapsed : clock.elapsedTime, camera)
   bloom.render() // the whole frame, stars and bloom included
+  updateTitle()
 })
+
+// Skipped under HMR: without this, every dev-time module reload would trip
+// the same "you have unsaved changes" prompt the real close of a dirty tab
+// gets. Browsers ignore any custom text here and show their own wording.
+if (!import.meta.hot) {
+  window.addEventListener('beforeunload', (event) => {
+    if (!files.isDirty) return
+    event.preventDefault()
+    event.returnValue = ''
+  })
+}
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {

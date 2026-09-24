@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { createStatus } from './status.js'
 
 /**
  * The read-only half of `interaction.js`, for the exported viewer.
@@ -12,11 +13,13 @@ import * as THREE from 'three'
  *
  * Pointer lock behaves exactly as it does in the app: Tab is the one mode
  * switch that releases it, and Esc drops it as browsers reserve it.
+ *
+ * Shares `status.js` with `interaction.js` (imported directly, not through
+ * it — this module must never import anything that can mutate a graph) so
+ * the HUD's message-vs-state split can never drift between the two. In
+ * practice this side never calls `info`/`success`/`error`/`busy`: there are
+ * no file flows here, so the message channel just stays empty.
  */
-
-// How long the flight-speed readout holds the HUD before it goes back to
-// reporting what the crosshair is on.
-const STATUS_MS = 5000
 
 const nodeName = (node) => node.label || node.id
 
@@ -25,15 +28,13 @@ function sameTarget(a, b) {
   return Boolean(a && b) && a.kind === b.kind && a.id === b.id
 }
 
-export function createViewerInteraction({ camera, controls, flight, graph, view, overview, hud }) {
+export function createViewerInteraction({ camera, controls, flight, graph, view, overview, hud, speedEl }) {
   const raycaster = new THREE.Raycaster()
   const crosshair = new THREE.Vector2(0, 0) // dead centre of the viewport
+  const status = createStatus(hud)
 
   let hover = null // { kind, id } under the crosshair
-  let hudText = null
-  let status = null
-  let statusUntil = 0
-  let lastSpeed = flight.getSpeed()
+  let lastSpeedText = null
 
   function clearHover() {
     hover = null
@@ -53,34 +54,28 @@ export function createViewerInteraction({ camera, controls, flight, graph, view,
     return edge.label ? `edge ${edge.label} · ${ends}` : `edge ${ends}`
   }
 
-  function setStatus(text) {
-    status = text
-    statusUntil = performance.now() + STATUS_MS
+  function stateLine() {
+    const counts = `${graph.nodes.size} nodes · ${graph.edges.size} edges`
+    // The overview hides the overlay, so the HUD is the only thing left
+    // saying how to get out of it.
+    if (overview.isActive) return `overview · ${counts} · Tab to fly`
+    return (controls.isLocked && describe(hover)) || counts
   }
 
   function updateHud() {
-    let text = ''
-    if (status !== null && performance.now() < statusUntil) {
-      text = status
-    } else {
-      status = null
-      const counts = `${graph.nodes.size} nodes · ${graph.edges.size} edges`
-      // The overview hides the overlay, so the HUD is the only thing left
-      // saying how to get out of it.
-      if (overview.isActive) text = `overview · ${counts} · Tab to fly`
-      else text = (controls.isLocked && describe(hover)) || counts
-    }
-    if (text === hudText) return
-    hudText = text
-    hud.textContent = text
+    status.setState(stateLine())
+    status.tick()
+  }
+
+  function updateSpeedReadout() {
+    const speedText = `${flight.getSpeed().toFixed(2)}x`
+    if (speedText === lastSpeedText) return
+    lastSpeedText = speedText
+    speedEl.textContent = speedText
   }
 
   function update() {
-    const speed = flight.getSpeed()
-    if (speed !== lastSpeed) {
-      lastSpeed = speed
-      setStatus(`flight speed ${speed.toFixed(2)}x`)
-    }
+    updateSpeedReadout()
 
     if (!controls.isLocked) {
       if (hover) clearHover()
