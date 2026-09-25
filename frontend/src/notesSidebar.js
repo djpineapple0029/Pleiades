@@ -1,21 +1,3 @@
-const STORAGE_KEY = 'atlasmap.notesSidebar'
-
-function readStored() {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === 'open'
-  } catch {
-    return false
-  }
-}
-
-function writeStored(open) {
-  try {
-    localStorage.setItem(STORAGE_KEY, open ? 'open' : 'closed')
-  } catch {
-    // Private window or blocked storage: the toggle just won't be remembered.
-  }
-}
-
 /**
  * The notes panel on the right. Two modes:
  *
@@ -34,14 +16,13 @@ export function createNotesSidebar(aside) {
   body.className = 'notes-body'
   aside.append(heading, body)
 
-  let visible = readStored()
+  let visible = false // off on every load; N turns it on for the session
   let hasTarget = false // a star was under the crosshair at the last `show`
   let resolve = null
   aside.hidden = true
 
   function setVisible(value) {
     visible = value
-    writeStored(value)
     if (!resolve) aside.hidden = !visible || !hasTarget
   }
 
