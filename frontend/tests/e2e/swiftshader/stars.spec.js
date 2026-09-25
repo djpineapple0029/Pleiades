@@ -21,9 +21,11 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
     const { createPhysics } = await import('/src/physics.js')
     const { createFiles } = await import('/src/files.js')
 
-    const W = 640, H = 480
+    const W = 640,
+      H = 480
     const canvas = document.createElement('canvas')
-    canvas.width = W; canvas.height = H
+    canvas.width = W
+    canvas.height = H
     document.body.append(canvas)
     const renderer = new THREE.WebGLRenderer({ canvas })
     renderer.setSize(W, H, false)
@@ -79,7 +81,8 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
       renderer.setRenderTarget(null)
     }
     const instanced = () => root.children.filter((c) => c.isInstancedMesh)
-    const plainNodeMeshes = () => root.children.filter((c) => c.isMesh && !c.isInstancedMesh && !c.isLineSegments2 && c.visible)
+    const plainNodeMeshes = () =>
+      root.children.filter((c) => c.isMesh && !c.isInstancedMesh && !c.isLineSegments2 && c.visible)
 
     // --- 500 nodes, 499 edges: how many draw calls? ------------------------
     const ids = []
@@ -104,18 +107,22 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
     graph.load({ nodes: [], edges: [] })
     view.sync()
     const patch = []
-    for (let i = 0; i < 25; i++) patch.push(graph.addNode({ x: (i % 5) * 30 - 60, y: Math.floor(i / 5) * 30 - 60, z: 0 }))
+    for (let i = 0; i < 25; i++)
+      patch.push(graph.addNode({ x: (i % 5) * 30 - 60, y: Math.floor(i / 5) * 30 - 60, z: 0 }))
     view.sync()
     look(0, 0, 0, 200)
 
-    const slotOfNode = (node, live = instanced()[0]) => [...Array(live.count).keys()].find((s) => {
-      const m = new THREE.Matrix4(); live.getMatrixAt(s, m)
-      const p = new THREE.Vector3().setFromMatrixPosition(m)
-      return p.distanceTo(new THREE.Vector3(node.x, node.y, node.z)) < 1e-3
-    })
+    const slotOfNode = (node, live = instanced()[0]) =>
+      [...Array(live.count).keys()].find((s) => {
+        const m = new THREE.Matrix4()
+        live.getMatrixAt(s, m)
+        const p = new THREE.Vector3().setFromMatrixPosition(m)
+        return p.distanceTo(new THREE.Vector3(node.x, node.y, node.z)) < 1e-3
+      })
     const starOf = (node, live = instanced()[0]) => {
       const s = slotOfNode(node, live)
-      const a = live.geometry.getAttribute('instanceStar'), t = live.geometry.getAttribute('instanceTint')
+      const a = live.geometry.getAttribute('instanceStar'),
+        t = live.geometry.getAttribute('instanceTint')
       return [a.getX(s), a.getY(s), a.getZ(s), t.getX(s), t.getY(s), t.getZ(s)]
     }
 
@@ -138,7 +145,11 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
     r.snapshotSpread = Math.max(...snapshot) - Math.min(...snapshot)
     r.distinctRates = new Set(Array.from({ length: mesh.count }, (_, s) => stars.getY(s))).size
     r.distinctSeeds = new Set(Array.from({ length: mesh.count }, (_, s) => stars.getZ(s))).size
-    const tintList = Array.from({ length: mesh.count }, (_, s) => [tints.getX(s), tints.getY(s), tints.getZ(s)])
+    const tintList = Array.from({ length: mesh.count }, (_, s) => [
+      tints.getX(s),
+      tints.getY(s),
+      tints.getZ(s),
+    ])
     r.blueish = tintList.filter(([cr, , cb]) => cb > cr + 0.05).length
     r.warm = tintList.filter(([cr, , cb]) => cr > cb + 0.05).length
 
@@ -161,9 +172,16 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
     renderAt(1.0)
     const c = patch[12]
     const e = NODE_RADIUS * 4
-    r.billboardEdge = Math.max(...[
-      [e * 0.98, 0], [0, e * 0.98], [-e * 0.98, 0], [0, -e * 0.98], [e * 0.7, e * 0.7], [-e * 0.7, -e * 0.7],
-    ].map(([dx, dy]) => Math.max(...pixelAtPoint(c.x + dx, c.y + dy, 0))))
+    r.billboardEdge = Math.max(
+      ...[
+        [e * 0.98, 0],
+        [0, e * 0.98],
+        [-e * 0.98, 0],
+        [0, -e * 0.98],
+        [e * 0.7, e * 0.7],
+        [-e * 0.7, -e * 0.7],
+      ].map(([dx, dy]) => Math.max(...pixelAtPoint(c.x + dx, c.y + dy, 0))),
+    )
     look(0, 0, 0, 200)
 
     // --- Picking on the node radius, not the billboard ----------------------
@@ -187,14 +205,18 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
     r.victimPixel = pixelAt(victim)
     const survivors = patch.filter((n) => n !== victim)
     r.survivorsPicked = survivors.every((n) => pick(n)?.id === n.id)
-    r.movedKeepsColor = JSON.stringify([pixelAt(lastNode, glowOffset), pixelAt(lastNode, -glowOffset)]) === JSON.stringify(lastColorBefore)
+    r.movedKeepsColor =
+      JSON.stringify([pixelAt(lastNode, glowOffset), pixelAt(lastNode, -glowOffset)]) ===
+      JSON.stringify(lastColorBefore)
     r.movedKeepsStar = JSON.stringify(starOf(lastNode)) === JSON.stringify(lastStarBefore)
     r.countAfterDelete = mesh.count
 
     // --- Stale-bounds trap: move a node far outside the old bounding sphere --
     renderAt(0.5) // bounds computed around the patch
     const far = patch[3]
-    far.x = 1500; far.y = -900; far.z = 400
+    far.x = 1500
+    far.y = -900
+    far.z = 400
     view.syncNodes()
     look(far.x, far.y, far.z, 200)
     r.farPicked = pick(far)?.id === far.id
@@ -217,7 +239,8 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
     r.edgeStarOffscreen = ndcOf(0, 0, 0).x < -1
     const buf = frame()
     let edgeLit = 0
-    for (let y = 0; y < H; y++) for (let x = 0; x < 20; x++) edgeLit = Math.max(edgeLit, buf[(y * W + x) * 4], buf[(y * W + x) * 4 + 2])
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < 20; x++) edgeLit = Math.max(edgeLit, buf[(y * W + x) * 4], buf[(y * W + x) * 4 + 2])
     r.edgeStarLit = edgeLit
 
     // --- Rays are fixed in the world, not painted on the screen --------------
@@ -234,7 +257,8 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
     }
     const meanDiff = (a, b) => {
       let s = 0
-      for (let i = 0; i < a.length; i += 4) s += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])
+      for (let i = 0; i < a.length; i += 4)
+        s += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])
       return s / (a.length / 4)
     }
     const D = 40
@@ -247,17 +271,24 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
     const rolled = shotFrom(0, 0, D, rollAngle)
     const rotate = (img, angle) => {
       const outImg = new Uint8Array(img.length)
-      const c = Math.cos(angle), s = Math.sin(angle)
-      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-        const dx = x - W / 2, dy = y - H / 2
-        const sx = Math.round(W / 2 + c * dx - s * dy), sy = Math.round(H / 2 + s * dx + c * dy)
-        if (sx < 0 || sy < 0 || sx >= W || sy >= H) continue
-        for (let k = 0; k < 4; k++) outImg[(y * W + x) * 4 + k] = img[(sy * W + sx) * 4 + k]
-      }
+      const c = Math.cos(angle),
+        s = Math.sin(angle)
+      for (let y = 0; y < H; y++)
+        for (let x = 0; x < W; x++) {
+          const dx = x - W / 2,
+            dy = y - H / 2
+          const sx = Math.round(W / 2 + c * dx - s * dy),
+            sy = Math.round(H / 2 + s * dx + c * dy)
+          if (sx < 0 || sy < 0 || sx >= W || sy >= H) continue
+          for (let k = 0; k < 4; k++) outImg[(y * W + x) * 4 + k] = img[(sy * W + sx) * 4 + k]
+        }
       return outImg
     }
     r.rollVsUnrotated = meanDiff(rolled, front)
-    r.rollVsRotated = Math.min(meanDiff(rolled, rotate(front, rollAngle)), meanDiff(rolled, rotate(front, -rollAngle)))
+    r.rollVsRotated = Math.min(
+      meanDiff(rolled, rotate(front, rollAngle)),
+      meanDiff(rolled, rotate(front, -rollAngle)),
+    )
     graph.removeNode(lone.id)
 
     // --- Growth past the initial 256 slots -----------------------------------
@@ -270,7 +301,8 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
     const keeperStar = starOf(keeper)
     const before = instanced()[0]
     const grown = []
-    for (let i = 0; i < 600; i++) grown.push(graph.addNode({ x: 3000 + (i % 30) * 14, y: Math.floor(i / 30) * 14, z: 0 }))
+    for (let i = 0; i < 600; i++)
+      grown.push(graph.addNode({ x: 3000 + (i % 30) * 14, y: Math.floor(i / 30) * 14, z: 0 }))
     view.syncNodes()
     const after = instanced()
     r.growthOneMesh = after.length === 1
@@ -290,7 +322,14 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
     physics.reset()
     view.sync()
     const tree = []
-    for (let i = 0; i < 60; i++) tree.push(graph.addNode({ x: (Math.random() - 0.5) * 20, y: (Math.random() - 0.5) * 20, z: (Math.random() - 0.5) * 20 }))
+    for (let i = 0; i < 60; i++)
+      tree.push(
+        graph.addNode({
+          x: (Math.random() - 0.5) * 20,
+          y: (Math.random() - 0.5) * 20,
+          z: (Math.random() - 0.5) * 20,
+        }),
+      )
     for (let i = 1; i < 60; i++) graph.addEdge(tree[i].id, tree[Math.floor(i / 3)].id)
     view.sync()
     physics.start()
@@ -311,7 +350,11 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
     const a = other.addNode({ x: -60, y: 0, z: 0, label: 'left' })
     const b = other.addNode({ x: 60, y: 0, z: 0, label: 'right' })
     other.addEdge(a.id, b.id)
-    files.applyPayload(JSON.parse(JSON.stringify({ ...other.toPayload(), camera: { position: [0, 0, 300], rotation: [0, 0, 0] } })))
+    files.applyPayload(
+      JSON.parse(
+        JSON.stringify({ ...other.toPayload(), camera: { position: [0, 0, 300], rotation: [0, 0, 0] } }),
+      ),
+    )
     camera.updateMatrixWorld(true)
     r.loadedCount = instanced()[0].count
     r.loadedLeft = pick(graph.getNode(a.id))?.id === a.id
@@ -335,7 +378,8 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
     graph.load({ nodes: [], edges: [] })
     physics.reset()
     view.sync()
-    for (let i = 0; i < 3000; i++) graph.addNode({ x: Math.random() * 2000, y: Math.random() * 2000, z: Math.random() * 2000 })
+    for (let i = 0; i < 3000; i++)
+      graph.addNode({ x: Math.random() * 2000, y: Math.random() * 2000, z: Math.random() * 2000 })
     view.sync()
     let t0 = performance.now()
     for (let i = 0; i < 50; i++) view.syncNodes()
@@ -352,40 +396,77 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
   }, threeUrl)
 
   expect.soft(out.calls500, '500 nodes + 499 edges = 3 draw calls (stars, edges, drift)').toBe(3)
-  expect.soft(out.instancedCount === 1 && out.instanceCount === 500, 'exactly one InstancedMesh holding every node').toBe(true)
+  expect
+    .soft(
+      out.instancedCount === 1 && out.instanceCount === 500,
+      'exactly one InstancedMesh holding every node',
+    )
+    .toBe(true)
   expect.soft(out.plainMeshes, 'no per-node meshes left').toBe(0)
   expect.soft(out.coreMin, 'core stays saturated through the pulse').toBeGreaterThanOrEqual(240)
-  expect.soft(out.pulseRanges.every((d) => d >= 20), 'every star visibly pulses').toBe(true)
+  expect
+    .soft(
+      out.pulseRanges.every((d) => d >= 20),
+      'every star visibly pulses',
+    )
+    .toBe(true)
   expect.soft(out.snapshotSpread, 'pulses are not in sync').toBeGreaterThanOrEqual(40)
   expect.soft(out.distinctRates, 'rates vary across nodes').toBeGreaterThanOrEqual(4)
   expect.soft(out.distinctSeeds, 'every star has its own ray pattern').toBeGreaterThanOrEqual(24)
   expect.soft(out.blueish >= 5 && out.warm >= 2, 'tints span blue and warm').toBe(true)
   expect.soft(out.shimmerMoves, 'rays shimmer over time').toBeGreaterThanOrEqual(30)
-  expect.soft(out.wrapJump, 'no jump across the clock wrap (pulse + shimmer, whole frame)').toBeLessThanOrEqual(2)
+  expect
+    .soft(out.wrapJump, 'no jump across the clock wrap (pulse + shimmer, whole frame)')
+    .toBeLessThanOrEqual(2)
   expect.soft(out.lateDrift, 'clock is precise after hours of uptime (whole frame)').toBeLessThanOrEqual(2)
   expect.soft(out.billboardEdge, 'nothing lit at the billboard edge').toBeLessThanOrEqual(3)
   expect.soft(out.allPicked, 'every star picks as its own node').toBe(true)
   expect.soft(out.pickInsideRadius, 'pick inside the node radius hits').toBe(true)
-  expect.soft(out.pickInRays === null && out.pickInRaysLit > 10, 'pick in the rays, outside the radius, misses').toBe(true)
-  expect.soft(out.victimGone && out.victimPixel.every((v) => v <= 3), 'deleted node no longer picks or draws').toBe(true)
+  expect
+    .soft(out.pickInRays === null && out.pickInRaysLit > 10, 'pick in the rays, outside the radius, misses')
+    .toBe(true)
+  expect
+    .soft(out.victimGone && out.victimPixel.every((v) => v <= 3), 'deleted node no longer picks or draws')
+    .toBe(true)
   expect.soft(out.survivorsPicked, 'survivors still pick correctly after swap-remove').toBe(true)
   expect.soft(out.movedKeepsColor && out.movedKeepsStar, 'node moved into the hole keeps its star').toBe(true)
   expect.soft(out.countAfterDelete, 'count drops on delete').toBe(24)
   expect.soft(out.farPicked, 'node moved outside the old bounds is pickable').toBe(true)
   expect.soft(out.farNotCulled, 'node moved outside the old bounds is not culled').toBe(true)
-  expect.soft(out.edgeStarOffscreen && out.edgeStarLit > 10, 'off-screen centre, on-screen rays: not culled').toBe(true)
+  expect
+    .soft(out.edgeStarOffscreen && out.edgeStarLit > 10, 'off-screen centre, on-screen rays: not culled')
+    .toBe(true)
   expect.soft(out.orbitChange, 'orbiting 20° changes how a star looks').toBeGreaterThan(3)
-  expect.soft(out.rollVsRotated, 'rolling the camera turns the rays with the world').toBeLessThan(out.rollVsUnrotated * 0.35)
-  expect.soft(out.growthOneMesh && out.growthReplaced && out.growthCapacity === 2048 && out.growthCount === 1121, 'growth keeps one mesh, replaced').toBe(true)
+  expect
+    .soft(out.rollVsRotated, 'rolling the camera turns the rays with the world')
+    .toBeLessThan(out.rollVsUnrotated * 0.35)
+  expect
+    .soft(
+      out.growthOneMesh && out.growthReplaced && out.growthCapacity === 2048 && out.growthCount === 1121,
+      'growth keeps one mesh, replaced',
+    )
+    .toBe(true)
   expect.soft(out.renderOrderKept, 'render order survives reallocation').toBe(true)
   expect.soft(out.grownPicked, 'grown nodes pickable').toBe(true)
   expect.soft(out.callsAfterGrowth, 'still 1 draw call for nodes after growth (no edges)').toBe(1)
   expect.soft(out.starPreservedAcrossGrowth, 'star survives reallocation').toBe(true)
   expect.soft(out.settled, 'physics settles').toBe(true)
   expect.soft(out.pickedAfterSettle, 'every node pickable after a settle').toBe(60)
-  expect.soft(out.loadedCount === 2 && out.loadedLeft && out.loadedEdgeMid === 'edge', 'file load renders onto instances').toBe(true)
-  expect.soft(out.coreOverEdge.every((v) => v >= 240), 'edge does not darken the core it enters').toBe(true)
-  expect.soft(out.haloOnNode && out.haloFollows && out.haloHidden, 'hover halo sits on, follows, and hides').toBe(true)
+  expect
+    .soft(
+      out.loadedCount === 2 && out.loadedLeft && out.loadedEdgeMid === 'edge',
+      'file load renders onto instances',
+    )
+    .toBe(true)
+  expect
+    .soft(
+      out.coreOverEdge.every((v) => v >= 240),
+      'edge does not darken the core it enters',
+    )
+    .toBe(true)
+  expect
+    .soft(out.haloOnNode && out.haloFollows && out.haloHidden, 'hover halo sits on, follows, and hides')
+    .toBe(true)
   expect.soft(out.calls3000, '3000 nodes: 1 draw call').toBe(1)
   expect.soft(out.syncMs3000, '3000 nodes: syncNodes under 2 ms').toBeLessThan(2)
   expect.soft(out.raycastMs3000, '3000 nodes: raycast under 1 ms').toBeLessThan(1)

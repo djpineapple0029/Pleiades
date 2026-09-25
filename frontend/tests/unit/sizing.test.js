@@ -11,7 +11,8 @@ import { ALWAYS_ON_SIZE } from '../../src/labels.js'
 
 describe('sizing', () => {
   it('a core is 2.25x (3x brought down by a quarter)', () => expect(CORE_SIZE).toBe(2.25))
-  it('a core is still labelled at any distance', () => expect(CORE_SIZE).toBeGreaterThanOrEqual(ALWAYS_ON_SIZE))
+  it('a core is still labelled at any distance', () =>
+    expect(CORE_SIZE).toBeGreaterThanOrEqual(ALWAYS_ON_SIZE))
 
   // A chain n0 - n1 - ... - n9, plus a hub with 20 spokes hanging off n9.
   const g = createGraph()
@@ -30,7 +31,8 @@ describe('sizing', () => {
   it('setCore bumps revision', () => expect(coreBumpsRevision).toBe(true))
   it('the core is CORE_SIZE', () => expect(sizes[4]).toBe(CORE_SIZE))
   it("a core's neighbours get no boost", () => expect(sizes[3] === 1 && sizes[5] === 1).toBe(true))
-  it('nor does anything further out', () => expect(sizes.every((size, i) => i === 4 || size === 1)).toBe(true))
+  it('nor does anything further out', () =>
+    expect(sizes.every((size, i) => i === 4 || size === 1)).toBe(true))
   it('a 21-link hub gets no boost', () => expect(g.sizeOf(chain[9])).toBe(1))
 
   const rev1 = g.revision
@@ -41,8 +43,10 @@ describe('sizing', () => {
 
   // Two neighbouring cores are both CORE_SIZE; nothing sums.
   g.setCore(chain[5], true)
-  const twoCores = g.sizeOf(chain[4]) === CORE_SIZE && g.sizeOf(chain[5]) === CORE_SIZE && g.sizeOf(chain[6]) === 1
-  it('two adjacent cores are each CORE_SIZE, and their shared neighbour is 1x', () => expect(twoCores).toBe(true))
+  const twoCores =
+    g.sizeOf(chain[4]) === CORE_SIZE && g.sizeOf(chain[5]) === CORE_SIZE && g.sizeOf(chain[6]) === 1
+  it('two adjacent cores are each CORE_SIZE, and their shared neighbour is 1x', () =>
+    expect(twoCores).toBe(true))
 
   g.setCore(chain[4], false)
   g.setCore(chain[5], false)
@@ -52,7 +56,8 @@ describe('sizing', () => {
   // load(): the flag round-trips, the size is derived rather than stored.
   g.setCore(chain[0], true)
   const payload = g.toPayload()
-  const payloadCarriesIsCoreNotSize = payload.nodes.find((n) => n.id === chain[0]).is_core === true && !('size' in payload.nodes[0])
+  const payloadCarriesIsCoreNotSize =
+    payload.nodes.find((n) => n.id === chain[0]).is_core === true && !('size' in payload.nodes[0])
   const g2 = createGraph()
   const rev2 = g2.revision
   g2.load(payload)

@@ -63,7 +63,7 @@ export function createSearchPanel(root) {
         })
         item.addEventListener('mousemove', () => select(index))
         return item
-      })
+      }),
     )
   }
 

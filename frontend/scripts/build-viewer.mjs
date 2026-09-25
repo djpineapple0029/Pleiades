@@ -81,7 +81,9 @@ if (styleTag) {
     fail('dropped the woff fallbacks but no woff2 face survived')
   }
   if (css.length !== beforeStrip) {
-    console.log(`build-viewer: dropped woff fallbacks, ${((beforeStrip - css.length) / 1024).toFixed(1)} kB saved`)
+    console.log(
+      `build-viewer: dropped woff fallbacks, ${((beforeStrip - css.length) / 1024).toFixed(1)} kB saved`,
+    )
   }
 }
 
@@ -114,5 +116,5 @@ writeFileSync(outFile, html)
 const kb = (n) => `${(n / 1024).toFixed(1)} kB`
 console.log(
   `build-viewer: viewer-template.html ${kb(Buffer.byteLength(html))} ` +
-    `(js ${kb(js.length)}, css+fonts ${kb(css.length)})`
+    `(js ${kb(js.length)}, css+fonts ${kb(css.length)})`,
 )

@@ -29,17 +29,33 @@ export const ACTIONS = new Map(schema.keybinds.map((action) => [action.id, actio
 const MODIFIERS = { mod: 'Mod', ctrl: 'Ctrl', cmd: 'Cmd', alt: 'Alt', shift: 'Shift' }
 const MODIFIER_ORDER = ['Mod', 'Ctrl', 'Cmd', 'Alt', 'Shift']
 const NAMED = [
-  'Space', 'Shift', 'Enter', 'Tab', 'Backspace', 'Delete', 'Insert', 'Home', 'End', 'PageUp', 'PageDown',
-  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'Space',
+  'Shift',
+  'Enter',
+  'Tab',
+  'Backspace',
+  'Delete',
+  'Insert',
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
   ...Array.from({ length: 12 }, (_, i) => `F${i + 1}`),
 ]
 const NAMED_BY_LOWER = new Map(NAMED.map((name) => [name.toLowerCase(), name]))
-const CHARS = new Set("/?[]{};:'\",.<>-_=`~!@#$%^&*()|\\")
+const CHARS = new Set('/?[]{};:\'",.<>-_=`~!@#$%^&*()|\\')
 
 /** `"Mod+Shift+S"` → `{ mods: Set, kind, key }`, or null if it can't be read. */
 export function parseChord(text) {
   if (typeof text !== 'string' || !text.trim()) return null
-  const parts = text.trim().split('+').map((part) => part.trim())
+  const parts = text
+    .trim()
+    .split('+')
+    .map((part) => part.trim())
   if (parts.some((part) => !part)) return null
   const keyPart = parts.pop()
   const mods = new Set()

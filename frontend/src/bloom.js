@@ -98,7 +98,12 @@ void main() {
 }
 `
 
-const TARGET_OPTIONS = { depthBuffer: false, generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter }
+const TARGET_OPTIONS = {
+  depthBuffer: false,
+  generateMipmaps: false,
+  minFilter: THREE.LinearFilter,
+  magFilter: THREE.LinearFilter,
+}
 
 /**
  * Selective bloom for the star layer. Each frame the stars are drawn once,
@@ -122,9 +127,15 @@ export function createBloom(renderer, scene, camera, options = {}) {
   // whatever it is, and needs no more range here. The GPU blends in linear
   // and encodes on write. Half-float would double the bandwidth of the three
   // full-screen passes that touch it — measured at ~0.3 ms at 2560x1600.
-  const starTarget = new THREE.WebGLRenderTarget(1, 1, { ...TARGET_OPTIONS, colorSpace: THREE.SRGBColorSpace })
+  const starTarget = new THREE.WebGLRenderTarget(1, 1, {
+    ...TARGET_OPTIONS,
+    colorSpace: THREE.SRGBColorSpace,
+  })
   // The bloom levels are small, and blurred light sums past 1.0.
-  const levels = Array.from({ length: LEVELS }, () => new THREE.WebGLRenderTarget(1, 1, { ...TARGET_OPTIONS, type: THREE.HalfFloatType }))
+  const levels = Array.from(
+    { length: LEVELS },
+    () => new THREE.WebGLRenderTarget(1, 1, { ...TARGET_OPTIONS, type: THREE.HalfFloatType }),
+  )
 
   const quad = new FullScreenQuad()
   const passDefaults = { vertexShader: VERTEX, depthTest: false, depthWrite: false }

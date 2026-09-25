@@ -20,11 +20,15 @@ test('save through the password panel, then open the same file back in', async (
   await page.waitForFunction(() => document.pointerLockElement !== null, null, { timeout: 5000 })
 
   for (let i = 0; i < 3; i++) {
-    await page.mouse.down(); await page.mouse.up()
+    await page.mouse.down()
+    await page.mouse.up()
     await page.waitForTimeout(40)
-    await page.mouse.down(); await page.mouse.up()
+    await page.mouse.down()
+    await page.mouse.up()
     await page.waitForTimeout(120)
-    await page.keyboard.down('KeyD'); await page.waitForTimeout(280); await page.keyboard.up('KeyD')
+    await page.keyboard.down('KeyD')
+    await page.waitForTimeout(280)
+    await page.keyboard.up('KeyD')
     await page.waitForTimeout(100)
   }
   expect.soft(/3 nodes/.test(await page.textContent('#hud')), 'three nodes to save').toBe(true)
@@ -58,7 +62,9 @@ test('save through the password panel, then open the same file back in', async (
   }
 
   await page.waitForTimeout(600)
-  expect.soft(/downloaded regress\.atlasmap/.test(await page.textContent('#hud')), 'HUD reports the save').toBe(true)
+  expect
+    .soft(/downloaded regress\.atlasmap/.test(await page.textContent('#hud')), 'HUD reports the save')
+    .toBe(true)
 
   // ---- open it straight back
   if (saved) {

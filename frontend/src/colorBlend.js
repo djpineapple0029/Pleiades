@@ -108,7 +108,10 @@ export function computeBlend(nodes, incident, edges) {
   for (const [id, sum] of pull) {
     const own = lab.get(id)
     const total = 1 + anchor.get(id)
-    lab.set(id, own.map((v, i) => (v + sum[i]) / total))
+    lab.set(
+      id,
+      own.map((v, i) => (v + sum[i]) / total),
+    )
   }
   const holdOf = (id) => 1 + (anchor.get(id) ?? 0)
 
@@ -127,7 +130,10 @@ export function computeBlend(nodes, incident, edges) {
         for (let i = 0; i < 4; i++) mean[i] += c[i] / around.length
       }
       const mix = SMOOTH_MIX / holdOf(id)
-      next.set(id, own.map((v, i) => v + (mean[i] - v) * mix))
+      next.set(
+        id,
+        own.map((v, i) => v + (mean[i] - v) * mix),
+      )
     }
     for (const [id, c] of next) lab.set(id, c)
   }
@@ -173,7 +179,10 @@ export function computeBlend(nodes, incident, edges) {
       }
       if (total < 1e-12) continue
       const mix = SPATIAL_MIX / holdOf(node.id)
-      lab.set(node.id, own.map((v, i) => v + (field[i] / total - v) * mix))
+      lab.set(
+        node.id,
+        own.map((v, i) => v + (field[i] / total - v) * mix),
+      )
     }
   }
 

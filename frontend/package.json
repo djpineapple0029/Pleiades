@@ -2,10 +2,16 @@
   "name": "atlasmap-frontend",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build && vite build --config vite.viewer.config.js && node scripts/build-viewer.mjs",
     "preview": "vite preview",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "test:e2e": "playwright test --project=swiftshader",
     "test:e2e:headed": "playwright test --project=headed-lock",
@@ -20,7 +26,11 @@
     "three": "^0.180.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.9",
     "vite": "^7.0.0",
     "vitest": "^5.0.1"
   }

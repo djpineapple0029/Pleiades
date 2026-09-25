@@ -68,6 +68,7 @@ export function renderResumePill(pill, keymap) {
   const nodes = [document.createTextNode('Click')]
   if (resume.length) nodes.push(document.createTextNode(' or '), ...resume.map(kbd))
   nodes.push(document.createTextNode(' to fly'))
-  if (help.length) nodes.push(document.createTextNode(' · '), ...help.map(kbd), document.createTextNode(' keys'))
+  if (help.length)
+    nodes.push(document.createTextNode(' · '), ...help.map(kbd), document.createTextNode(' keys'))
   pill.replaceChildren(...nodes)
 }

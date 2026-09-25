@@ -11,7 +11,10 @@ import { test, expect } from '@playwright/test'
 
 const ctrlS = (page, extra = {}) =>
   page.evaluate(
-    (extra) => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyS', key: 's', ctrlKey: true, bubbles: true, ...extra })),
+    (extra) =>
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { code: 'KeyS', key: 's', ctrlKey: true, bubbles: true, ...extra }),
+      ),
     extra,
   )
 
@@ -27,25 +30,38 @@ test('editor focus trap, and a no-password save/reopen round trip', async ({ pag
   // --- Tab/Enter focus-trap checks, via Ctrl+Shift+S (always prompts) ---
   await ctrlS(page, { shiftKey: true })
   await page.waitForTimeout(200)
-  expect.soft(await page.evaluate(() => !document.getElementById('editor').hidden), 'editor open for save-as').toBe(true)
+  expect
+    .soft(await page.evaluate(() => !document.getElementById('editor').hidden), 'editor open for save-as')
+    .toBe(true)
 
-  const firstFieldLabel = await page.evaluate(() => document.querySelectorAll('.editor-row span')[0]?.textContent)
+  const firstFieldLabel = await page.evaluate(
+    () => document.querySelectorAll('.editor-row span')[0]?.textContent,
+  )
   expect.soft(firstFieldLabel, 'first field is filename').toBe('File name')
 
   for (let i = 0; i < 3; i++) await page.keyboard.press('Tab')
   await page.waitForTimeout(50)
-  expect.soft(
-    await page.evaluate(() => document.activeElement === document.querySelector('.editor-row input')),
-    'Tab cycles through all 3 fields and back into the panel (no escape)',
-  ).toBe(true)
+  expect
+    .soft(
+      await page.evaluate(() => document.activeElement === document.querySelector('.editor-row input')),
+      'Tab cycles through all 3 fields and back into the panel (no escape)',
+    )
+    .toBe(true)
 
   await page.keyboard.press('Enter')
   await page.waitForTimeout(50)
-  expect.soft(await page.evaluate(() => !document.getElementById('editor').hidden), 'Enter on a non-last field does not submit').toBe(true)
+  expect
+    .soft(
+      await page.evaluate(() => !document.getElementById('editor').hidden),
+      'Enter on a non-last field does not submit',
+    )
+    .toBe(true)
 
   await page.keyboard.press('Escape')
   await page.waitForTimeout(150)
-  expect.soft(await page.evaluate(() => document.getElementById('editor').hidden), 'Escape cancels the panel').toBe(true)
+  expect
+    .soft(await page.evaluate(() => document.getElementById('editor').hidden), 'Escape cancels the panel')
+    .toBe(true)
 
   // --- Full round trip: spawn a node, save with no password, reopen with no prompt ---
   // Escape (above) dropped pointer lock, same as it always has — reacquire it
@@ -76,12 +92,21 @@ test('editor focus trap, and a no-password save/reopen round trip', async ({ pag
 
   const [chooser] = await Promise.all([
     page2.waitForEvent('filechooser'),
-    page2.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyO', key: 'o', ctrlKey: true, bubbles: true }))),
+    page2.evaluate(() =>
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { code: 'KeyO', key: 'o', ctrlKey: true, bubbles: true }),
+      ),
+    ),
   ])
   await chooser.setFiles(savedPath)
   await page2.waitForTimeout(300)
 
-  expect.soft(await page2.evaluate(() => document.getElementById('editor').hidden), 'opening a no-password file never shows a password prompt').toBe(true)
+  expect
+    .soft(
+      await page2.evaluate(() => document.getElementById('editor').hidden),
+      'opening a no-password file never shows a password prompt',
+    )
+    .toBe(true)
 
   const hudAfterOpen = await page2.evaluate(() => document.getElementById('hud')?.textContent)
   expect.soft(/\b1 nodes\b/.test(hudAfterOpen ?? ''), 'the reopened map has the node back').toBe(true)

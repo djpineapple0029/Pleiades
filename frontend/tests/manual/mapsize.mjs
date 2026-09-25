@@ -3,7 +3,9 @@
 // which measures pre-minification comments instead of shipped code).
 import { readFileSync } from 'node:fs'
 const map = JSON.parse(readFileSync(process.argv[2], 'utf8'))
-const B64 = new Map([...'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'].map((c, i) => [c, i]))
+const B64 = new Map(
+  [...'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'].map((c, i) => [c, i]),
+)
 function* segments(mappings) {
   let srcIdx = 0
   for (const line of mappings.split(';')) {
@@ -11,17 +13,25 @@ function* segments(mappings) {
     for (const seg of line.split(',')) {
       if (!seg) continue
       const vals = []
-      let shift = 0, value = 0
+      let shift = 0,
+        value = 0
       for (const ch of seg) {
         const d = B64.get(ch)
         value += (d & 31) << shift
-        if (d & 32) { shift += 5; continue }
+        if (d & 32) {
+          shift += 5
+          continue
+        }
         const neg = value & 1
         let v = value >> 1
         vals.push(neg ? -v : v)
-        shift = 0; value = 0
+        shift = 0
+        value = 0
       }
-      if (vals.length >= 4) { srcIdx += vals[1]; yield srcIdx }
+      if (vals.length >= 4) {
+        srcIdx += vals[1]
+        yield srcIdx
+      }
     }
   }
 }
@@ -41,5 +51,9 @@ for (const [i, n] of hits) {
 const bundleBytes = Number(process.argv[3])
 console.log('mapped segments:', total, '| bundle bytes:', bundleBytes)
 for (const [k, n] of [...buckets].sort((a, b) => b[1] - a[1]).slice(0, 14)) {
-  console.log(`  ${(n / total * 100).toFixed(1).padStart(5)}%  ~${Math.round(n / total * bundleBytes / 1024).toString().padStart(4)} KB  ${k}`)
+  console.log(
+    `  ${((n / total) * 100).toFixed(1).padStart(5)}%  ~${Math.round(((n / total) * bundleBytes) / 1024)
+      .toString()
+      .padStart(4)} KB  ${k}`,
+  )
 }

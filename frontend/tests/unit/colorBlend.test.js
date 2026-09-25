@@ -40,10 +40,11 @@ function twoGroups({ core = null } = {}) {
   for (let i = 0; i < 5; i++) nodes.push([`a${i}`, 1, i * 10, core === `a${i}`])
   for (let i = 0; i < 5; i++) nodes.push([`b${i}`, 2, 200 + i * 10, false])
   nodes.push(['bridge', 1, 100, false])
-  for (let i = 0; i < 5; i++) for (let j = i + 1; j < 5; j++) {
-    edges.push([`a${i}`, `a${j}`])
-    edges.push([`b${i}`, `b${j}`])
-  }
+  for (let i = 0; i < 5; i++)
+    for (let j = i + 1; j < 5; j++) {
+      edges.push([`a${i}`, `a${j}`])
+      edges.push([`b${i}`, `b${j}`])
+    }
   edges.push(['a4', 'bridge'], ['bridge', 'b0'])
   return build({ nodes, edges })
 }
@@ -53,23 +54,44 @@ describe('colorBlend', () => {
   const inkB = clusterInk(2)
 
   it('an unclustered node gets no blend', () => {
-    const { nodes, incident, edges } = build({ nodes: [['n1', 0, 0], ['n2', 1, 10], ['n3', 1, 20]], edges: [['n2', 'n3']] })
+    const { nodes, incident, edges } = build({
+      nodes: [
+        ['n1', 0, 0],
+        ['n2', 1, 10],
+        ['n3', 1, 20],
+      ],
+      edges: [['n2', 'n3']],
+    })
     const blends = computeBlend(nodes, incident, edges)
     expect(blends.has('n1')).toBe(false)
     expect(blends.has('n2')).toBe(true)
   })
 
   it('a map with nothing clustered has nothing to blend', () => {
-    const { nodes, incident, edges } = build({ nodes: [['n1', 0, 0], ['n2', 0, 10]], edges: [['n1', 'n2']] })
+    const { nodes, incident, edges } = build({
+      nodes: [
+        ['n1', 0, 0],
+        ['n2', 0, 10],
+      ],
+      edges: [['n1', 'n2']],
+    })
     expect(computeBlend(nodes, incident, edges).size).toBe(0)
   })
 
   it('a lone group comes out as exactly its own ink', () => {
     const { nodes, incident, edges } = build({
-      nodes: [['n1', 3, 0], ['n2', 3, 10], ['n3', 3, 20, true]],
-      edges: [['n1', 'n2'], ['n2', 'n3']],
+      nodes: [
+        ['n1', 3, 0],
+        ['n2', 3, 10],
+        ['n3', 3, 20, true],
+      ],
+      edges: [
+        ['n1', 'n2'],
+        ['n2', 'n3'],
+      ],
     })
-    for (const blend of computeBlend(nodes, incident, edges).values()) expect(dist(blend, clusterInk(3))).toBeLessThan(0.005)
+    for (const blend of computeBlend(nodes, incident, edges).values())
+      expect(dist(blend, clusterInk(3))).toBeLessThan(0.005)
   })
 
   const { nodes, incident, edges } = twoGroups()
@@ -118,9 +140,21 @@ describe('colorBlend', () => {
   })
 
   it('stacked on one point, with nowhere to fade across, it still returns finite colours', () => {
-    const { nodes: n, incident: inc, edges: e } = build({
-      nodes: [['n1', 1, 0], ['n2', 1, 0], ['n3', 2, 0], ['n4', 2, 0]],
-      edges: [['n1', 'n2'], ['n3', 'n4']],
+    const {
+      nodes: n,
+      incident: inc,
+      edges: e,
+    } = build({
+      nodes: [
+        ['n1', 1, 0],
+        ['n2', 1, 0],
+        ['n3', 2, 0],
+        ['n4', 2, 0],
+      ],
+      edges: [
+        ['n1', 'n2'],
+        ['n3', 'n4'],
+      ],
     })
     for (const blend of computeBlend(n, inc, e).values()) expect(blend.every(Number.isFinite)).toBe(true)
   })

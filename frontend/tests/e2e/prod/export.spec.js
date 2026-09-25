@@ -11,7 +11,8 @@
 import { readFileSync } from 'node:fs'
 import { test, expect } from '@playwright/test'
 
-const lock = (page) => page.waitForFunction(() => document.pointerLockElement !== null, null, { timeout: 5000 })
+const lock = (page) =>
+  page.waitForFunction(() => document.pointerLockElement !== null, null, { timeout: 5000 })
 
 test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, context }, testInfo) => {
   // ---------------------------------------------------------------- Part A
@@ -28,14 +29,18 @@ test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, 
 
   // Four nodes, flying a little between each so they do not stack.
   const dbl = async () => {
-    await page.mouse.down(); await page.mouse.up()
+    await page.mouse.down()
+    await page.mouse.up()
     await page.waitForTimeout(40)
-    await page.mouse.down(); await page.mouse.up()
+    await page.mouse.down()
+    await page.mouse.up()
     await page.waitForTimeout(120)
   }
   for (let i = 0; i < 4; i++) {
     await dbl()
-    await page.keyboard.down('KeyD'); await page.waitForTimeout(260); await page.keyboard.up('KeyD')
+    await page.keyboard.down('KeyD')
+    await page.waitForTimeout(260)
+    await page.keyboard.up('KeyD')
     await page.mouse.move(60, 0)
     await page.waitForTimeout(120)
   }
@@ -45,7 +50,9 @@ test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, 
   // Connect: right-hold, push the wheel to the top wedge, release. Then look
   // back and left-click a node to land the link. Best effort — the export is
   // what is under test, not the menu.
-  await page.keyboard.down('KeyA'); await page.waitForTimeout(520); await page.keyboard.up('KeyA')
+  await page.keyboard.down('KeyA')
+  await page.waitForTimeout(520)
+  await page.keyboard.up('KeyA')
   await page.waitForTimeout(200)
   await page.mouse.down({ button: 'right' })
   await page.mouse.move(0, -90)
@@ -53,12 +60,11 @@ test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, 
   await page.mouse.up({ button: 'right' })
   await page.waitForTimeout(150)
   await page.mouse.move(0, 0)
-  await page.mouse.down(); await page.mouse.up()
+  await page.mouse.down()
+  await page.mouse.up()
   await page.waitForTimeout(200)
   await page.keyboard.press('Escape')
   await page.waitForTimeout(200)
-
-  hud = await page.textContent('#hud')
 
   // Export. The chord is preventDefault-ed, so the browser's own save dialog
   // never sees it; what should arrive is a download from the object URL.
@@ -85,12 +91,24 @@ test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, 
   expect.soft(/<script[^>]+src=/.test(html), 'no external script src').toBe(false)
   expect.soft(/<link[^>]+href=/.test(html), 'no external stylesheet').toBe(false)
 
-  const payloadText = /<script id="atlasmap-map" type="application\/json">([\s\S]*?)<\/script>/.exec(html)?.[1]
+  const payloadText = /<script id="atlasmap-map" type="application\/json">([\s\S]*?)<\/script>/.exec(
+    html,
+  )?.[1]
   expect.soft(Boolean(payloadText), 'payload script tag present').toBe(true)
   const payload = JSON.parse(payloadText)
   expect.soft(payload.nodes.length, 'payload holds the four nodes').toBe(4)
-  expect.soft(payload.nodes.every((n) => !('notes' in n)), 'notes stripped from every node').toBe(true)
-  expect.soft(payload.nodes.every((n) => 'label' in n && 'x' in n && 'is_core' in n), 'nodes keep label/position/core').toBe(true)
+  expect
+    .soft(
+      payload.nodes.every((n) => !('notes' in n)),
+      'notes stripped from every node',
+    )
+    .toBe(true)
+  expect
+    .soft(
+      payload.nodes.every((n) => 'label' in n && 'x' in n && 'is_core' in n),
+      'nodes keep label/position/core',
+    )
+    .toBe(true)
   expect.soft(Boolean(payload.camera), 'camera block present').toBe(true)
 
   // ------------------------------------------------------- Part C: it runs
@@ -130,13 +148,19 @@ test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, 
   expect.soft(locked, 'Tab hands over to locked flight').toBe(true)
 
   await p2.mouse.move(80, 20)
-  await p2.keyboard.down('KeyW'); await p2.waitForTimeout(500); await p2.keyboard.up('KeyW')
+  await p2.keyboard.down('KeyW')
+  await p2.waitForTimeout(500)
+  await p2.keyboard.up('KeyW')
   await p2.waitForTimeout(300)
   await p2.screenshot({ path: testInfo.outputPath('shot_flight.png') })
 
   // The point of the whole thing: none of the editing paths do anything.
-  await p2.mouse.down(); await p2.mouse.up(); await p2.waitForTimeout(40)
-  await p2.mouse.down(); await p2.mouse.up(); await p2.waitForTimeout(300)
+  await p2.mouse.down()
+  await p2.mouse.up()
+  await p2.waitForTimeout(40)
+  await p2.mouse.down()
+  await p2.mouse.up()
+  await p2.waitForTimeout(300)
   vhud = await p2.textContent('#hud')
   expect.soft(/4 nodes/.test(vhud) || !/5 nodes/.test(vhud), 'double-click spawns nothing').toBe(true)
 

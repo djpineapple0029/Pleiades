@@ -105,7 +105,9 @@ const interaction = createInteraction({
   menu: createRadialMenu(document.getElementById('radial-menu')),
   editor: createEditor(document.getElementById('editor')),
   titleEdit: createTitleEdit(),
-  sidebar: createNotesSidebar(document.getElementById('notes-sidebar'), { writeKey: keymap.label('edit_notes') }),
+  sidebar: createNotesSidebar(document.getElementById('notes-sidebar'), {
+    writeKey: keymap.label('edit_notes'),
+  }),
   search: createSearchPanel(document.getElementById('search')),
   flyTo,
   hud,

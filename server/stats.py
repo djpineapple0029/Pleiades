@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from collections import Counter, deque
+from collections.abc import Callable
 
 from flask import Flask, Response, request
 
@@ -56,7 +57,7 @@ class Stats:
             }
 
 
-def instrument(app: Flask, stats: Stats, client_of) -> None:
+def instrument(app: Flask, stats: Stats, client_of: Callable[[], str]) -> None:
     """`client_of()` gives the request's client address (proxy-aware)."""
 
     @app.before_request

@@ -9,12 +9,12 @@ import pytest
 
 from server import create_app
 from server.config import (
+    ChordError,
     ConfigStore,
+    chord_text,
     default_keybinds,
     hash_password,
     parse_chord,
-    ChordError,
-    chord_text,
     validate_keybinds,
     verify_password,
 )

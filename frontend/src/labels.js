@@ -177,7 +177,8 @@ const HALO_OPACITY = 0.85
 // cells side by side in one row. Cell edges fall on multiples of 16 texels, so
 // the first four mip levels never blend one cell into the next.
 const FONT_PX = 40
-const FAMILY = 'Jost, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+const FAMILY =
+  'Jost, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
 const WEIGHT = [400, 400, 500, 400]
 // Tracking, in ems of the font size. Wide on the capitals, a little air on the
 // rest; the hovered label opens up further still. A connection's name is
@@ -458,7 +459,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       premultipliedAlpha: true,
       depthTest: false,
       depthWrite: false,
-    })
+    }),
   )
   leaderMesh.name = 'labelLeaders'
   leaderMesh.layers.set(LABEL_LAYER)
@@ -545,7 +546,9 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
   function allocate(entry) {
     let cell = findRun(entry.span)
     if (!cell) {
-      const idle = [...entries.values()].filter((e) => e.cell && e.used < frame).sort((a, b) => a.used - b.used)
+      const idle = [...entries.values()]
+        .filter((e) => e.cell && e.used < frame)
+        .sort((a, b) => a.used - b.used)
       for (const victim of idle) {
         release(victim)
         cell = findRun(entry.span)
@@ -804,7 +807,22 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
     for (const node of graph.nodes.values()) {
       let entry = entries.get(`n:${node.id}`)
       if (!entry) {
-        entry = { id: node.id, kind: 'node', source: null, text: '', tier: PLAIN, cluster: 0, hue: null, width: 0, span: 1, cell: null, alpha: 0, placed: false, quad: 0, used: 0 }
+        entry = {
+          id: node.id,
+          kind: 'node',
+          source: null,
+          text: '',
+          tier: PLAIN,
+          cluster: 0,
+          hue: null,
+          width: 0,
+          span: 1,
+          cell: null,
+          alpha: 0,
+          placed: false,
+          quad: 0,
+          used: 0,
+        }
         entries.set(`n:${node.id}`, entry)
       }
       entry.seen = frame
@@ -838,7 +856,13 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       const radiusPx = (radius * pxPerUnit) / depth
       // Named or not, every star on screen is indexed: a name has to keep off
       // all of them, not only the ones carrying a name of their own.
-      if (radiusPx >= STAR_MIN_PX && sx + radiusPx > 0 && sx - radiusPx < width && sy + radiusPx > 0 && sy - radiusPx < height) {
+      if (
+        radiusPx >= STAR_MIN_PX &&
+        sx + radiusPx > 0 &&
+        sx - radiusPx < width &&
+        sy + radiusPx > 0 &&
+        sy - radiusPx < height
+      ) {
         addStar(sx, sy, radiusPx, node.id)
       }
       if (!entry.text) continue
@@ -853,7 +877,10 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       // Distance drains the far ones; the hovered label is never drained.
       const dim = hovered
         ? 1
-        : Math.max(FAR_DIM + (1 - FAR_DIM) * smoothstep(MIN_PX[tier], DIM_FULL_PX, fontPx), tier === CORE ? CORE_DIM : 0)
+        : Math.max(
+            FAR_DIM + (1 - FAR_DIM) * smoothstep(MIN_PX[tier], DIM_FULL_PX, fontPx),
+            tier === CORE ? CORE_DIM : 0,
+          )
       const inkWidth = entry.width * scale
       const inkHeight = (ascent + descent) * scale
       const gap = GAP_RADII * radiusPx + GAP_PX
@@ -897,7 +924,22 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       const key = `e:${edge.id}`
       let entry = entries.get(key)
       if (!entry) {
-        entry = { id: edge.id, kind: 'edge', source: null, text: '', tier: EDGE, cluster: 0, hue: null, width: 0, span: 1, cell: null, alpha: 0, placed: false, quad: 0, used: 0 }
+        entry = {
+          id: edge.id,
+          kind: 'edge',
+          source: null,
+          text: '',
+          tier: EDGE,
+          cluster: 0,
+          hue: null,
+          width: 0,
+          span: 1,
+          cell: null,
+          alpha: 0,
+          placed: false,
+          quad: 0,
+          used: 0,
+        }
         entries.set(key, entry)
       }
       entry.seen = frame
@@ -984,7 +1026,8 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       entry.cluster = 0
       entry.hue = null
       // Under every star's name, so a contested spot goes to the star.
-      entry.priority = (hovered ? 1e6 : 0) + EDGE_PRIORITY * (baseRadius / depth) * (entry.placed ? HOLD_BONUS : 1)
+      entry.priority =
+        (hovered ? 1e6 : 0) + EDGE_PRIORITY * (baseRadius / depth) * (entry.placed ? HOLD_BONUS : 1)
       if (entry.alpha > 0) entry.used = frame
       candidates.push(entry)
     }
@@ -1019,13 +1062,18 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
           // off every star, its own two ends included — a name lying over a
           // star reads as that star's, whichever line it is really on.
           entry.clean =
-            rect.x0 >= 0 && rect.x1 <= width && rect.y0 >= 0 && rect.y1 <= height && starsUnder(rect, null) === 0
+            rect.x0 >= 0 &&
+            rect.x1 <= width &&
+            rect.y0 >= 0 &&
+            rect.y1 <= height &&
+            starsUnder(rect, null) === 0
         }
       }
       // A star's label on screen keeps the quadrant it is in: if that one is
       // taken it fades out, and only once it has gone may it come back on
       // another side, so a name never jumps around its star.
-      const options = entry.kind === 'edge' ? NO_QUADS : entry.alpha === 0 ? QUADS.map((_, i) => i) : [entry.quad]
+      const options =
+        entry.kind === 'edge' ? NO_QUADS : entry.alpha === 0 ? QUADS.map((_, i) => i) : [entry.quad]
       // A clean spot first: the whole name on screen and clear of every other
       // star, taking the quadrants in preference order.
       for (const option of options) {
@@ -1098,7 +1146,9 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       // down from the cell's — while a connection's is centred on its line
       // already, and the shader turns it about that centre.
       const centreX = edgeLabel ? layout.cx : layout.textX - PAD_X * entry.scale + quadWidth / 2
-      const centreY = edgeLabel ? layout.cy : layout.textY - (baseline - ascent) * entry.scale + quadHeight / 2
+      const centreY = edgeLabel
+        ? layout.cy
+        : layout.textY - (baseline - ascent) * entry.scale + quadHeight / 2
       const ink = entry.hovered ? HOVER_INK : inkFor(entry.tier, entry.hue)
       const c = centres.array
       c[n * 3] = entry.ax
@@ -1251,7 +1301,17 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
     shown: () =>
       drawn.map((entry) => {
         const { id, kind, text, tier, cluster, opacity, dim, fontPx, clean, layout } = entry
-        const common = { id, kind, text, tier: ['plain', 'landmark', 'core', 'edge'][tier], cluster, opacity, dim, fontPx, clean }
+        const common = {
+          id,
+          kind,
+          text,
+          tier: ['plain', 'landmark', 'core', 'edge'][tier],
+          cluster,
+          opacity,
+          dim,
+          fontPx,
+          clean,
+        }
         if (kind === 'edge') {
           return {
             ...common,

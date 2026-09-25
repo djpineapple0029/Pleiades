@@ -24,6 +24,7 @@ import secrets
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
 
@@ -53,7 +54,7 @@ def store() -> ConfigStore:
     return current_app.extensions["atlasmap_config"]
 
 
-def guard() -> "Guard":
+def guard() -> Guard:
     return current_app.extensions["atlasmap_admin_guard"]
 
 
@@ -141,7 +142,7 @@ class Guard:
             self.sessions.clear()
 
 
-def fail(message: str, status: int, **extra) -> tuple[Response, int]:
+def fail(message: str, status: int, **extra: object) -> tuple[Response, int]:
     return jsonify(error=message, **extra), status
 
 
@@ -150,9 +151,9 @@ def bearer() -> str:
     return header[7:].strip() if header.startswith("Bearer ") else ""
 
 
-def signed_in(view):
+def signed_in(view: Callable) -> Callable:
     @wraps(view)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: object, **kwargs: object) -> object:
         if not guard().valid(bearer()):
             return fail("Signed out. Sign in again.", 401)
         return view(*args, **kwargs)
@@ -274,9 +275,11 @@ def write_config() -> Response | tuple[Response, int]:
     if networks is not None:
         clean, error = validate_setting(SETTINGS[("admin", "allowed_networks")], networks)
         if not error and not ip_allowed(ip, clean):
-            return fail("Save refused.", 400, errors=[
-                f"admin.allowed_networks: your own address ({ip}) isn't in it, so this would lock you out"
-            ])
+            return fail(
+                "Save refused.",
+                400,
+                errors=[f"admin.allowed_networks: your own address ({ip}) isn't in it, so this would lock you out"],
+            )
     errors = store().save(body)
     if errors:
         return fail("Save refused.", 400, errors=errors)

@@ -9,6 +9,7 @@
  *
  *   node tests/manual/space_fx_look.mjs
  */
+/* global fx -- set on window by the page.evaluate below */
 import { globSync, mkdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright-core'
@@ -17,11 +18,19 @@ const DIR = fileURLToPath(new URL('../../../artifacts', import.meta.url))
 mkdirSync(DIR, { recursive: true })
 const payload = JSON.parse(readFileSync(`${DIR}/color_balanced.json`, 'utf8'))
 const [executablePath] = globSync(
-  `${process.env.HOME}/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app/Contents/MacOS/*`
-).sort().reverse()
+  `${process.env.HOME}/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app/Contents/MacOS/*`,
+)
+  .sort()
+  .reverse()
 
-const browser = await chromium.launch({ headless: true, executablePath, args: ['--use-angle=metal', '--enable-gpu'] })
-const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 })).newPage()
+const browser = await chromium.launch({
+  headless: true,
+  executablePath,
+  args: ['--use-angle=metal', '--enable-gpu'],
+})
+const page = await (
+  await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 })
+).newPage()
 const errs = []
 page.on('pageerror', (x) => errs.push(String(x)))
 page.on('console', (m) => m.type() === 'error' && errs.push(m.text()))
@@ -30,7 +39,8 @@ page.on('console', (m) => m.type() === 'error' && errs.push(m.text()))
 // be imported and driven by hand.
 await page.goto('http://localhost:5180/src/random.js')
 await page.evaluate(async (input) => {
-  document.documentElement.innerHTML = '<body style="margin:0;background:#000"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas></body>'
+  document.documentElement.innerHTML =
+    '<body style="margin:0;background:#000"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas></body>'
   const { createScene } = await import('/src/scene.js')
   const { createSkybox } = await import('/src/skybox.js')
   const { createDust } = await import('/src/dust.js')
@@ -50,7 +60,7 @@ await page.evaluate(async (input) => {
   view.sync()
   const rivers = createDustRivers(graph, scene, { radiusOf: view.radiusOf })
   let seed = 11
-  const supernova = createSupernova(scene, { rand: () => ((seed = (seed * 16807) % 2147483647) / 2147483647) })
+  const supernova = createSupernova(scene, { rand: () => (seed = (seed * 16807) % 2147483647) / 2147483647 })
   let clock = 0
   window.fx = {
     graph,
@@ -97,7 +107,9 @@ await page.evaluate(() => fx.advance(1.5))
 await shot('rivers_wide')
 
 // A plain, linked star for the supernova, framed close.
-const victim = payload.nodes.find((n) => !n.is_core && payload.edges.filter((e) => e.from === n.id || e.to === n.id).length >= 3)
+const victim = payload.nodes.find(
+  (n) => !n.is_core && payload.edges.filter((e) => e.from === n.id || e.to === n.id).length >= 3,
+)
 const v = [victim.x, victim.y, victim.z]
 await page.evaluate((v) => fx.look([v[0] + 20, v[1] + 30, v[2] + 110], v), v)
 await page.evaluate(() => fx.advance(1.5))

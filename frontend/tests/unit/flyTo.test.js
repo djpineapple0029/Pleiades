@@ -33,7 +33,11 @@ describe('createFlyTo', () => {
     const fly = createFlyTo(cam)
     const star = new THREE.Vector3(200, 80, -300)
     let arrived = false
-    fly.toStar(() => ({ position: star, radius: 5 }), FLY_DURATION, () => (arrived = true))
+    fly.toStar(
+      () => ({ position: star, radius: 5 }),
+      FLY_DURATION,
+      () => (arrived = true),
+    )
     expect(fly.isActive).toBe(true)
     run(fly, FLY_DURATION + 0.1)
     expect(arrived).toBe(true)
@@ -68,7 +72,11 @@ describe('createFlyTo', () => {
     const fly = createFlyTo(cam)
     let alive = true
     let arrived = false
-    fly.toStar(() => (alive ? { position: new THREE.Vector3(), radius: 5 } : null), FLY_DURATION, () => (arrived = true))
+    fly.toStar(
+      () => (alive ? { position: new THREE.Vector3(), radius: 5 } : null),
+      FLY_DURATION,
+      () => (arrived = true),
+    )
     run(fly, FLY_DURATION / 2)
     const midway = cam.position.clone()
     alive = false
@@ -107,7 +115,11 @@ describe('createFlyTo', () => {
     expect(fly.toStar(() => null, FLY_DURATION)).toBe(false)
     expect(fly.isActive).toBe(false)
     let arrived = false
-    fly.toStar(() => ({ position: new THREE.Vector3(), radius: 5 }), FLY_DURATION, () => (arrived = true))
+    fly.toStar(
+      () => ({ position: new THREE.Vector3(), radius: 5 }),
+      FLY_DURATION,
+      () => (arrived = true),
+    )
     fly.cancel()
     run(fly, FLY_DURATION)
     expect(arrived).toBe(false)
@@ -120,7 +132,9 @@ describe('createFlyTo', () => {
     const star = new THREE.Vector3(0, 0, 0)
     fly.toStar(() => ({ position: star, radius: 5 }), 0.2)
     run(fly, 0.3)
-    expect(Number.isFinite(cam.quaternion.x + cam.quaternion.y + cam.quaternion.z + cam.quaternion.w)).toBe(true)
+    expect(Number.isFinite(cam.quaternion.x + cam.quaternion.y + cam.quaternion.z + cam.quaternion.w)).toBe(
+      true,
+    )
     expect(aimOf(cam, star)).toBeGreaterThan(0.9999)
   })
 })

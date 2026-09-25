@@ -452,7 +452,11 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     if (order.length === 0 || dt <= 0) return
     for (let i = 0; i < order.length; i++) {
       const o = i * 6
-      const length = Math.hypot(positions[o + 3] - positions[o], positions[o + 4] - positions[o + 1], positions[o + 5] - positions[o + 2])
+      const length = Math.hypot(
+        positions[o + 3] - positions[o],
+        positions[o + 4] - positions[o + 1],
+        positions[o + 5] - positions[o + 2],
+      )
       // Integrated rather than computed from a clock: the speed is fixed in
       // world units, so the phase rate depends on the length, and physics
       // changes lengths. A phase of clock * speed / length would jump every

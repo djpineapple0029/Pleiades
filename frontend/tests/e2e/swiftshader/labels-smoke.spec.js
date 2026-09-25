@@ -36,7 +36,7 @@ test('labels compile and place: font, shaders, instances', async ({ page }) => {
 
     const core = graph.addNode({ x: 0, y: 0, z: 0, label: 'Quarterly plan' })
     const near = graph.addNode({ x: 90, y: 20, z: 0, label: 'Hiring' })
-    const far = graph.addNode({ x: 40, y: -30, z: -900, label: 'distant idea' })
+    graph.addNode({ x: 40, y: -30, z: -900, label: 'distant idea' })
     graph.addEdge(core.id, near.id)
     graph.setCore(core.id, true)
     view.sync()
@@ -65,13 +65,24 @@ test('labels compile and place: font, shaders, instances', async ({ page }) => {
       visible: [mesh.visible, leaders.visible],
       programs,
       hoveredText: hovered?.text,
-      renderCalls: (renderer.info.autoReset = false, renderer.info.reset(), camera.layers.set(LABEL_LAYER), renderer.render(scene, camera), camera.layers.set(0), renderer.info.render.calls),
+      renderCalls:
+        ((renderer.info.autoReset = false),
+        renderer.info.reset(),
+        camera.layers.set(LABEL_LAYER),
+        renderer.render(scene, camera),
+        camera.layers.set(0),
+        renderer.info.render.calls),
     }
   }, threeUrl)
 
   expect.soft(out.fontLoaded, 'the Jost face used to raster labels is loaded').toBe(true)
   expect.soft(out.shown.length, 'both nodes with a label are shown (the far one is out of range)').toBe(2)
-  expect.soft(out.shown.some((l) => l.tier === 'core'), 'the core node is shown at the core tier').toBe(true)
+  expect
+    .soft(
+      out.shown.some((l) => l.tier === 'core'),
+      'the core node is shown at the core tier',
+    )
+    .toBe(true)
   expect.soft(out.instances[0], 'the name mesh got at least one instance').toBeGreaterThan(0)
   expect.soft(out.instances[1], 'the leader mesh got at least one instance').toBeGreaterThan(0)
   expect.soft(out.visible[0] && out.visible[1], 'both meshes are visible with labels on screen').toBe(true)

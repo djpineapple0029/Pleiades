@@ -91,7 +91,7 @@ export function createCommands({ graph, view, physics, history }) {
       'new node',
       before,
       () => (snapshot = removeNodeSynced(node.id)),
-      () => restoreNodeSynced(snapshot)
+      () => restoreNodeSynced(snapshot),
     )
     return node
   }
@@ -108,7 +108,7 @@ export function createCommands({ graph, view, physics, history }) {
       `link ${edgeName(edge)}`,
       before,
       () => (snapshot = removeEdgeSynced(edge.id)),
-      () => restoreEdgeSynced(snapshot)
+      () => restoreEdgeSynced(snapshot),
     )
     return edge
   }
@@ -124,7 +124,7 @@ export function createCommands({ graph, view, physics, history }) {
       label,
       before,
       () => restoreNodeSynced(snapshot),
-      () => (snapshot = removeNodeSynced(id))
+      () => (snapshot = removeNodeSynced(id)),
     )
     return true
   }
@@ -139,7 +139,7 @@ export function createCommands({ graph, view, physics, history }) {
       label,
       before,
       () => restoreEdgeSynced(snapshot),
-      () => (snapshot = removeEdgeSynced(id))
+      () => (snapshot = removeEdgeSynced(id)),
     )
     return true
   }
@@ -154,7 +154,7 @@ export function createCommands({ graph, view, physics, history }) {
       `edit node ${nodeName(node)}`,
       before,
       () => graph.setNodeText(id, ...previous),
-      () => graph.setNodeText(id, label, notes)
+      () => graph.setNodeText(id, label, notes),
     )
     return true
   }
@@ -170,7 +170,7 @@ export function createCommands({ graph, view, physics, history }) {
       `edit ${name}`,
       before,
       () => graph.setEdgeLabel(id, previous),
-      () => graph.setEdgeLabel(id, label)
+      () => graph.setEdgeLabel(id, label),
     )
     return true
   }
@@ -185,7 +185,7 @@ export function createCommands({ graph, view, physics, history }) {
       `${value ? 'mark' : 'unmark'} core ${nodeName(node)}`,
       before,
       () => setCoreSynced(id, !value),
-      () => setCoreSynced(id, value)
+      () => setCoreSynced(id, value),
     )
     return true
   }
@@ -202,7 +202,7 @@ export function createCommands({ graph, view, physics, history }) {
       `move ${nodeName(node)}`,
       before,
       () => placeNode(id, from),
-      () => placeNode(id, to)
+      () => placeNode(id, to),
     )
     return true
   }

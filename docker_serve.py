@@ -13,6 +13,6 @@ from server import create_app
 if __name__ == "__main__":
     serve(
         create_app(),
-        host=os.environ.get("HOST", "0.0.0.0"),
+        host=os.environ.get("HOST", "0.0.0.0"),  # noqa: S104 -- the container must listen on all interfaces
         port=int(os.environ.get("PORT", "5051")),
     )
