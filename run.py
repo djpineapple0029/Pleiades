@@ -31,7 +31,7 @@ from werkzeug.serving import make_server
 
 from server import create_app
 
-HOST = os.environ.get("ATLASMAP_HOST", "0.0.0.0")
+HOST = os.environ.get("ATLASMAP_HOST", "0.0.0.0")  # noqa: S104 -- LAN serving is the point of run.py
 PORT = int(os.environ.get("ATLASMAP_PORT", "5051"))
 
 # ANSI helpers -----------------------------------------------------------------

@@ -20,7 +20,7 @@ await page.goto('http://localhost:5180/?look')
 await page.waitForTimeout(800)
 
 const out = await page.evaluate(async () => {
-  const THREE = await import('/node_modules/.vite/deps/three.js')
+  await import('/node_modules/.vite/deps/three.js')
   const { createScene } = await import('/src/scene.js')
   const { createGraph } = await import('/src/graph.js')
   const { createGraphView } = await import('/src/graphView.js')
@@ -293,10 +293,8 @@ const out = await page.evaluate(async () => {
     view.sync()
     physics.start()
     const t0 = performance.now()
-    let ticks = 0
     for (let f = 0; f < 40; f++) {
       physics.update()
-      ticks++
     }
     r.bigFrameMs = (performance.now() - t0) / 40
     r.bigEdges = graph.edges.size
@@ -306,7 +304,6 @@ const out = await page.evaluate(async () => {
   return r
 })
 
-const shots = {}
 for (const key of ['friendPng', 'clusterPng']) {
   if (!out[key]) continue
   writeFileSync(`${OUT}/${TAG}_${key.replace('Png', '')}.png`, Buffer.from(out[key].split(',')[1], 'base64'))

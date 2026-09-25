@@ -24,7 +24,7 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
     const { createGraphView, NODE_RADIUS } = await import('/src/graphView.js')
     const { createPhysics } = await import('/src/physics.js')
     const { createFiles } = await import('/src/files.js')
-    const { clusterInk, CLUSTER_INKS } = await import('/src/palette.js')
+    const { clusterInk } = await import('/src/palette.js')
 
     const W = 800,
       H = 500
@@ -508,7 +508,7 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
       if (c > 0) bg.addEdge(members[0], bids[(c - 1) * 50])
     }
     const bview = createGraphView(bg, scene, renderer)
-    const bphys = createPhysics(bg, bview)
+    createPhysics(bg, bview)
     bview.sync()
     const t0 = performance.now()
     bg.recluster()
@@ -518,7 +518,7 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
     let bt = 0
     bview.update((bt += 1 / 60), camera) // the frame that retargets every tint
     const t2 = performance.now()
-    bview.update((bt += 1 / 60), camera)
+    bview.update(bt + 1 / 60, camera)
     const t3 = performance.now()
     r.easeFrameMs = t3 - t2
 

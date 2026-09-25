@@ -36,7 +36,7 @@ test('labels compile and place: font, shaders, instances', async ({ page }) => {
 
     const core = graph.addNode({ x: 0, y: 0, z: 0, label: 'Quarterly plan' })
     const near = graph.addNode({ x: 90, y: 20, z: 0, label: 'Hiring' })
-    const far = graph.addNode({ x: 40, y: -30, z: -900, label: 'distant idea' })
+    graph.addNode({ x: 40, y: -30, z: -900, label: 'distant idea' })
     graph.addEdge(core.id, near.id)
     graph.setCore(core.id, true)
     view.sync()

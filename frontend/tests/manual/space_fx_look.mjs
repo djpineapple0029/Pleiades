@@ -9,6 +9,7 @@
  *
  *   node tests/manual/space_fx_look.mjs
  */
+/* global fx -- set on window by the page.evaluate below */
 import { globSync, mkdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright-core'

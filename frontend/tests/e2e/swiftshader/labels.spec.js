@@ -17,7 +17,7 @@ test('node labels: reveal, tiers, callout, declutter, hover, edits', async ({ pa
     const THREE = await import(threeUrl)
     const { createGraph } = await import('/src/graph.js')
     const { createGraphView, NODE_RADIUS } = await import('/src/graphView.js')
-    const { createBloom, STAR_LAYER, LABEL_LAYER } = await import('/src/bloom.js')
+    const { createBloom, LABEL_LAYER } = await import('/src/bloom.js')
     const { revealRange, ALWAYS_ON_SIZE } = await import('/src/labels.js')
     document.getElementById('viewport').remove()
     // The atlas is rasterised on a canvas, which falls back silently: every
@@ -138,7 +138,7 @@ test('node labels: reveal, tiers, callout, declutter, hover, edits', async ({ pa
     out.alwaysOn = ALWAYS_ON_SIZE
 
     // --- Unlabelled nodes draw nothing; a labelled one draws beside its star ------
-    const blank = graph.addNode({ x: -40, y: 0, z: 0 })
+    graph.addNode({ x: -40, y: 0, z: 0 })
     const named = graph.addNode({ x: 0, y: 0, z: 0, label: 'Project Atlas' })
     view.sync()
     lookAt(0, 0, 90, 0, 0, 0)
@@ -303,8 +303,8 @@ test('node labels: reveal, tiers, callout, declutter, hover, edits', async ({ pa
 
     // --- Stacked stars: the callouts turn to different sides -----------------------
     reset()
-    const near2 = graph.addNode({ x: 0, y: 0, z: 0, label: 'nearer' })
-    const behind = graph.addNode({ x: 0, y: 0, z: -30, label: 'behind it' })
+    graph.addNode({ x: 0, y: 0, z: 0, label: 'nearer' })
+    graph.addNode({ x: 0, y: 0, z: -30, label: 'behind it' })
     view.sync()
     lookAt(0, 0, 100, 0, 0, 0)
     run(30)

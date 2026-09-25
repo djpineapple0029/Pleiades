@@ -396,7 +396,7 @@ ArrowDown, ArrowLeft, ArrowRight, F1-F12. Each action takes up to three.
 Changes reach a browser the next time it loads the page."""
 
 ADMIN_PASSWORD_NOTE = (
-    "To reset a forgotten password, type a new one into `password` in plain\n"
+    "To reset a forgotten password, type a new one into `password` in plain\n"  # noqa: S105 -- help text
     "text. On the next read it is replaced by `password_hash`."
 )
 
@@ -539,7 +539,7 @@ class ConfigStore:
         )
 
     def _set_admin_secret(self, password_hash: str) -> None:
-        assert self._doc is not None
+        assert self._doc is not None  # noqa: S101 -- type narrowing only
         admin = self._doc.setdefault("admin", tomlkit.table())
         admin["password"] = ""
         admin["password_hash"] = password_hash
@@ -586,7 +586,7 @@ class ConfigStore:
         if errors:
             return errors
         with self.lock:
-            assert self._doc is not None
+            assert self._doc is not None  # noqa: S101 -- type narrowing only
             doc = self._doc
             keybinds = doc.setdefault("keybinds", tomlkit.table())
             for action_id, chords in values["keybinds"].items():
@@ -620,6 +620,6 @@ class ConfigStore:
         return None
 
     def _write(self) -> None:
-        assert self._doc is not None
+        assert self._doc is not None  # noqa: S101 -- type narrowing only
         write_atomically(self.path, tomlkit.dumps(self._doc))
         self._mtime = self._stat()

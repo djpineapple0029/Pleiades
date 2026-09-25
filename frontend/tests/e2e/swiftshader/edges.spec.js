@@ -15,7 +15,7 @@ test('edges: width, fog, endpoint fade, hover, drift motes', async ({ page }) =>
   const r = await page.evaluate(async (threeUrl) => {
     const THREE = await import(threeUrl)
     const { createGraph } = await import('/src/graph.js')
-    const { createGraphView, NODE_RADIUS } = await import('/src/graphView.js')
+    const { createGraphView } = await import('/src/graphView.js')
     const { createPhysics } = await import('/src/physics.js')
     document.getElementById('viewport').remove()
 
@@ -101,7 +101,7 @@ test('edges: width, fog, endpoint fade, hover, drift motes', async ({ page }) =>
     }
 
     // --- Structure -----------------------------------------------------------
-    const e = link([-100, 0, 0], [100, 0, 0])
+    link([-100, 0, 0], [100, 0, 0])
     view.sync()
     tick(0)
     out.layers = lines().layers.mask === 1 && drift().layers.mask === 1
@@ -223,7 +223,7 @@ test('edges: width, fog, endpoint fade, hover, drift motes', async ({ page }) =>
     }
     // Survives a sync that renumbers it, and clears when its edge goes.
     const other = graph.addNode({ x: 0, y: 2000, z: 0 })
-    const first = graph.addEdge(other.id, h1.a.id) // index 1, after the hovered edge
+    graph.addEdge(other.id, h1.a.id) // index 1, after the hovered edge
     view.syncEdges()
     graph.removeEdge(h1.edge.id)
     graph.addEdge(h1.a.id, h1.b.id) // hovered id gone; re-added as a new id

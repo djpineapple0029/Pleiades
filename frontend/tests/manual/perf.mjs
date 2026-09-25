@@ -66,7 +66,6 @@ const res = await page.evaluate(async () => {
     gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
     return (performance.now() - t0) / frames
   }
-  const mesh = () => scene.getObjectByName('nodes')
   const out = {}
   const measure = (name) => {
     // Best of three, each way, interleaved.

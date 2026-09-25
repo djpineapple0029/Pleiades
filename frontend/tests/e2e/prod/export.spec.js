@@ -66,8 +66,6 @@ test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, 
   await page.keyboard.press('Escape')
   await page.waitForTimeout(200)
 
-  hud = await page.textContent('#hud')
-
   // Export. The chord is preventDefault-ed, so the browser's own save dialog
   // never sees it; what should arrive is a download from the object URL.
   const waitDownload = page.waitForEvent('download', { timeout: 8000 })
