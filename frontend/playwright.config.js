@@ -7,7 +7,9 @@ const SWIFTSHADER_ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable
 
 export default defineConfig({
   testDir: 'tests/e2e',
-  timeout: 120_000,
+  // The GitHub runner renders SwiftShader 3-5x slower than a dev Mac
+  // (app.spec.js: ~40 s locally, over 120 s there), so CI gets more room.
+  timeout: process.env.CI ? 360_000 : 120_000,
   fullyParallel: false,
   // SwiftShader is a software GL rasterizer — CPU-bound, not GPU-bound.
   // Playwright's default worker count runs separate spec files in parallel
