@@ -865,6 +865,8 @@ export function createGraphView(graph, scene, renderer) {
     syncEdges,
     updateEdgePositions,
     setHover,
+    /** Live text for a label being edited in place; see `labels.setDraft`. */
+    setLabelDraft: labels.setDraft,
     setSource,
     setPending,
     setGhost,

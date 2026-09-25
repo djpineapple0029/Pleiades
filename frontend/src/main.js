@@ -13,6 +13,9 @@ import { createRadialMenu } from './radialMenu.js'
 import { createEditor } from './editor.js'
 import { createOverview } from './overview.js'
 import { createInteraction } from './interaction.js'
+import { createPointerLock } from './pointerLock.js'
+import { createTitleEdit } from './titleEdit.js'
+import { createNotesSidebar } from './notesSidebar.js'
 
 const MAX_FRAME_DELTA = 0.1 // seconds — clamps the jump after a backgrounded tab
 
@@ -20,6 +23,7 @@ const canvas = document.getElementById('viewport')
 const overlay = document.getElementById('overlay')
 const crosshair = document.getElementById('crosshair')
 const notice = document.getElementById('notice')
+const resumePill = document.getElementById('resume-pill')
 const hud = document.getElementById('hud')
 const speed = document.getElementById('speed')
 
@@ -31,6 +35,9 @@ scene.add(dust)
 const bloom = createBloom(renderer, scene, camera)
 
 const flight = createFlight(camera, canvas)
+// Before anything else listens for `unlock`: the listeners below read which
+// kind of unlock it was.
+const lock = createPointerLock(flight.controls)
 camera.position.set(0, 0, 260)
 
 const graph = createGraph()
@@ -58,6 +65,7 @@ const renderSettings = {
 const interaction = createInteraction({
   camera,
   controls: flight.controls,
+  lock,
   flight,
   graph,
   view,
@@ -67,21 +75,31 @@ const interaction = createInteraction({
   renderSettings,
   menu: createRadialMenu(document.getElementById('radial-menu')),
   editor: createEditor(document.getElementById('editor')),
+  titleEdit: createTitleEdit(),
+  sidebar: createNotesSidebar(document.getElementById('notes-sidebar')),
   hud,
   speedEl: speed,
 })
 
 flight.controls.addEventListener('lock', () => {
   overlay.hidden = true
+  resumePill.hidden = true
   crosshair.hidden = false
   notice.hidden = true
 })
 
+// The full key list is for an unlock the user caused (Esc, or the browser
+// taking the lock away). One the app caused itself either shows a panel of
+// its own ('panel': nothing else) or a native dialog ('file': a small hint
+// for whenever that's dismissed), and in both the lock comes back by itself.
 flight.controls.addEventListener('unlock', () => {
   crosshair.hidden = true
   // Not in the overview: there the mouse is a real cursor and the map is the
   // whole point, so a click-to-fly panel over it would only be in the way.
-  if (!overview.isActive) overlay.hidden = false
+  if (overview.isActive) return
+  const reason = lock.lastUnlockReason
+  if (reason === 'manual') overlay.hidden = false
+  else if (reason === 'file') resumePill.hidden = false
 })
 
 function requestLock() {
@@ -96,6 +114,12 @@ function requestLock() {
 canvas.addEventListener('click', requestLock)
 window.addEventListener('keydown', (event) => {
   if (event.code === 'Enter') requestLock()
+  // `?` swaps the small resume hint for the full key list and back.
+  if (event.key === '?' && !flight.controls.isLocked && !interaction.isModal && !overview.isActive) {
+    const showKeys = overlay.hidden
+    overlay.hidden = !showKeys
+    resumePill.hidden = showKeys
+  }
 })
 
 // Chrome refuses re-lock for ~1.25s after an Esc release; say so instead of
@@ -106,6 +130,7 @@ document.addEventListener('pointerlockerror', () => {
   // The notice lives inside the overlay, and Tab out of the overview leaves it
   // hidden — a refusal there would otherwise land on an empty screen.
   overlay.hidden = false
+  resumePill.hidden = true
 })
 
 const clock = new THREE.Clock()
@@ -154,6 +179,7 @@ if (import.meta.hot) {
     physics.stop()
     overview.dispose()
     interaction.dispose()
+    lock.dispose()
     view.dispose()
     bloom.dispose()
     skybox.dispose()
