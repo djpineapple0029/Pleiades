@@ -72,23 +72,30 @@ is. Editing the graph mid-run reheats the simulation so the change gets settled
 in too.
 
 The node menu is Connect (up), Edit (right), Mark core / Unmark core (down) and
-Delete (left). A node's size is the larger of two things: its link count (more
-links, bigger, up to 2×) and its distance from the nearest core node. A core
-node is 3×, and the boost fades over the next four hops (2.24×, 1.77×, 1.48×,
-1.3×). Sizes update as soon as the graph changes, and Balance spaces bigger
-nodes further apart.
+Delete (left). Only core nodes are bigger: a core is 2.25×, and every other node
+is 1× however many links it has or how close it is to a core. Sizes update as
+soon as a node is marked or unmarked, and Balance spaces cores further apart.
 
 Balance also groups the map. It looks for communities — sets of nodes that link
 to each other more than to the rest — pulls each one together toward its own
 centre, and gives it a colour that its stars and their labels carry. The HUD says
-how many it found.
+how many it found. A new cluster's colour is picked at random from a list of
+twenty pastels, kept well apart from the colours already on the map.
+
+When a Balance finishes, the colours fade into each other rather than stopping at
+a hard edge. A core holds its cluster's colour strongly around itself, a node
+linked into two clusters takes a mix of both, and neighbouring regions of the map
+shade gently together. The fade is worked out once, at the end of a Balance, and
+does not shift while you edit.
 
 Those colours are stable. A cluster that is still recognisably the same cluster
 keeps the colour it had, so re-balancing doesn't reshuffle the map; only a
 genuinely new cluster, or the smaller half of one that split, takes a new
-colour. Nodes that belong to nothing — anything unconnected — keep the plain
+(random) colour. Nodes that belong to nothing — anything unconnected — keep the plain
 star colour, and a map that has never been balanced has no cluster colours at
-all. Colours are saved in the file, so a reopened map looks the way you left it.
+all. Colours and the fade are saved in the file, so a reopened map looks the way
+you left it; a map saved before the fade existed shows flat cluster colours until
+its next Balance.
 
 Edges thin with distance and fade toward the far side of the map, so nearby
 connections read over the ones behind them. Each edge fades out into the glow of
@@ -96,11 +103,8 @@ the nodes it joins. Motes drift along every edge: both ways on an undirected
 edge, from → to on a directed one. The edge under the crosshair is drawn wider,
 in amber, at full strength whatever its distance.
 
-A node's label (set with Edit) is drawn under its star. The bigger the star, the
-further its label carries: an unlinked node's shows within 200 units, one with a
-link within 300, three links 440, fifteen 820. Core nodes, their direct
-neighbours and nodes at the degree cap are labelled at any distance, a little
-brighter and larger. The node under the crosshair always shows its label, in
+A node's label (set with Edit) is drawn under its star, and shows within 200
+units. Core nodes are labelled at any distance, in capitals. The node under the crosshair always shows its label, in
 amber. Labels never overlap. Where two would, the nearer or more important one
 stays and the other fades out; a core's label moves above its star rather than
 lose its place. A node with no label shows nothing.
@@ -175,8 +179,9 @@ server/api.py         POST /api/save, POST /api/open
 server/static/        Vite build output (generated, gitignored)
 frontend/src/         Three.js frontend — owns the graph entirely
 frontend/src/files.js payload assembly, the two calls, download and upload
-frontend/src/sizing.js node size rule: degree size, core-influence BFS
-frontend/src/clustering.js  Louvain communities, and the colour that stays with a cluster
+frontend/src/sizing.js node size rule: a core is 2.25×, everything else 1×
+frontend/src/clustering.js  Louvain communities, and the (random) colour that stays with a cluster
+frontend/src/colorBlend.js  the fade between cluster colours, worked out when a Balance ends
 frontend/src/edges.js  edges and drift motes: distance width, depth fog, endpoint fade
 frontend/src/labels.js names on stars and along lines: reveal rules, glyph atlas, no-overlap placement
 frontend/src/overview.js  Tab: zoom-to-fit, the orbit camera, and the way back to flight

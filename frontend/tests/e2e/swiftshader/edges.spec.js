@@ -369,7 +369,7 @@ test('edges: width, fog, endpoint fade, hover, drift motes', async ({ page }) =>
   expect.soft(within(r.fogNearSide, r.fogPredicted[0], 0.12) && r.fogNearSide > 0.8, 'map seen from 2600+ units: near side barely fogged (sphere is loose)').toBe(true)
   expect.soft(within(r.fogFarSide, r.fogPredicted[1], 0.08), 'map seen from outside: far side at the fog floor').toBe(true)
   expect.soft(r.endProfile.every((p) => within(p.got, p.want, 0.12)), 'edge fades out inside its end node (smoothstep 1.1r..2.4r, +-0.12)').toBe(true)
-  expect.soft(r.coreRadius > 14 && r.coreEnd[0] < 0.05 && r.coreEnd[1] < 0.35 && r.coreEnd[2] > 0.9, 'core end: fade grows with the eased radius').toBe(true)
+  expect.soft(r.coreRadius > 11 && r.coreEnd[0] < 0.05 && r.coreEnd[1] < 0.35 && r.coreEnd[2] > 0.9, 'core end: fade grows with the eased radius').toBe(true)
   expect.soft(r.hoverLit.red > r.hoverLit.blue && r.hoverLit.red > r.hoverPlain.red * 5 && r.hoverLit.rows >= 3, 'hovered far edge: warm, wider and far stronger').toBe(true)
   expect.soft(r.hoverSurvivesSync, "hover follows its edge through a renumbering sync").toBe(true)
   expect.soft(r.hoverClearedWithEdge && r.hoverGone, 'hover clears when its edge is removed').toBe(true)

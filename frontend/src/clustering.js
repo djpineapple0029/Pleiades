@@ -19,6 +19,7 @@
 import Graph from 'graphology'
 import louvain from 'graphology-communities-louvain'
 import { seededRandom } from './random.js'
+import { PALETTE_SIZE, LATE_IDS, hueOf } from './palette.js'
 
 // Louvain traverses the graph in a random order, so a fixed seed is what makes
 // one graph give one partition. A fresh generator per run, or successive runs
@@ -32,6 +33,10 @@ const RESOLUTION = 1
 // community in any useful sense, and colouring every loose node would turn a
 // sparse map into confetti.
 const MIN_CLUSTER_SIZE = 2
+// A new group's colour is drawn at random, but from the hues at least this far
+// round the wheel from every colour already claimed, when any are left — two
+// random picks landing on neighbouring hues would read as one group.
+const MIN_HUE_GAP = 40
 
 // The palette that turns a colour id into an actual colour lives in
 // `palette.js`, which imports nothing — so drawing a cluster's colour does not
@@ -46,8 +51,11 @@ const MIN_CLUSTER_SIZE = 2
  * matches against, so calling this twice over an unchanged graph is a no-op.
  * Returns `{ colors, count }` — a Map of id -> colour id covering every node,
  * and how many communities earned a colour.
+ *
+ * `rng` only picks the colours of groups that have none yet. It is not the
+ * Louvain seed, which stays fixed so one graph always gives one partition.
  */
-export function computeClusters(nodes, edges) {
+export function computeClusters(nodes, edges, { rng = Math.random } = {}) {
   const colors = new Map()
   for (const id of nodes.keys()) colors.set(id, 0)
   if (nodes.size === 0) return { colors, count: 0 }
@@ -109,14 +117,14 @@ export function computeClusters(nodes, edges) {
     colorOf.set(claim.index, claim.color)
     taken.add(claim.color)
   }
-  // New and split-off groups take the lowest colour nobody claimed, so ids
-  // stay small and dense however many re-balances the map has been through.
-  let next = 1
+  // New and split-off groups draw a random colour nobody claimed (see
+  // `pickColor`), so no two maps start on the same pair of hues. Only these
+  // are random: a group that kept its colour above keeps it for good.
   for (let index = 0; index < groups.length; index++) {
     if (colorOf.has(index)) continue
-    while (taken.has(next)) next++
-    colorOf.set(index, next)
-    taken.add(next)
+    const color = pickColor(taken, rng)
+    colorOf.set(index, color)
+    taken.add(color)
   }
 
   groups.forEach((list, index) => {
@@ -124,4 +132,39 @@ export function computeClusters(nodes, edges) {
     for (const id of list) colors.set(id, color)
   })
   return { colors, count: groups.length }
+}
+
+/**
+ * A random colour id not in `taken`. Among the free palette hues that are not
+ * late, it picks at random from those at least MIN_HUE_GAP from every taken
+ * hue; when none are that far (a map with many groups), from the ones furthest
+ * from their nearest taken hue, so the new group still gets the most distinct
+ * colour left. Then the late, blue-ish ones (`palette.js`); and once the
+ * palette is used up, the lowest id past it, which wraps onto a shared hue.
+ */
+function pickColor(taken, rng) {
+  const free = []
+  for (let id = 1; id <= PALETTE_SIZE; id++) if (!taken.has(id)) free.push(id)
+  const early = free.filter((id) => !LATE_IDS.has(id))
+  const pool = early.length ? early : free
+  if (!pool.length) {
+    let id = PALETTE_SIZE + 1
+    while (taken.has(id)) id++
+    return id
+  }
+  const takenHues = [...taken].map(hueOf)
+  const gapOf = (id) => {
+    let nearest = 180
+    for (const hue of takenHues) {
+      const gap = Math.abs(hueOf(id) - hue) % 360
+      nearest = Math.min(nearest, gap, 360 - gap)
+    }
+    return nearest
+  }
+  const gaps = pool.map(gapOf)
+  const widest = Math.max(...gaps)
+  // Within a few degrees of the widest counts as a tie, so the pick still varies.
+  const floor = widest >= MIN_HUE_GAP ? MIN_HUE_GAP : widest - 5
+  const choices = pool.filter((_, i) => gaps[i] >= floor)
+  return choices[Math.floor(rng() * choices.length)]
 }

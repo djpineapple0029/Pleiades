@@ -15,10 +15,16 @@
  * `cluster_color_id` is the other way round — it *is* stored, because it has to
  * survive a re-partition and a reopen to stay stable (see `clustering.js`).
  * `recluster` is the only thing that writes it.
+ *
+ * `blend` is stored for the same reason: the faded cluster colour a Balance
+ * leaves behind (`colorBlend.js`), `[r, g, b]` or null. `reblend` writes it and
+ * `recluster` clears it; nothing computes it on load. It is only ever replaced
+ * as a whole array, never edited in place, so shallow copies can share it.
  */
 
 import { computeSizes } from './sizing.js'
 import { computeClusters } from './clustering.js'
+import { computeBlend } from './colorBlend.js'
 
 /** Thrown by `load` when a decrypted payload is not a graph. */
 export class PayloadError extends Error {}
@@ -46,6 +52,15 @@ function highestSuffix(ids, prefix) {
     if (match) highest = Math.max(highest, Number(match[1]))
   }
   return highest
+}
+
+// A stored blend is three sRGB channels on 0..1. Anything else — missing, as in
+// every file written before blends existed, or damaged — reads as none, and the
+// node falls back to its flat cluster colour until the next Balance.
+function readBlend(value) {
+  if (!Array.isArray(value) || value.length !== 3) return null
+  if (!value.every((v) => typeof v === 'number' && v >= 0 && v <= 1)) return null
+  return [value[0], value[1], value[2]]
 }
 
 export function createGraph() {
@@ -103,6 +118,7 @@ export function createGraph() {
       y,
       z,
       cluster_color_id: 0,
+      blend: null,
       is_core: false,
     }
     nodes.set(id, node)
@@ -197,15 +213,17 @@ export function createGraph() {
     return true
   }
 
-  /** Every node's position and cluster colour, plus the cluster count — what a Balance run rewrites. */
+  /** Every node's position, cluster colour and blend, plus the cluster count — what a Balance run rewrites. */
   function layoutSnapshot() {
     const positions = new Map()
     const colors = new Map()
+    const blends = new Map()
     for (const node of nodes.values()) {
       positions.set(node.id, [node.x, node.y, node.z])
       colors.set(node.id, node.cluster_color_id)
+      blends.set(node.id, node.blend)
     }
-    return { positions, colors, clusterCount }
+    return { positions, colors, blends, clusterCount }
   }
 
   /**
@@ -215,7 +233,7 @@ export function createGraph() {
    * `revision` moves only if a colour actually changed, same as `recluster`,
    * so tints ease back rather than every node retargeting for nothing.
    */
-  function applyLayout({ positions, colors, clusterCount: count }) {
+  function applyLayout({ positions, colors, blends, clusterCount: count }) {
     let recoloured = false
     for (const [id, [x, y, z]] of positions) {
       const node = nodes.get(id)
@@ -226,6 +244,11 @@ export function createGraph() {
       const color = colors.get(id)
       if (color !== undefined && node.cluster_color_id !== color) {
         node.cluster_color_id = color
+        recoloured = true
+      }
+      const blend = blends?.get(id)
+      if (blend !== undefined && node.blend !== blend) {
+        node.blend = blend
         recoloured = true
       }
     }
@@ -278,8 +301,16 @@ export function createGraph() {
   function recluster() {
     const { colors, count } = computeClusters(nodes, edges)
     let moved = 0
+    let cleared = false
     for (const [id, color] of colors) {
       const node = nodes.get(id)
+      // A blend belongs to the partition and layout it was faded over, so a
+      // new partition drops it: stars show flat cluster colours while the run
+      // settles and fade in once `reblend` runs at its end.
+      if (node.blend) {
+        node.blend = null
+        cleared = true
+      }
       if (node.cluster_color_id === color) continue
       node.cluster_color_id = color
       moved++
@@ -287,13 +318,35 @@ export function createGraph() {
     clusterCount = count
     // Nothing else changed, but the view eases tints off the revision exactly
     // as it eases sizes, so a recolour has to bump it.
-    if (moved) changed()
+    if (moved || cleared) changed()
     return { clusters: count, moved }
+  }
+
+  /**
+   * Fades every clustered node's colour into its neighbours' (`colorBlend.js`)
+   * and stores it as `node.blend`. Called when a Balance run ends, on the
+   * settled layout — the spatial part of the fade reads positions. Bumps
+   * `revision` only if a blend actually changed. Returns how many did.
+   */
+  function reblend() {
+    const blends = computeBlend(nodes, incident, edges)
+    let moved = 0
+    for (const node of nodes.values()) {
+      const next = blends.get(node.id) ?? null
+      const same =
+        next === node.blend ||
+        (next && node.blend && next.every((v, i) => v === node.blend[i]))
+      if (same) continue
+      node.blend = next
+      moved++
+    }
+    if (moved) changed()
+    return moved
   }
 
   /** Size multiplier of the base node radius; see `sizing.js`. 1 for an unknown id. */
   function sizeOf(id) {
-    if (!sizes) sizes = computeSizes(nodes, incident, edges)
+    if (!sizes) sizes = computeSizes(nodes)
     return sizes.get(id) ?? 1
   }
 
@@ -339,6 +392,7 @@ export function createGraph() {
         y: requireFinite(raw.y, `node ${id} y`),
         z: requireFinite(raw.z, `node ${id} z`),
         cluster_color_id: Number.isInteger(raw.cluster_color_id) ? raw.cluster_color_id : 0,
+        blend: readBlend(raw.blend),
         is_core: raw.is_core === true,
       })
       nextIncident.set(id, new Set())
@@ -406,6 +460,7 @@ export function createGraph() {
     touchContent,
     sizeOf,
     recluster,
+    reblend,
     toPayload,
     load,
     getNode: (id) => nodes.get(id) ?? null,

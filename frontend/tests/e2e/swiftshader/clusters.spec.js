@@ -6,6 +6,9 @@
 import { test, expect } from '@playwright/test'
 import { collectConsoleErrors, threeModuleUrl } from '../helpers/gestures.js'
 
+/** Degrees between two hues the short way round: 358 and 2 are 4 apart, not 356. */
+const hueGap = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d) }
+
 test('clustering becomes a layout, a colour, and survives a reopen', async ({ page }) => {
   const errors = collectConsoleErrors(page)
   await page.goto('/')
@@ -62,6 +65,7 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
     }
     const linear = (ink) => { const c = new THREE.Color().setRGB(ink[0], ink[1], ink[2], THREE.SRGBColorSpace); return [c.r, c.g, c.b] }
     /** Dominant hue as an angle, so "which cluster's colour is this" is one number. */
+    const hueGap = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d) }
     const hueOf = ([rr, gg, bb]) => { const c = new THREE.Color(rr, gg, bb); const h = {}; c.getHSL(h); return h.h * 360 }
     const settle = (cap = 4000) => { let n = 0; while (physics.isRunning && n++ < cap) physics.update(); return n }
     const frames = (count, dt = 1 / 60) => { for (let i = 0; i < count; i++) { r._t = (r._t ?? 0) + dt; view.update(r._t, camera) } }
@@ -264,6 +268,10 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
     for (const blob of lblobs) for (const a of blob) for (const b of blob) if (a < b) lg.addEdge(a, b)
     lg.addEdge(lblobs[0][0], lblobs[1][0])
     lblobs.forEach((blob, i) => blob.forEach((id, j) => { lg.getNode(id).label = `g${i}n${j}` }))
+    // One core per group. Only a core is bigger than 1x now, so only a core's
+    // name shows beyond a plain node's 200-unit reveal range — and from a
+    // camera that takes in both groups, the rest are further than that.
+    for (const blob of lblobs) lg.setCore(blob[1], true)
     const lview = createGraphView(lg, scene, renderer)
     const lphys = createPhysics(lg, lview)
     lview.sync()
@@ -354,7 +362,7 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
       const want = linear(clusterInk(coloured.cluster_color_id))
       const got = rview.tintOf(coloured.id)
       // Snapped, not eased up from nothing: the hue is already right.
-      return got && Math.abs(hueOf(got) - hueOf(want)) < 25
+      return got && hueGap(hueOf(got), hueOf(want)) < 25
     })()
 
     // --- cost --------------------------------------------------------------
@@ -409,14 +417,14 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
 
   // --- the partition becomes a colour ---
   expect.soft(out.tints.every((list) => list.every((t) => t && t.some((c) => c > 0))), 'star tints reach the instance attribute').toBe(true)
-  expect.soft(out.hues.every((list, i) => list.every((h) => Math.abs(h - out.inkHues[i]) < 25)), "every star in a cluster carries that cluster's hue").toBe(true)
-  expect.soft(Math.abs(out.hues[0][0] - out.hues[1][0]), 'the two clusters are visibly different hues').toBeGreaterThan(30)
+  expect.soft(out.hues.every((list, i) => list.every((h) => hueGap(h, out.inkHues[i]) < 25)), "every star in a cluster carries that cluster's hue").toBe(true)
+  expect.soft(hueGap(out.hues[0][0], out.hues[1][0]), 'the two clusters are visibly different hues').toBeGreaterThan(30)
   expect.soft(out.tints.every((list) => new Set(list.map((t) => t.map((c) => Math.round(c * 255)).join())).size > 3), 'stars within one cluster still vary (not N copies of one dot)').toBe(true)
-  expect.soft(out.tintOf.every((t, i) => t && Math.abs(hueOf0(t) - out.hues[i][0]) < 1), 'view.tintOf agrees with the attribute').toBe(true)
+  expect.soft(out.tintOf.every((t, i) => t && hueGap(hueOf0(t), out.hues[i][0]) < 1), 'view.tintOf agrees with the attribute').toBe(true)
   expect.soft(out.mergedClusters, 'merging the blobs is one cluster').toBe(1)
   expect.soft(out.movedReallyChanged, 'the watched blob really did change colour').toBe(true)
   expect.soft(out.easePartial, 'a recolour eases rather than pops').toBe(true)
-  expect.soft(Math.abs(out.settledHue - out.settledWantHue), 'and lands on the new cluster colour').toBeLessThan(25)
+  expect.soft(hueGap(out.settledHue, out.settledWantHue), 'and lands on the new cluster colour').toBeLessThan(25)
 
   // --- one cluster is left alone ---
   expect.soft(out.hubClusters, 'a hub and its spokes are a single cluster').toBe(1)
@@ -434,8 +442,8 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
 
   // --- on screen ---
   expect.soft(out.pixelLit, 'both clusters light their pixels').toBe(true)
-  expect.soft(out.pixelHues.every((h, i) => Math.abs(h - out.pixelInkHues[i]) < 40), 'on screen, each cluster renders in its own hue').toBe(true)
-  expect.soft(Math.abs(out.pixelHues[0] - out.pixelHues[1]), 'and the two look different on screen').toBeGreaterThan(30)
+  expect.soft(out.pixelHues.every((h, i) => hueGap(h, out.pixelInkHues[i]) < 40), 'on screen, each cluster renders in its own hue').toBe(true)
+  expect.soft(hueGap(out.pixelHues[0], out.pixelHues[1]), 'and the two look different on screen').toBeGreaterThan(30)
 
   // --- labels ---
   expect.soft(out.labelCount, 'labels are drawn').toBeGreaterThan(0)
@@ -445,8 +453,8 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
   expect.soft(out.labelInk.length, 'a label was sampled from each cluster').toBe(2)
   expect.soft(out.labelInk.every((k) => k.luminance > 0.3), 'a clustered label is still bright enough to read').toBe(true)
   expect.soft(out.labelInk.every((k, i) => k.luminance >= out.labelInkPlain[i].luminance * 0.85), 'and the cluster colour does not darken it against no cluster at all').toBe(true)
-  expect.soft(out.labelInk.every((k) => Math.abs(k.hue - k.wantHue) < 45), "and its ink carries its cluster's hue").toBe(true)
-  expect.soft(out.labelInk.length === 2 && Math.abs(out.labelInk[0].hue - out.labelInk[1].hue) > 25, "the two clusters' labels are different colours").toBe(true)
+  expect.soft(out.labelInk.every((k) => hueGap(k.hue, k.wantHue) < 45), "and its ink carries its cluster's hue").toBe(true)
+  expect.soft(out.labelInk.length === 2 && hueGap(out.labelInk[0].hue, out.labelInk[1].hue) > 25, "the two clusters' labels are different colours").toBe(true)
 
   // --- persistence ---
   expect.soft(out.payloadHasColors, 'the payload carries cluster_color_id').toBe(true)

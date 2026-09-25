@@ -19,6 +19,7 @@ test('edge labels: ride the line, reveal, hover, declutter, edits', async ({ pag
     const { createGraphView } = await import('/src/graphView.js')
     const { createBloom, LABEL_LAYER } = await import('/src/bloom.js')
     const { edgeRevealRange } = await import('/src/labels.js')
+    const { CORE_SIZE } = await import('/src/sizing.js')
     document.getElementById('viewport').remove()
     await document.fonts.ready
 
@@ -108,8 +109,9 @@ test('edge labels: ride the line, reveal, hover, declutter, edits', async ({ pag
     const one = () => edges()[0] ?? null
 
     // --- Rides its line ---------------------------------------------------------
+    // From 120: inside a plain pair's 140-unit reveal range (both ends 1x).
     pair(-100, 0, 0, 100, 0, 0)
-    lookAt(0, 0, 150, 0, 0, 0)
+    lookAt(0, 0, 120, 0, 0, 0)
     run()
     const flat = one()
     out.flat = flat && { angle: flat.angle, centre: flat.centre, text: flat.text, tier: flat.tier, kind: flat.kind }
@@ -117,22 +119,22 @@ test('edge labels: ride the line, reveal, hover, declutter, edits', async ({ pag
     out.flatAboveLine = flat ? flat.centre[0] === W / 2 && flat.centre[1] < H / 2 && H / 2 - flat.centre[1] < 25 : false
 
     pair(100, 0, 0, -100, 0, 0)
-    lookAt(0, 0, 150, 0, 0, 0)
+    lookAt(0, 0, 120, 0, 0, 0)
     run()
     out.reversedAngle = one()?.angle ?? null
 
     pair(-100, -100, 0, 100, 100, 0)
-    lookAt(0, 0, 150, 0, 0, 0)
+    lookAt(0, 0, 120, 0, 0, 0)
     run()
     out.upRightAngle = one()?.angle ?? null
 
     pair(-100, 100, 0, 100, -100, 0)
-    lookAt(0, 0, 150, 0, 0, 0)
+    lookAt(0, 0, 120, 0, 0, 0)
     run()
     out.downRightAngle = one()?.angle ?? null
 
     pair(0, -100, 0, 0, 100, 0)
-    lookAt(0, 0, 150, 0, 0, 0)
+    lookAt(0, 0, 120, 0, 0, 0)
     run()
     out.verticalAngle = one()?.angle ?? null
 
@@ -162,9 +164,9 @@ test('edge labels: ride the line, reveal, hover, declutter, edits', async ({ pag
 
     // --- Reveal ------------------------------------------------------------------
     pair(-100, 0, 0, 100, 0, 0)
-    out.range = { plain: edgeRevealRange(1.15), core: edgeRevealRange(3) }
+    out.range = { plain: edgeRevealRange(1), core: edgeRevealRange(CORE_SIZE) }
     out.overRange = []
-    for (const d of [100, 150, 200, 260]) {
+    for (const d of [100, 130, 200, 260]) {
       lookAt(0, 0, d, 0, 0, 0)
       run()
       out.overRange.push({ d, shown: edges().length })
@@ -179,7 +181,9 @@ test('edge labels: ride the line, reveal, hover, declutter, edits', async ({ pag
     })
     view.sync()
     view.setHover(null)
-    lookAt(0, 0, 700, 0, 0, 0)
+    // ~709 units for a 2.25x core; 600 is well inside it, and over four times
+    // the plain pair's range.
+    lookAt(0, 0, 600, 0, 0, 0)
     run(60)
     out.coreCarries = edges().length
 
@@ -335,8 +339,8 @@ test('edge labels: ride the line, reveal, hover, declutter, edits', async ({ pag
   expect.soft(r.verticalAngle, 'a line straight up the screen is read bottom-to-top').toBe(-90)
   expect.soft(r.boxes.level && r.boxes.turned && r.boxes.level.w / r.boxes.level.h > 3 && within(r.boxes.turned.w / r.boxes.turned.h, 1, 0.45), 'the ink itself is turned: level is wide and flat, 45 degrees is nearly square').toBe(true)
   expect.soft(r.inkInsideRect, "glyph pixels fall inside the box the entry reserves").toBe(true)
-  expect.soft(r.overRange[0].shown === 1 && r.overRange[1].shown === 1 && r.overRange[3].shown === 0, 'revealed within range and gone past it (185u for a plain pair)').toBe(true)
-  expect.soft(r.range.core > r.range.plain * 6 && r.coreCarries === 1, 'a core at one end carries its connection names much further out').toBe(true)
+  expect.soft(r.overRange[0].shown === 1 && r.overRange[1].shown === 1 && r.overRange[3].shown === 0, 'revealed within range and gone past it (140u for a plain pair)').toBe(true)
+  expect.soft(r.range.core > r.range.plain * 4 && r.coreCarries === 1, 'a core at one end carries its connection names much further out').toBe(true)
   expect.soft(r.farGone && r.hovered?.opacity === 1 && r.hovered?.dim === 1, 'out of range: nothing; under the crosshair: shown, undimmed').toBe(true)
   expect.soft(r.hoverCleared, 'hover cleared: the out-of-range name goes again').toBe(true)
   expect.soft(r.endOnGone && r.endOnHovered, 'seen end-on there is no line to write along; the crosshair still names it, level').toBe(true)

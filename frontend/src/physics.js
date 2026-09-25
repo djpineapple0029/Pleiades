@@ -292,9 +292,16 @@ export function createPhysics(graph, view) {
     view.updateEdgePositions()
   }
 
+  /**
+   * Ends a run, however it ends — cooled, toggled off, or cut short by an undo.
+   * The layout is final now, so this is where the cluster colours are faded
+   * into each other (`graph.reblend`, which reads positions). `start` gave the
+   * run flat colours; the stars ease from those into the fade.
+   */
   function stop() {
-    if (running) graph.touchContent()
+    if (!running) return
     running = false
+    if (!graph.reblend()) graph.touchContent()
   }
 
   /**
@@ -304,7 +311,9 @@ export function createPhysics(graph, view) {
    * reason `seed` does — they still reference bodies that are about to go.
    */
   function reset() {
-    stop()
+    // Not `stop()`: a reset follows a load, and fading the colours then would
+    // compute blends for a file that was saved with its own.
+    running = false
     bodies.clear()
     active = []
     linkForce.links([])
