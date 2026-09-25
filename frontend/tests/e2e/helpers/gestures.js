@@ -102,13 +102,18 @@ export const settle = async (page, ms = 0) => {
   await frames(page)
 }
 
-/** Right-hold, look toward a wedge, release — as the radial menu is driven. */
+/**
+ * Right-hold, look toward a wedge, release — as the radial menu is driven.
+ * No wait between the look and the release: arming is synchronous in the
+ * mousemove handler, and the map menu's More… wedge swaps rings by itself
+ * after an 850 ms wall-clock dwell. On a slow CI runner even three frames
+ * can take longer than that, so a settle here would pick the wrong ring.
+ */
 export async function pickMenu(page, dx, dy) {
   await t(page, 'rightDown()')
   await settle(page)
   const labels = await t(page, 'wedges()')
   await t(page, `look(${dx}, ${dy})`)
-  await settle(page)
   const armed = await t(page, 'armed()')
   await t(page, 'rightUp()')
   await settle(page)
