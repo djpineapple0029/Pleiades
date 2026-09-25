@@ -14,7 +14,7 @@ testpaths = ["server/tests"]
 
 [dependency-groups]
 dev = [
-    "pyrefly>=0.60.0",
+    "pyrefly>=1.3.1",
     "pytest>=9.1.1",
     "ruff>=0.16.9",
 ]
