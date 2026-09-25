@@ -1,10 +1,9 @@
 /**
- * Centred text panel for editing a node or edge without leaving pointer lock.
- * Pointer lock only captures the mouse, so a focused field still takes
- * keystrokes; the caller is responsible for suspending flight input while this
- * is open, since W/A/S/D have to reach the field instead of the camera. A
- * caller that also releases pointer lock (see `interaction.js`'s `beginModal`)
- * gets a real cursor here too — the buttons below aren't just for keyboard use.
+ * Centred panel for the file flows: save/open prompts and the unsaved-changes
+ * confirm. (Renaming is done in place — `titleEdit.js` — and notes in the
+ * sidebar — `notesSidebar.js`.) The caller releases pointer lock first, so
+ * there's a real cursor for the buttons, and suspends flight input, since
+ * W/A/S/D have to reach the fields instead of the camera.
  */
 export function createEditor(container) {
   const panel = document.createElement('div')
@@ -81,8 +80,7 @@ export function createEditor(container) {
       // Enter behaves like "next field, or commit from the last one" — this
       // is the mouse-and-Enter workflow most ordinary web forms use, rather
       // than committing from wherever the cursor happens to be. Ctrl/Cmd+Enter
-      // above is the unconditional "commit now" escape hatch (also the only
-      // way to commit from a textarea, where a bare Enter inserts a newline).
+      // above is the unconditional "commit now" escape hatch.
       if (at === -1 || at === fields.length - 1) {
         finish(collect())
       } else {
@@ -153,7 +151,7 @@ export function createEditor(container) {
   }
 
   /**
-   * `fields` are `{ key, label, value, multiline, type }`; `type: 'password'`
+   * `fields` are `{ key, label, value, type }`; `type: 'password'`
    * masks the field and keeps its value untrimmed. `note` is shown above the
    * fields — a rejected password or a mismatch, on a re-prompt. `commitLabel`
    * names the primary button (default "Save"). Resolves with a `{ key: value
@@ -191,8 +189,7 @@ export function createEditor(container) {
         return { field, input }
       }
 
-      const input = document.createElement(field.multiline ? 'textarea' : 'input')
-      if (field.multiline) input.rows = 4
+      const input = document.createElement('input')
       input.value = field.value ?? ''
       input.spellcheck = false
       row.append(input)
@@ -204,15 +201,9 @@ export function createEditor(container) {
     const hint = document.createElement('p')
     hint.className = 'editor-hint'
     const verb = commitLabel.toLowerCase()
-    // A textarea swallows a bare Enter (it inserts a newline), so a form with
-    // one of those needs the Ctrl+Enter callout. Otherwise Enter alone commits
-    // directly from a single field, or walks to the next one and commits from
-    // the last — never anything the hint needs a special case for beyond that.
-    const commit = fields.some((field) => field.multiline)
-      ? `Ctrl+Enter: ${verb}`
-      : fields.length > 1
-        ? `Enter: next field, ${verb} from the last`
-        : `Enter: ${verb}`
+    // Enter alone commits directly from a single field, or walks to the next
+    // one and commits from the last.
+    const commit = fields.length > 1 ? `Enter: next field, ${verb} from the last` : `Enter: ${verb}`
     const parts = fields.length > 1 ? [commit, 'Tab: field'] : [commit]
     hint.textContent = [...parts, 'Esc: cancel'].join(' · ')
     panel.append(hint)

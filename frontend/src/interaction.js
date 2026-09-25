@@ -60,11 +60,12 @@ function sameTarget(a, b) {
 /**
  * Everything the crosshair can do: spawn, target, menu, connect, edit, delete.
  *
- * Pointer lock is never released for any of it — the radial menu reads raw
- * mouse deltas and the editor takes keystrokes into a focused field — so both
- * of those suspend flight input while open and hand it back afterwards. The two
- * exceptions are opening a file and Tab into the overview, both of which are
- * deliberate mode switches rather than per-click actions.
+ * Pointer lock stays held for the radial menu (raw mouse deltas) and for
+ * renaming in place (`titleEdit.js`: keystrokes into a hidden field); both
+ * suspend flight input while open and hand it back afterwards. Panels that
+ * want a real cursor — notes editing, save/open prompts — release it through
+ * `lock` (`pointerLock.js`) and get it back automatically when they close.
+ * Tab into the overview is the one deliberate mode switch that leaves it off.
  *
  * Every change to the map goes through `commands.js`, which does the view and
  * physics syncing and records it on the undo stack — this module decides
@@ -74,7 +75,7 @@ function sameTarget(a, b) {
  * the password panel, and the panel is a modal surface — only this module knows
  * whether one is already up, and only this module can suspend flight for it.
  */
-export function createInteraction({ camera, controls, flight, graph, view, physics, files, overview, renderSettings, menu, editor, hud, speedEl }) {
+export function createInteraction({ camera, controls, lock, flight, graph, view, physics, files, overview, renderSettings, menu, editor, titleEdit, sidebar, hud, speedEl }) {
   const raycaster = new THREE.Raycaster()
   const crosshair = new THREE.Vector2(0, 0) // dead centre of the viewport
   const forward = new THREE.Vector3()
@@ -101,6 +102,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
   // stays true through it, so a click can't re-lock and edit the old graph
   // right before it's replaced.
   let loading = false
+  let sidebarKey = null // what the notes sidebar last showed: `${id}:${contentRevision}`
 
   function aheadOfCamera(target) {
     forward.set(0, 0, -1).applyQuaternion(camera.quaternion)
@@ -242,7 +244,18 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
       menu.charge(false)
     }
 
+    updateSidebar()
     updateHud()
+  }
+
+  /** Strictly the star under the crosshair, only while flying. */
+  function updateSidebar() {
+    if (!sidebar.isVisible || sidebar.isEditing || mode === 'editing') return
+    const node = controls.isLocked && hover?.kind === 'node' ? graph.getNode(hover.id) : null
+    const key = node ? `${node.id}:${graph.contentRevision}` : ''
+    if (key === sidebarKey) return
+    sidebarKey = key
+    sidebar.show(node && { name: nodeName(node), notes: node.notes })
   }
 
   function spawnNode() {
@@ -319,68 +332,69 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     controls.enabled = false
   }
 
-  /**
-   * For the editor panel specifically: pointer lock hides the system cursor
-   * entirely (see style.css's note on #editor), so a text form under it is
-   * keyboard-only unless this runs first. The radial menu is deliberately
-   * exempt from ever calling this — it is a per-click affordance, and
-   * Chrome's ~1.25s pointer-lock reacquisition cooldown would make releasing
-   * it there unusable.
-   *
-   * **Must fully settle before `editor.open()` runs.** `onUnlock` below
-   * cancels any already-open editor session on every unlock, including one
-   * this same release is about to cause — calling `controls.unlock()` and
-   * opening the editor in the same tick races that handler, and loses.
-   * `openMap` gets this for free today because a native file-picker dialog
-   * sits in between; awaiting the real `unlock` event buys everyone else the
-   * same gap.
-   */
-  function releaseLockForEditor() {
-    if (!controls.isLocked) return Promise.resolve()
-    return new Promise((resolve) => {
-      controls.addEventListener('unlock', resolve, { once: true })
-      controls.unlock()
-    })
-  }
-
   function endModal() {
     mode = 'idle'
     flight.setEnabled(true)
     controls.enabled = true
   }
 
-  async function editNode(node) {
-    await releaseLockForEditor()
+  /**
+   * Enter on a targeted star or connection: the label itself becomes the text
+   * field, and pointer lock is kept throughout. Mouse-look is frozen so the
+   * label stays put, and the target stays pinned as hovered so its label is
+   * drawn whatever its range. Esc (or any lock loss) discards the text.
+   */
+  async function editTitle(target) {
+    const item = target.kind === 'node' ? graph.getNode(target.id) : graph.getEdge(target.id)
+    if (!item) return
     mode = 'editing'
     beginModal()
-    const values = await editor.open(`node ${nodeName(node)}`, [
-      { key: 'label', label: 'Label', value: node.label },
-      { key: 'notes', label: 'Notes', value: node.notes, multiline: true },
-    ])
+    hover = target
+    view.setHover(target)
+    const value = await titleEdit.start(item.label, (text) => view.setLabelDraft(target, text))
+    view.setLabelDraft(null)
     endModal()
-    // The node can be gone if the session was torn down mid-edit.
-    if (!values || !graph.getNode(node.id)) return
-    commands.setNodeText(node.id, values.label, values.notes)
+    if (value === null) return
+    if (target.kind === 'node') {
+      const node = graph.getNode(target.id)
+      if (node) commands.setNodeText(node.id, value, node.notes)
+    } else if (graph.getEdge(target.id)) {
+      commands.setEdgeLabel(target.id, value)
+    }
   }
 
-  async function editEdge(edge) {
-    await releaseLockForEditor()
+  /**
+   * Ctrl/Cmd+Enter on a targeted star: full notes editing in the sidebar, with a
+   * real cursor. Pointer lock comes back by itself on Save or Esc — the app
+   * released it, so re-locking needs no click.
+   */
+  async function editNotes(node) {
+    await lock.release('panel')
     mode = 'editing'
     beginModal()
-    const values = await editor.open('edge', [{ key: 'label', label: 'Label', value: edge.label }])
-    endModal()
-    if (!values || !graph.getEdge(edge.id)) return
-    commands.setEdgeLabel(edge.id, values.label)
+    try {
+      const notes = await sidebar.edit(nodeName(node), node.notes)
+      endModal()
+      const current = graph.getNode(node.id)
+      if (notes !== null && current) commands.setNodeText(current.id, current.label, notes)
+    } finally {
+      if (mode === 'editing') endModal()
+      sidebarKey = null // view mode redraws from scratch
+      lock.resume()
+    }
   }
 
   /** Opens the editor panel as a modal and hands back what it collected. */
   async function prompt(title, fields, note, commitLabel) {
-    await releaseLockForEditor()
+    await lock.release('panel')
     mode = 'editing'
     beginModal()
-    const values = await editor.open(title, fields, note, commitLabel)
-    endModal()
-    return values
+    try {
+      return await editor.open(title, fields, note, commitLabel)
+    } finally {
+      endModal()
+      lock.resume()
+    }
   }
 
   /**
@@ -401,6 +415,14 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
     // Carried across retries: a mistyped confirmation should not also cost the
     // user the name they typed into a different field.
     let name = files.filename
+    // Held across the whole loop, so a mismatch re-prompt doesn't flash the
+    // lock back on between two panels.
+    let prompting = !files.hasCredentials || reprompt
+    if (prompting) await lock.release('panel')
+    const endPrompting = () => {
+      if (prompting) lock.resume()
+      prompting = false
+    }
     try {
       while (!files.hasCredentials || reprompt) {
         const values = await prompt(
@@ -427,6 +449,9 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
         break
       }
 
+      // Before the save, not after: the download it starts can pull focus to
+      // the browser's download UI, and Chrome won't re-lock once it has.
+      endPrompting()
       status.busy(`saving ${files.filename}`)
       const result = await files.save()
       // "saved" would claim more than is true the instant this resolves — the
@@ -436,6 +461,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
       return result
     } finally {
       busy = false
+      endPrompting()
     }
   }
 
@@ -443,18 +469,25 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
    * `Ctrl/Cmd+O`. Pointer lock goes first and stays gone: the file dialog is a
    * native window, so the browser would drop the lock to show it anyway, and
    * releasing it deliberately means the state machine lands somewhere clean
-   * instead of being unwound mid-flow. The user clicks to fly again afterwards.
+   * instead of being unwound mid-flow. It comes back by itself once the flow
+   * settles, however it ends.
    */
   async function openMap() {
     if (busy) {
       status.info('a file operation is still in progress')
       return
     }
-    // Lock goes first and stays gone, whether or not a file actually gets
-    // picked or the map turns out to be dirty — the file dialog and any
-    // confirm panel are both native/modal surfaces the browser would drop it
-    // for anyway.
-    if (controls.isLocked) controls.unlock()
+    // Not awaited: the picker needs this keypress's user activation, and the
+    // file dialog would drop the lock anyway.
+    lock.release('file')
+    try {
+      await openPicked()
+    } finally {
+      lock.resume()
+    }
+  }
+
+  async function openPicked() {
     const file = await files.pickFile()
     if (!file) return
 
@@ -575,20 +608,25 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
    */
   async function confirmDirty(note) {
     if (!files.isDirty) return true
-    await releaseLockForEditor()
-    mode = 'editing'
-    beginModal()
-    const choice = await editor.confirm(`unsaved changes in ${files.filename}`, note, [
-      { key: 's', label: 'S: save first' },
-      { key: 'd', label: 'D: discard' },
-    ])
-    endModal()
-    if (choice === 'd') return true
-    if (choice === 's') {
-      const result = await saveMap({ reprompt: false })
-      return Boolean(result?.ok)
+    await lock.release('panel')
+    try {
+      mode = 'editing'
+      beginModal()
+      const choice = await editor.confirm(`unsaved changes in ${files.filename}`, note, [
+        { key: 's', label: 'S: save first' },
+        { key: 'd', label: 'D: discard' },
+      ])
+      endModal()
+      if (choice === 'd') return true
+      if (choice === 's') {
+        const result = await saveMap({ reprompt: false })
+        return Boolean(result?.ok)
+      }
+      return false // Esc, or the panel was torn down by a lock loss
+    } finally {
+      if (mode === 'editing') endModal()
+      lock.resume()
     }
-    return false // Esc, or the panel was torn down by a lock loss
   }
 
   /** The map menu's New: replaces the graph, mirroring `files.applyPayload`'s
@@ -655,7 +693,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
       const node = graph.getNode(target.id)
       if (!node) return
       if (key === 'connect') startConnect(node.id)
-      else if (key === 'edit') editNode(node)
+      else if (key === 'edit') editTitle(target)
       else if (key === 'move') startMove(node.id)
       else if (key === 'core') commands.toggleCore(node.id)
       else if (key === 'delete') deleteNode(node.id)
@@ -664,7 +702,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
 
     const edge = graph.getEdge(target.id)
     if (!edge) return
-    if (key === 'edit') editEdge(edge)
+    if (key === 'edit') editTitle(target)
     else if (key === 'delete') {
       commands.deleteEdge(edge.id)
       clearHover()
@@ -672,6 +710,8 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
   }
 
   function onMouseDown(event) {
+    // A click mid-rename would pull focus out of the hidden text field.
+    if (titleEdit.isActive) event.preventDefault()
     if (!controls.isLocked || mode === 'editing') return
 
     if (event.button === 2) {
@@ -759,6 +799,25 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
       return
     }
 
+    // Enter renames what's under the crosshair in place; Ctrl/Cmd+Enter opens
+    // its notes. Not Shift: Shift is "fly down", and holding it for the chord
+    // sinks the camera off the target. Unlocked, Enter belongs to `main.js`
+    // (it takes the lock back).
+    if (event.key === 'Enter' && !event.repeat && controls.isLocked && mode === 'idle' && hover) {
+      event.preventDefault()
+      if (!event.metaKey && !event.ctrlKey) editTitle(hover)
+      else if (hover.kind === 'node') {
+        const node = graph.getNode(hover.id)
+        if (node) editNotes(node)
+      }
+      return
+    }
+
+    if (event.code === 'KeyN' && !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && (controls.isLocked || overview.isActive) && mode !== 'menu') {
+      sidebar.toggle()
+      sidebarKey = null
+    }
+
     if (event.key === 'Escape') {
       if (mode === 'connecting') cancelConnect()
       else if (mode === 'moving') cancelMove()
@@ -780,6 +839,7 @@ export function createInteraction({ camera, controls, flight, graph, view, physi
   function onUnlock() {
     if (menu.isOpen) menu.close()
     if (editor.isOpen) editor.cancel()
+    if (titleEdit.isActive) titleEdit.cancel() // Esc discards a rename
     menuTarget = null
     if (mode === 'connecting') cancelConnect()
     else if (mode === 'moving') cancelMove() // never commit on lock loss

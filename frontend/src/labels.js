@@ -461,6 +461,9 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
   const entries = new Map()
   let hoverId = null
   let hoverKind = null
+  let draftKind = null // an edit in progress: see `setDraft`
+  let draftId = null
+  let draft = null
   let frame = 0
   const drawn = [] // entries the last update put on screen, for `shown()`
   const pending = [] // entries given cells this frame, rasterised before it is drawn
@@ -806,8 +809,9 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       // A core is read from the model, not from its drawn size: the size eases
       // over a quarter second, and the capitals should not flicker on the way.
       const tier = node.is_core ? CORE : landmark ? LANDMARK : PLAIN
-      if (entry.source !== node.label || entry.tier !== tier || entry.rasterHovered !== hovered) {
-        setText(entry, node.label, tier, hovered)
+      const label = draftKind === 'node' && node.id === draftId ? draft : node.label
+      if (entry.source !== label || entry.tier !== tier || entry.rasterHovered !== hovered) {
+        setText(entry, label, tier, hovered)
       }
 
       point.set(node.x, node.y, node.z)
@@ -871,7 +875,8 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
     // Connections with a name of their own. Only a labelled edge is projected
     // at all: most carry no text, and a map may hold thousands of them.
     for (const edge of graph.edges.values()) {
-      if (!edge.label) continue
+      const label = draftKind === 'edge' && edge.id === draftId ? draft : edge.label
+      if (!label) continue
       const from = graph.getNode(edge.from)
       const to = graph.getNode(edge.to)
       if (!from || !to) continue
@@ -887,8 +892,8 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       entry.visibility = 0
 
       const hovered = hoverKind === 'edge' && edge.id === hoverId
-      if (entry.source !== edge.label || entry.rasterHovered !== hovered) {
-        setText(entry, edge.label, EDGE, hovered)
+      if (entry.source !== label || entry.rasterHovered !== hovered) {
+        setText(entry, label, EDGE, hovered)
       }
       if (!entry.text) continue
 
@@ -1178,6 +1183,17 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
   }
 
   /**
+   * Text shown in place of one node's or edge's own label, for an edit in
+   * progress — the model is only written once the edit commits. `null`
+   * target clears it.
+   */
+  function setDraft(target, text) {
+    draftKind = target?.kind ?? null
+    draftId = target?.id ?? null
+    draft = target ? text : null
+  }
+
+  /**
    * Forgets every label, for a graph replaced wholesale: a file reuses ids,
    * and a label mid-fade under a reused id should not carry over.
    */
@@ -1203,6 +1219,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
     update,
     hide,
     setHovered,
+    setDraft,
     reset,
     dispose,
     /**

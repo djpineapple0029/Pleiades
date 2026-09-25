@@ -3,7 +3,7 @@
 // The whole app, driven through its own input handlers: spawn a chain, link
 // it with the radial menu, mark a node core from the menu's bottom wedge,
 // and see the pick radius grow under the real crosshair; name a node
-// through the Edit wedge and see its label drawn under it. Pointer lock is
+// in place through the Edit wedge and see its label drawn under it. Pointer lock is
 // faked (see helpers/gestures.js) — chrome-headless-shell cannot take a
 // real one.
 import { test, expect } from '@playwright/test'
@@ -92,18 +92,14 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   expect.soft(editMenu.armed, 'right arms Edit').toBe('Edit')
   await settle(page)
   expect.soft(
-    await page.evaluate(() => !document.getElementById('editor').hidden && document.activeElement?.tagName === 'INPUT'),
-    'editor open with the label field focused',
+    await page.evaluate(() => document.getElementById('editor').hidden && document.activeElement?.classList.contains('title-edit-input')),
+    'renaming in place: no panel, the hidden title field focused',
   ).toBe(true)
   await page.keyboard.type('Alpha')
   await page.keyboard.press('Enter')
   await settle(page, 300)
-  // Editing releases pointer lock on purpose (password-system-rework: a
-  // mouse-usable panel) and never re-takes it — a real user clicks to fly
-  // again, same as after a save.
-  expect.soft(await t(page, 'locked()'), 'lock released while editing, and stays released after commit').toBe(false)
-  await t(page, 'relock()'); await settle(page)
-  expect.soft(await t(page, 'locked()'), 'a click relocks').toBe(true)
+  // Renaming happens on the star itself, so pointer lock is never let go.
+  expect.soft(await t(page, 'locked()'), 'still locked after renaming in place').toBe(true)
   expect.soft(await t(page, 'hud()'), 'HUD uses the new label').toBe('node Alpha · 1 links')
   const amber = await labelPixels()
   expect.soft(amber, 'label drawn under the targeted node, in the hover colour').toBeGreaterThan(30)

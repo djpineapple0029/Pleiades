@@ -44,6 +44,9 @@ test('no-password save: clickable buttons, real ATLM v2 mode-0 file', async ({ p
 
   await page.waitForTimeout(200)
   expect.soft(await page.evaluate(() => document.getElementById('editor').hidden), 'editor panel closes after save').toBe(true)
+  // The panel released the lock itself, so it comes back with no click
+  // (pointerLock.js) — the Save click is the only gesture involved.
+  expect.soft(await page.evaluate(() => document.pointerLockElement !== null), 'pointer lock back after Save, no click').toBe(true)
 
   // --- Tab-focus-trap check: spawn + edit, confirm the radial menu opens ---
   await page.mouse.dblclick(640, 400)

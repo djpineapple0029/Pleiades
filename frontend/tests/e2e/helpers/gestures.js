@@ -46,11 +46,13 @@ export async function installGestures(page, canvasId = 'viewport') {
       rightUp: () => fire('mouseup', { button: 2 }),
       // main.js's requestLock listens for a real `click` event, which two
       // separately dispatched mousedown/mouseup events do not synthesize —
-      // only a genuine click (or canvas.click()) does. Editing (and saving)
-      // deliberately releases pointer lock and never re-takes it, so a test
-      // that keeps going after an edit has to click to get it back, the same
-      // way a real user would.
+      // only a genuine click (or canvas.click()) does. Panels the app opens
+      // itself take the lock back on their own (pointerLock.js); this is for
+      // after an unlock the user caused, e.g. Esc — see `escape()`.
       relock: () => fire('click', {}),
+      // What the browser does on a real Esc under pointer lock: drops it
+      // without the page asking. A faked lock never sees that on its own.
+      escape: () => document.exitPointerLock(),
       wedges: () => [...document.querySelectorAll('#radial-menu .wedge text')].map((t) => t.textContent),
       armed: () => document.querySelector('#radial-menu .wedge.armed text')?.textContent ?? null,
     }

@@ -245,8 +245,7 @@ kbd {
   color: var(--ink-dim);
 }
 
-.editor-row input,
-.editor-row textarea {
+.editor-row input {
   width: 100%;
   padding: 6px 8px;
   border: 1px solid #2a3140;
@@ -257,8 +256,7 @@ kbd {
   resize: none;
 }
 
-.editor-row input:focus,
-.editor-row textarea:focus {
+.editor-row input:focus {
   outline: none;
   border-color: #6fc7ff;
 }
@@ -300,4 +298,112 @@ kbd {
 
 .editor-button--primary:hover {
   background: #1d3f5c;
+}
+
+/* Unlocks the app caused itself (a file dialog) get this, not the full key
+   list; `?` swaps between them. Informational, like #overlay. */
+#resume-pill {
+  position: fixed;
+  z-index: 1;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 8px 14px;
+  border: 1px solid #2a3140;
+  border-radius: 999px;
+  background: rgba(9, 11, 17, 0.85);
+  color: var(--ink-dim);
+  pointer-events: none;
+}
+
+/* Renaming in place types into this; the label on the star is what shows.
+   Kept in the viewport (not display:none) so it can hold focus. */
+.title-edit-input {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The notes sidebar. View mode never takes the mouse (clicks must reach the
+   canvas); edit mode has a real cursor and sits above #overlay. */
+#notes-sidebar {
+  position: fixed;
+  z-index: 2;
+  top: 14px;
+  right: 16px;
+  /* View mode hugs its text; edit mode (below) runs down to #speed. */
+  max-height: calc(100vh - 56px);
+  width: min(320px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  border: 1px solid #2a3140;
+  border-radius: 4px;
+  background: rgba(9, 11, 17, 0.82);
+  pointer-events: none;
+}
+
+#notes-sidebar.notes-sidebar--editing {
+  z-index: 3;
+  bottom: 42px; /* clear of #speed */
+  background: rgba(9, 11, 17, 0.96);
+  pointer-events: auto;
+}
+
+/* The star's name, set apart from the notes under a rule so it can't be
+   mistaken for their first line. */
+.notes-title {
+  flex: none;
+  margin: 0 0 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #2a3140;
+  color: #e6eefa;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  overflow-wrap: anywhere;
+}
+
+.notes-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.notes-body--empty {
+  color: var(--ink-dim);
+}
+
+.notes-textarea {
+  flex: 1;
+  min-height: 120px;
+  padding: 8px;
+  border: 1px solid #2a3140;
+  border-radius: 3px;
+  background: #11141c;
+  color: var(--ink);
+  font: inherit;
+  resize: none;
+}
+
+.notes-textarea:focus {
+  outline: none;
+  border-color: #6fc7ff;
+}
+
+.notes-hint {
+  margin: 10px 0;
+  color: var(--ink-dim);
+  white-space: normal;
 }

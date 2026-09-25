@@ -2,7 +2,10 @@ import { defineConfig } from 'vite'
 
 // Build output lands in server/static/ so Flask can serve it directly.
 export default defineConfig({
-  base: '/pleiades/',
+  // `/` for local runs (Flask serves the bundle at the root). The container
+  // build sets ATLASMAP_BASE=/pleiades/ (see Dockerfile), since Caddy mounts
+  // it under that prefix; baking the prefix in here broke every local build.
+  base: process.env.ATLASMAP_BASE || '/',
   build: {
     outDir: '../server/static',
     emptyOutDir: true,
