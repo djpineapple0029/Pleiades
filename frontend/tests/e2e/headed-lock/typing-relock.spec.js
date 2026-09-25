@@ -29,7 +29,7 @@ test('rename keeps the lock; notes Save and Esc take it back with no click', asy
   expect.soft(await locked(page), 'still locked after renaming in place').toBe(true)
   expect.soft(await page.evaluate(() => document.getElementById('hud').textContent), 'renamed').toContain('Vega')
 
-  await page.keyboard.press('Shift+Enter')
+  await page.keyboard.press('ControlOrMeta+Enter')
   await page.waitForTimeout(300)
   expect.soft(await locked(page), 'released for the notes cursor').toBe(false)
   await page.keyboard.type('a note')
@@ -38,7 +38,7 @@ test('rename keeps the lock; notes Save and Esc take it back with no click', asy
   expect.soft(await locked(page), 'locked again after Save, no click').toBe(true)
   expect.soft(await page.evaluate(() => document.getElementById('overlay').hidden), 'no key list').toBe(true)
 
-  await page.keyboard.press('Shift+Enter')
+  await page.keyboard.press('ControlOrMeta+Enter')
   await page.waitForTimeout(300)
   await page.keyboard.press('Escape')
   await page.waitForTimeout(400)

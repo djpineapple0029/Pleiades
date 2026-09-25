@@ -1,4 +1,4 @@
-// Renaming in place (Enter), notes in the sidebar (Shift+Enter, N), and the
+// Renaming in place (Enter), notes in the sidebar (Ctrl/Cmd+Enter, N), and the
 // pointer lock coming back by itself after panels the app opened. Pointer
 // lock is faked (helpers/gestures.js), so "comes back" means the app asked
 // for it; tests/e2e/headed-lock covers a real browser granting it.
@@ -51,8 +51,8 @@ test('rename in place, notes sidebar, automatic relock', async ({ page }) => {
   await t(page, 'relock()'); await settle(page)
   expect.soft(await t(page, 'hud()'), 'Esc discarded the text, and typing wasd did not fly').toBe('node Vega · 0 links')
 
-  // --- Shift+Enter: notes with a real cursor ---
-  await page.keyboard.press('Shift+Enter'); await settle(page, 200)
+  // --- Ctrl+Enter: notes with a real cursor ---
+  await page.keyboard.press('ControlOrMeta+Enter'); await settle(page, 200)
   s = await state(page)
   expect.soft(await t(page, 'locked()'), 'lock released for the notes cursor').toBe(false)
   expect.soft(s.sidebar && s.sidebarEditing, 'sidebar open in edit mode').toBe(true)
@@ -81,13 +81,22 @@ test('rename in place, notes sidebar, automatic relock', async ({ page }) => {
   await t(page, 'look(0, 300)'); await settle(page)
 
   // --- Esc in the notes editor: cancel, and the lock still comes back ---
-  await page.keyboard.press('Shift+Enter'); await settle(page, 200)
+  await page.keyboard.press('ControlOrMeta+Enter'); await settle(page, 200)
   await page.keyboard.type(' discarded')
   await page.keyboard.press('Escape'); await settle(page, 200)
   s = await state(page)
   expect.soft(await t(page, 'locked()'), 'lock back after Esc-cancel').toBe(true)
   expect.soft(s.sidebar && !s.sidebarEditing, 'view mode again (it was on before)').toBe(true)
   expect.soft(s.sidebarBody, 'notes unchanged').toBe('line one\nline two')
+
+  // --- the same chord saves: open, add a line, Ctrl/Cmd+Enter ---
+  await page.keyboard.press('ControlOrMeta+Enter'); await settle(page, 200)
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('line three')
+  await page.keyboard.press('ControlOrMeta+Enter'); await settle(page, 200)
+  s = await state(page)
+  expect.soft(await t(page, 'locked()'), 'lock back after a keyboard save').toBe(true)
+  expect.soft(s.sidebarBody, 'keyboard save kept the new line').toBe('line one\nline two\nline three')
 
   await page.keyboard.press('n'); await settle(page)
   expect.soft((await state(page)).sidebar, 'N closes the view').toBe(false)

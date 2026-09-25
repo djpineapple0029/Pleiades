@@ -21,7 +21,7 @@ function writeStored(open) {
  *
  * - **View**, toggled with N: read-only, never takes the mouse, and shows the
  *   notes of whatever star is under the crosshair (the caller decides which).
- * - **Edit**, from Shift+Enter: a real textarea with a real cursor — the
+ * - **Edit**, from Ctrl/Cmd+Enter: a real textarea with a real cursor — the
  *   caller releases pointer lock first. Enter is a newline here, since notes
  *   are prose; the Save button commits (Ctrl/Cmd+Enter does too, for the
  *   keyboard-only), Esc cancels.
@@ -57,7 +57,7 @@ export function createNotesSidebar(aside) {
     if (target.notes) {
       body.textContent = target.notes
     } else {
-      body.textContent = 'no notes · Shift+Enter to write'
+      body.textContent = 'no notes · Ctrl/⌘+Enter to write'
       body.classList.add('notes-body--empty')
     }
   }
@@ -80,7 +80,9 @@ export function createNotesSidebar(aside) {
     if (event.key === 'Escape') {
       event.preventDefault()
       finish(null)
-    } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.repeat) {
+      // Not on a repeat: the chord that opened this panel, held down, would
+      // otherwise save it the moment the textarea takes focus.
       event.preventDefault()
       finish(textarea.value.trim())
     }
@@ -98,7 +100,7 @@ export function createNotesSidebar(aside) {
 
     const hint = document.createElement('p')
     hint.className = 'notes-hint'
-    hint.textContent = 'Enter: new line · Esc: cancel'
+    hint.textContent = 'Enter: new line · Ctrl/⌘+Enter: save · Esc: cancel'
 
     const actions = document.createElement('div')
     actions.className = 'editor-actions'

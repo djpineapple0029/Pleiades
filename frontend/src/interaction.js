@@ -364,7 +364,7 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
   }
 
   /**
-   * Shift+Enter on a targeted star: full notes editing in the sidebar, with a
+   * Ctrl/Cmd+Enter on a targeted star: full notes editing in the sidebar, with a
    * real cursor. Pointer lock comes back by itself on Save or Esc — the app
    * released it, so re-locking needs no click.
    */
@@ -799,11 +799,13 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
       return
     }
 
-    // Enter renames what's under the crosshair in place; Shift+Enter opens its
-    // notes. Unlocked, Enter belongs to `main.js` (it takes the lock back).
+    // Enter renames what's under the crosshair in place; Ctrl/Cmd+Enter opens
+    // its notes. Not Shift: Shift is "fly down", and holding it for the chord
+    // sinks the camera off the target. Unlocked, Enter belongs to `main.js`
+    // (it takes the lock back).
     if (event.key === 'Enter' && !event.repeat && controls.isLocked && mode === 'idle' && hover) {
       event.preventDefault()
-      if (!event.shiftKey) editTitle(hover)
+      if (!event.metaKey && !event.ctrlKey) editTitle(hover)
       else if (hover.kind === 'node') {
         const node = graph.getNode(hover.id)
         if (node) editNotes(node)
