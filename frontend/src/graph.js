@@ -58,24 +58,28 @@ export function createGraph() {
   // Bumped by every change that can move a node's size: structure, a load, a
   // core flag. Consumers compare it to the value they last saw.
   let revision = 0
-  // Bumped by every change worth saving: everything `revision` tracks, plus
-  // label/notes text and a manual node move — neither of which affects size
-  // or tint, so `revision` must not move for them. `files.js`'s dirty check
-  // compares this against the value at the last successful save or open.
+  // A token for "the content as it stands": every change worth saving takes a
+  // fresh one — everything `revision` tracks, plus label/notes text and a
+  // manual node move, neither of which affects size or tint, so `revision`
+  // must not move for them. `files.js`'s dirty check compares it against the
+  // token at the last successful save or open. Undo puts an older token back
+  // (`setContentRevision`); tokens come from `contentSeq`, which only counts
+  // up, so no two distinct states ever share one.
   let contentRevision = 0
+  let contentSeq = 0
   let sizes = null // id -> size multiplier, rebuilt on demand
   let clusterCount = 0 // communities that earned a colour in the last run
 
   function changed() {
     revision++
-    contentRevision++
+    contentRevision = ++contentSeq
     sizes = null
   }
 
   /** Bumps only contentRevision — for a change that's worth saving but has no
    *  size/tint effect: a physics run starting or stopping, a manual move. */
   function touchContent() {
-    contentRevision++
+    contentRevision = ++contentSeq
   }
 
   // A loaded file can hold ids this counter would otherwise hand out again —
@@ -125,24 +129,109 @@ export function createGraph() {
     return edge
   }
 
+  const copyNode = (node) => ({ ...node, links: [...node.links] })
+  const copyEdge = (edge) => ({ ...edge })
+
+  /** Removes the edge. Returns a copy of it (what `restoreEdge` takes), or null. */
   function removeEdge(id) {
     const edge = edges.get(id)
-    if (!edge) return false
+    if (!edge) return null
     incident.get(edge.from)?.delete(id)
     incident.get(edge.to)?.delete(id)
     edges.delete(id)
     changed()
-    return true
+    return copyEdge(edge)
   }
 
-  /** Removes the node and every edge touching it. */
+  /**
+   * Removes the node and every edge touching it. Returns `{ node, edges }`
+   * copies — everything `restoreNode` needs to put it all back — or null.
+   */
   function removeNode(id) {
-    if (!nodes.has(id)) return false
-    for (const edgeId of [...incident.get(id)]) removeEdge(edgeId)
+    const node = nodes.get(id)
+    if (!node) return null
+    const removed = [...incident.get(id)].map(removeEdge)
     incident.delete(id)
     nodes.delete(id)
     changed()
+    return { node: copyNode(node), edges: removed }
+  }
+
+  /**
+   * Re-inserts a node `removeNode` returned, under its original id, along with
+   * its edges. The id matters beyond bookkeeping: star pulse and tint are
+   * hashed from it, so a restored node looks exactly as it did. Returns false,
+   * changing nothing, if the id is taken.
+   *
+   * No sequence counter moves: they only ever count up, so the id was handed
+   * out already and a fresh mint can never collide with it again.
+   */
+  function restoreNode({ node, edges: nodeEdges = [] }) {
+    if (nodes.has(node.id)) return false
+    nodes.set(node.id, copyNode(node))
+    incident.set(node.id, new Set())
+    changed()
+    for (const edge of nodeEdges) restoreEdge(edge)
     return true
+  }
+
+  /** Re-inserts an edge `removeEdge` returned. False if its id is taken or an end is missing. */
+  function restoreEdge(snapshot) {
+    const { id, from, to } = snapshot
+    if (edges.has(id) || !nodes.has(from) || !nodes.has(to)) return false
+    edges.set(id, copyEdge(snapshot))
+    incident.get(from).add(id)
+    incident.get(to).add(id)
+    changed()
+    return true
+  }
+
+  /** A manual position change: saved data, but no size/tint effect. */
+  function setNodePosition(id, x, y, z) {
+    const node = nodes.get(id)
+    if (!node) return false
+    node.x = x
+    node.y = y
+    node.z = z
+    touchContent()
+    return true
+  }
+
+  /** Every node's position and cluster colour, plus the cluster count — what a Balance run rewrites. */
+  function layoutSnapshot() {
+    const positions = new Map()
+    const colors = new Map()
+    for (const node of nodes.values()) {
+      positions.set(node.id, [node.x, node.y, node.z])
+      colors.set(node.id, node.cluster_color_id)
+    }
+    return { positions, colors, clusterCount }
+  }
+
+  /**
+   * Puts a `layoutSnapshot` back, for the ids that still exist. Colours are the
+   * one case where `cluster_color_id` is written outside `recluster`: this is
+   * not computing a partition, only restoring one `recluster` produced.
+   * `revision` moves only if a colour actually changed, same as `recluster`,
+   * so tints ease back rather than every node retargeting for nothing.
+   */
+  function applyLayout({ positions, colors, clusterCount: count }) {
+    let recoloured = false
+    for (const [id, [x, y, z]] of positions) {
+      const node = nodes.get(id)
+      if (!node) continue
+      node.x = x
+      node.y = y
+      node.z = z
+      const color = colors.get(id)
+      if (color !== undefined && node.cluster_color_id !== color) {
+        node.cluster_color_id = color
+        recoloured = true
+      }
+    }
+    clusterCount = count
+    if (recoloured) changed()
+    else touchContent()
   }
 
   /** Assigns label/notes in place (labels.js polls `node.label`, so it must
@@ -153,7 +242,7 @@ export function createGraph() {
     if (!node) return false
     node.label = label
     node.notes = notes
-    contentRevision++
+    touchContent()
     return true
   }
 
@@ -161,7 +250,7 @@ export function createGraph() {
     const edge = edges.get(id)
     if (!edge) return false
     edge.label = label
-    contentRevision++
+    touchContent()
     return true
   }
 
@@ -306,6 +395,11 @@ export function createGraph() {
     addEdge,
     removeNode,
     removeEdge,
+    restoreNode,
+    restoreEdge,
+    setNodePosition,
+    layoutSnapshot,
+    applyLayout,
     setCore,
     setNodeText,
     setEdgeLabel,
@@ -322,6 +416,10 @@ export function createGraph() {
     },
     get contentRevision() {
       return contentRevision
+    },
+    /** Puts back a token read from `contentRevision` earlier — undo/redo only. */
+    setContentRevision(token) {
+      contentRevision = token
     },
     /** Clusters in the last partition. 0 until the first Balance run. */
     get clusterCount() {
