@@ -1,10 +1,4 @@
-import {
-  forceSimulation,
-  forceLink,
-  forceManyBody,
-  forceCollide,
-  forceCenter,
-} from 'd3-force-3d'
+import { forceSimulation, forceLink, forceManyBody, forceCollide, forceCenter } from 'd3-force-3d'
 import { NODE_RADIUS } from './graphView.js'
 
 // Resting length of a connection between two base-size nodes, world units.
@@ -157,8 +151,12 @@ function forceEdgeRepel() {
     for (let i = 0; i < n; i++) {
       const [a, b] = segments[i]
       const { vx, vy, vz } = phantoms[i]
-      a.vx += vx; a.vy += vy; a.vz += vz
-      b.vx += vx; b.vy += vy; b.vz += vz
+      a.vx += vx
+      a.vy += vy
+      a.vz += vz
+      b.vx += vx
+      b.vy += vy
+      b.vz += vz
     }
   }
 
@@ -252,7 +250,7 @@ export function createPhysics(graph, view) {
         target: edge.to,
         distance:
           LINK_DISTANCE + bodies.get(edge.from).collide + bodies.get(edge.to).collide - 2 * COLLIDE_RADIUS,
-      }))
+      })),
     )
     // Self-loops have no midpoint distinct from their one endpoint and would
     // repel nothing; every real edge becomes one [bodyA, bodyB] pair. Shares
@@ -262,7 +260,7 @@ export function createPhysics(graph, view) {
       [...graph.edges.values()]
         .filter((edge) => edge.from !== edge.to)
         .map((edge) => [bodies.get(edge.from), bodies.get(edge.to)]),
-      simulation.randomSource()
+      simulation.randomSource(),
     )
 
     // Anchor on wherever the graph already sits. forceCenter cancels drift by
@@ -277,7 +275,10 @@ export function createPhysics(graph, view) {
       cz += body.z
     }
     const n = active.length || 1
-    centerForce.x(cx / n).y(cy / n).z(cz / n)
+    centerForce
+      .x(cx / n)
+      .y(cy / n)
+      .z(cz / n)
   }
 
   function writeBack() {

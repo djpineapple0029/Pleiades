@@ -5,18 +5,27 @@
   --void: #05060a;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
-html, body {
+html,
+body {
   margin: 0;
   height: 100%;
   overflow: hidden;
   background: var(--void);
   color: var(--ink);
-  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    13px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
 }
 
-[hidden] { display: none !important; }
+[hidden] {
+  display: none !important;
+}
 
 #viewport {
   display: block;
@@ -60,7 +69,9 @@ html, body {
   gap: 6px;
 }
 
-#overlay .keys span { margin-left: 6px; }
+#overlay .keys span {
+  margin-left: 6px;
+}
 
 kbd {
   display: inline-block;
@@ -158,7 +169,11 @@ kbd {
 
 #radial-menu .wedge text {
   fill: #9aa7ba;
-  font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    12px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
   letter-spacing: 0.08em;
 }
 

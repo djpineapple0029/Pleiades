@@ -50,7 +50,15 @@ export function rankNodes(nodes, query, degreeOf) {
     if (!match) continue
     const [tier, at] = match
     const mark = name.length === node.label.length ? [at, at + q.length] : null
-    hits.push({ id: node.id, label: node.label, isCore: Boolean(node.is_core), degree: degreeOf(node.id), mark, tier, length: name.length })
+    hits.push({
+      id: node.id,
+      label: node.label,
+      isCore: Boolean(node.is_core),
+      degree: degreeOf(node.id),
+      mark,
+      tier,
+      length: name.length,
+    })
   }
   hits.sort(
     (a, b) =>
@@ -58,7 +66,7 @@ export function rankNodes(nodes, query, degreeOf) {
       Number(b.isCore) - Number(a.isCore) ||
       b.degree - a.degree ||
       a.length - b.length ||
-      (a.label < b.label ? -1 : a.label > b.label ? 1 : 0)
+      (a.label < b.label ? -1 : a.label > b.label ? 1 : 0),
   )
   return hits.map(({ id, label, isCore, degree, mark }) => ({ id, label, isCore, degree, mark }))
 }

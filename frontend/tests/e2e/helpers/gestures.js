@@ -29,19 +29,38 @@ export async function installGestures(page, canvasId = 'viewport') {
   await page.evaluate((canvasId) => {
     const canvas = document.getElementById(canvasId)
     let locked = true
-    Object.defineProperty(document, 'pointerLockElement', { get: () => (locked ? canvas : null), configurable: true })
-    canvas.requestPointerLock = () => { locked = true; document.dispatchEvent(new Event('pointerlockchange')) }
-    document.exitPointerLock = () => { locked = false; document.dispatchEvent(new Event('pointerlockchange')) }
+    Object.defineProperty(document, 'pointerLockElement', {
+      get: () => (locked ? canvas : null),
+      configurable: true,
+    })
+    canvas.requestPointerLock = () => {
+      locked = true
+      document.dispatchEvent(new Event('pointerlockchange'))
+    }
+    document.exitPointerLock = () => {
+      locked = false
+      document.dispatchEvent(new Event('pointerlockchange'))
+    }
     document.dispatchEvent(new Event('pointerlockchange'))
-    const fire = (type, init) => canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init }))
+    const fire = (type, init) =>
+      canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init }))
     window.__t = {
       hud: () => document.getElementById('hud').textContent,
       locked: () => locked,
       overlay: () => !document.getElementById('overlay').hidden,
       crosshair: () => !document.getElementById('crosshair').hidden,
-      look: (dx, dy) => document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, movementX: dx, movementY: dy })),
-      doubleClick: () => { fire('mousedown', { button: 0, buttons: 1 }); fire('mouseup', { button: 0 }); fire('mousedown', { button: 0, buttons: 1 }); fire('mouseup', { button: 0 }) },
-      click: () => { fire('mousedown', { button: 0, buttons: 1 }); fire('mouseup', { button: 0 }) },
+      look: (dx, dy) =>
+        document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, movementX: dx, movementY: dy })),
+      doubleClick: () => {
+        fire('mousedown', { button: 0, buttons: 1 })
+        fire('mouseup', { button: 0 })
+        fire('mousedown', { button: 0, buttons: 1 })
+        fire('mouseup', { button: 0 })
+      },
+      click: () => {
+        fire('mousedown', { button: 0, buttons: 1 })
+        fire('mouseup', { button: 0 })
+      },
       rightDown: () => fire('mousedown', { button: 2, buttons: 2 }),
       rightUp: () => fire('mouseup', { button: 2 }),
       // main.js's requestLock listens for a real `click` event, which two
@@ -67,10 +86,15 @@ export const t = (page, expr) => page.evaluate((e) => new Function('return windo
  * any fixed wait, so wait for frames: after `n`, the app's loop has raycast
  * the crosshair and rewritten the HUD at least once since the last input.
  */
-export const frames = (page, n = 3) => page.evaluate((n) => new Promise((done) => {
-  const step = (left) => (left ? requestAnimationFrame(() => step(left - 1)) : done())
-  step(n)
-}), n)
+export const frames = (page, n = 3) =>
+  page.evaluate(
+    (n) =>
+      new Promise((done) => {
+        const step = (left) => (left ? requestAnimationFrame(() => step(left - 1)) : done())
+        step(n)
+      }),
+    n,
+  )
 
 export const settle = async (page, ms = 0) => {
   await frames(page)

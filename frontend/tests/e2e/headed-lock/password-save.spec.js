@@ -11,7 +11,9 @@ import { test, expect } from '@playwright/test'
 
 test('no-password save: clickable buttons, real ATLM v2 mode-0 file', async ({ page }) => {
   const consoleErrors = []
-  page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()) })
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
   const pageErrors = []
   page.on('pageerror', (e) => pageErrors.push(String(e)))
 
@@ -21,32 +23,64 @@ test('no-password save: clickable buttons, real ATLM v2 mode-0 file', async ({ p
   // --- lock the pointer (click-to-fly) ---
   await page.mouse.click(640, 400)
   await page.waitForTimeout(300)
-  expect.soft(await page.evaluate(() => document.pointerLockElement !== null), 'pointer lock acquired after click').toBe(true)
+  expect
+    .soft(
+      await page.evaluate(() => document.pointerLockElement !== null),
+      'pointer lock acquired after click',
+    )
+    .toBe(true)
 
   // --- Ctrl+S: first save, blank password saves immediately (no warn-once) ---
   await page.evaluate(() => {
-    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyS', key: 's', ctrlKey: true, bubbles: true, cancelable: true }))
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        code: 'KeyS',
+        key: 's',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
   })
   await page.waitForTimeout(150)
-  expect.soft(await page.evaluate(() => !document.getElementById('editor').hidden), 'editor panel opens on first Ctrl+S').toBe(true)
-  expect.soft(await page.evaluate(() => document.pointerLockElement === null), 'pointer lock released during the save panel (mouse-usable)').toBe(true)
+  expect
+    .soft(
+      await page.evaluate(() => !document.getElementById('editor').hidden),
+      'editor panel opens on first Ctrl+S',
+    )
+    .toBe(true)
+  expect
+    .soft(
+      await page.evaluate(() => document.pointerLockElement === null),
+      'pointer lock released during the save panel (mouse-usable)',
+    )
+    .toBe(true)
 
   // Leave filename/password/confirm all blank, commit via the button
   // (mouse-first workflow) — one submit is enough, no confirmation round.
-  const [download] = await Promise.all([
-    page.waitForEvent('download'),
-    page.click('.editor-button--primary'),
-  ])
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('.editor-button--primary')])
   const path = await download.path()
   const { readFileSync } = await import('node:fs')
   const bytes = readFileSync(path)
-  expect.soft(bytes[0] === 0x41 && bytes[4] === 2 && bytes[5] === 0, 'no-password save produced an ATLM v2 file').toBe(true)
+  expect
+    .soft(bytes[0] === 0x41 && bytes[4] === 2 && bytes[5] === 0, 'no-password save produced an ATLM v2 file')
+    .toBe(true)
 
   await page.waitForTimeout(200)
-  expect.soft(await page.evaluate(() => document.getElementById('editor').hidden), 'editor panel closes after save').toBe(true)
+  expect
+    .soft(
+      await page.evaluate(() => document.getElementById('editor').hidden),
+      'editor panel closes after save',
+    )
+    .toBe(true)
   // The panel released the lock itself, so it comes back with no click
   // (pointerLock.js) — the Save click is the only gesture involved.
-  expect.soft(await page.evaluate(() => document.pointerLockElement !== null), 'pointer lock back after Save, no click').toBe(true)
+  expect
+    .soft(
+      await page.evaluate(() => document.pointerLockElement !== null),
+      'pointer lock back after Save, no click',
+    )
+    .toBe(true)
 
   // --- Tab-focus-trap check: spawn + edit, confirm the radial menu opens ---
   await page.mouse.dblclick(640, 400)
@@ -55,7 +89,12 @@ test('no-password save: clickable buttons, real ATLM v2 mode-0 file', async ({ p
   await page.mouse.move(640, 340)
   await page.mouse.up({ button: 'right' })
   await page.waitForTimeout(200)
-  expect.soft(await page.evaluate(() => !document.getElementById('radial-menu').hidden), 'radial menu opens after right-click+drag').toBe(true)
+  expect
+    .soft(
+      await page.evaluate(() => !document.getElementById('radial-menu').hidden),
+      'radial menu opens after right-click+drag',
+    )
+    .toBe(true)
 
   expect.soft(consoleErrors, 'no console.error output').toEqual([])
   expect.soft(pageErrors, 'no page errors').toEqual([])

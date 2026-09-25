@@ -30,10 +30,7 @@
 // anyway, it stops reading as a colour at all. Cyan at 180 survives the same
 // treatment; 210 does not, nor do its neighbours 195 and 228. `LATE_IDS` holds
 // them, and the picker reaches for them only once everything else is taken.
-const HUES = [
-  140, 300, 32, 180, 262, 342, 100, 210, 58, 322, 158, 18,
-  79, 245, 0, 120, 281, 45, 195, 228,
-]
+const HUES = [140, 300, 32, 180, 262, 342, 100, 210, 58, 322, 158, 18, 79, 245, 0, 120, 281, 45, 195, 228]
 const LATE_HUES = new Set([210, 195, 228])
 // Pastel on purpose. A cluster colour multiplies a star's whole glow and its
 // rays, so a dark or fully saturated hue makes a dim star; and the same values
@@ -63,7 +60,7 @@ export const PALETTE_SIZE = HUES.length
 
 /** Colour ids (1-based) the picker holds back until every other one is taken. */
 export const LATE_IDS = new Set(
-  HUES.map((hue, index) => (LATE_HUES.has(hue) ? index + 1 : 0)).filter(Boolean)
+  HUES.map((hue, index) => (LATE_HUES.has(hue) ? index + 1 : 0)).filter(Boolean),
 )
 
 /** A colour id's hue in degrees, wrapping like `clusterInk`. */

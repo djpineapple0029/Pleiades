@@ -63,10 +63,14 @@ const payload = { nodes, edges, camera: { position: [0, 0, 900], rotation: [0, 0
 const template = readFileSync(TEMPLATE, 'utf8')
 if (!template.includes('__ATLASMAP_PAYLOAD__')) throw new Error('template has no payload marker')
 const json = JSON.stringify(payload).replaceAll('<', '\\u003c')
-const html = template.replace('__ATLASMAP_TITLE__', () => 'three fields').replace('__ATLASMAP_PAYLOAD__', () => json)
+const html = template
+  .replace('__ATLASMAP_TITLE__', () => 'three fields')
+  .replace('__ATLASMAP_PAYLOAD__', () => json)
 const file = `${DIR}/rich.html`
 writeFileSync(file, html)
-console.log(`wrote ${file}: ${(Buffer.byteLength(html) / 1024).toFixed(0)} kB, ${nodes.length} nodes, ${edges.length} edges`)
+console.log(
+  `wrote ${file}: ${(Buffer.byteLength(html) / 1024).toFixed(0)} kB, ${nodes.length} nodes, ${edges.length} edges`,
+)
 
 const browser = await chromium.launch({ headless: false })
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 })

@@ -284,15 +284,16 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
       sum += (len / 60) * (1 + nodeCore[edgeFrom[i]] + nodeCore[edgeTo[i]])
       spawnCumulative[n + i] = sum
     }
-    budget = n === 0 ? 0 : Math.min(max, Math.round(BASE_GRAINS + GRAINS_PER_NODE * n + totalLength / EDGE_SPACING))
+    budget =
+      n === 0 ? 0 : Math.min(max, Math.round(BASE_GRAINS + GRAINS_PER_NODE * n + totalLength / EDGE_SPACING))
 
     // Re-point every grain at its node and edge's new index; anything whose
     // node or edge is gone freezes and fades.
     for (let g = 0; g < count; g++) {
       if (phase[g] === DEAD) continue
       const a = nodeIndex.get(atId[g])
-      const b = toId[g] === null ? -1 : nodeIndex.get(toId[g]) ?? null
-      const e = viaId[g] === null ? -1 : edgeIndex.get(viaId[g]) ?? null
+      const b = toId[g] === null ? -1 : (nodeIndex.get(toId[g]) ?? null)
+      const e = viaId[g] === null ? -1 : (edgeIndex.get(viaId[g]) ?? null)
       if (a === undefined || b === null || e === null) {
         dying[g] = 2 // frozen: no node to follow any more
         continue
@@ -300,7 +301,7 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
       at[g] = a
       to[g] = b
       via[g] = e
-      came[g] = cameId[g] === null ? -1 : nodeIndex.get(cameId[g]) ?? -1
+      came[g] = cameId[g] === null ? -1 : (nodeIndex.get(cameId[g]) ?? -1)
     }
     // A shrunk budget retires the grains past it; a grown one fills in.
     for (let g = budget; g < count; g++) if (phase[g] !== DEAD && !dying[g]) dying[g] = 1
@@ -432,10 +433,15 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
       const other = edgeFrom[e] === k ? edgeTo[e] : edgeFrom[e]
       // A directed link carries dust one way only.
       // Undirected links still have a current: most grains go the way it runs.
-      const downstream = (edgeFlow[e] > 0) === (edgeFrom[e] === k)
+      const downstream = edgeFlow[e] > 0 === (edgeFrom[e] === k)
       const w = edgeDirected[e]
-        ? edgeFrom[e] === k ? 1 + 2 * nodeCore[other] : 0
-        : (1 + 2 * nodeCore[other]) * (other === came[g] ? 0.15 : 1) * (downstream ? CURRENT : 1 - CURRENT) * 2
+        ? edgeFrom[e] === k
+          ? 1 + 2 * nodeCore[other]
+          : 0
+        : (1 + 2 * nodeCore[other]) *
+          (other === came[g] ? 0.15 : 1) *
+          (downstream ? CURRENT : 1 - CURRENT) *
+          2
       weights.push(w)
       total += w
     }
@@ -463,7 +469,7 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
     const spin = nodeSpin[k]
     const target = headingAngle(basis, g * 6, spin, (q.x - p.x) / len, (q.y - p.y) / len, (q.z - p.z) / len)
     exitTheta[g] = target
-    arc[g] = (((target - theta[g]) * spin) % TAU + TAU) % TAU
+    arc[g] = ((((target - theta[g]) * spin) % TAU) + TAU) % TAU
   }
 
   /** `keepExit`: the grain is already at the exit point `chooseLink` set. */
@@ -617,10 +623,18 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
         const pa = nodeObjs[a]
         const pb = nodeObjs[b]
         const eo = g * 12
-        const p0x = pa.x + ends[eo], p0y = pa.y + ends[eo + 1], p0z = pa.z + ends[eo + 2]
-        const t0x = ends[eo + 3], t0y = ends[eo + 4], t0z = ends[eo + 5]
-        const p1x = pb.x + ends[eo + 6], p1y = pb.y + ends[eo + 7], p1z = pb.z + ends[eo + 8]
-        const t1x = ends[eo + 9], t1y = ends[eo + 10], t1z = ends[eo + 11]
+        const p0x = pa.x + ends[eo],
+          p0y = pa.y + ends[eo + 1],
+          p0z = pa.z + ends[eo + 2]
+        const t0x = ends[eo + 3],
+          t0y = ends[eo + 4],
+          t0z = ends[eo + 5]
+        const p1x = pb.x + ends[eo + 6],
+          p1y = pb.y + ends[eo + 7],
+          p1z = pb.z + ends[eo + 8]
+        const t1x = ends[eo + 9],
+          t1y = ends[eo + 10],
+          t1z = ends[eo + 11]
         const chord = len3(p1x - p0x, p1y - p0y, p1z - p0z) || 1
 
         let u = t[g]
@@ -655,8 +669,12 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
           const e = via[g]
           const f7 = e * 7
           const len = edgeFrame[f7]
-          const e1x = edgeFrame[f7 + 1], e1y = edgeFrame[f7 + 2], e1z = edgeFrame[f7 + 3]
-          const e2x = edgeFrame[f7 + 4], e2y = edgeFrame[f7 + 5], e2z = edgeFrame[f7 + 6]
+          const e1x = edgeFrame[f7 + 1],
+            e1y = edgeFrame[f7 + 2],
+            e1z = edgeFrame[f7 + 3]
+          const e2x = edgeFrame[f7 + 4],
+            e2y = edgeFrame[f7 + 5],
+            e2z = edgeFrame[f7 + 6]
 
           const along = edgeFrom[e] === a ? u : 1 - u // the link's own direction
           const envelope = Math.sin(Math.PI * u)
@@ -798,7 +816,9 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
       dx /= len
       dy /= len
       dz /= len
-      let e1x = dy, e1y = -dx, e1z = 0
+      let e1x = dy,
+        e1y = -dx,
+        e1z = 0
       if (Math.abs(dz) > 0.9) {
         e1x = 0
         e1y = dz

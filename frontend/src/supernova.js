@@ -210,7 +210,10 @@ export function createSupernova(scene, { rand = Math.random } = {}) {
     geometry.setAttribute('direction', new THREE.BufferAttribute(new Float32Array(total * 3), 3))
     geometry.setAttribute('motion', new THREE.BufferAttribute(new Float32Array(total * 4), 4))
     geometry.setAttribute('spark', new THREE.BufferAttribute(new Float32Array(total), 1))
-    const particles = new THREE.Points(geometry, additive(particleUniforms, PARTICLE_VERTEX, PARTICLE_FRAGMENT))
+    const particles = new THREE.Points(
+      geometry,
+      additive(particleUniforms, PARTICLE_VERTEX, PARTICLE_FRAGMENT),
+    )
     particles.onBeforeRender = (renderer) => {
       renderer.getSize(size)
       particleUniforms.resolution.value.copy(size)

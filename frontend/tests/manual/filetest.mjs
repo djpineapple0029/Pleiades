@@ -12,7 +12,9 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright-core'
 
 const woff2 = readFileSync(
-  fileURLToPath(new URL('../../node_modules/@fontsource/jost/files/jost-latin-400-normal.woff2', import.meta.url))
+  fileURLToPath(
+    new URL('../../node_modules/@fontsource/jost/files/jost-latin-400-normal.woff2', import.meta.url),
+  ),
 ).toString('base64')
 
 const HTML = `<!doctype html><html><head><meta charset="utf-8">
@@ -41,7 +43,10 @@ document.getElementById('b').addEventListener('click', function(){
 const dir = fileURLToPath(new URL('../../artifacts', import.meta.url))
 mkdirSync(dir, { recursive: true })
 writeFileSync(`${dir}/pltest.html`, HTML)
-const server = createServer((_q, s) => { s.writeHead(200, { 'Content-Type': 'text/html' }); s.end(HTML) }).listen(5199)
+const server = createServer((_q, s) => {
+  s.writeHead(200, { 'Content-Type': 'text/html' })
+  s.end(HTML)
+}).listen(5199)
 
 async function run(label, url) {
   const browser = await chromium.launch({ headless: false })

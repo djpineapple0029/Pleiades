@@ -274,9 +274,11 @@ def write_config() -> Response | tuple[Response, int]:
     if networks is not None:
         clean, error = validate_setting(SETTINGS[("admin", "allowed_networks")], networks)
         if not error and not ip_allowed(ip, clean):
-            return fail("Save refused.", 400, errors=[
-                f"admin.allowed_networks: your own address ({ip}) isn't in it, so this would lock you out"
-            ])
+            return fail(
+                "Save refused.",
+                400,
+                errors=[f"admin.allowed_networks: your own address ({ip}) isn't in it, so this would lock you out"],
+            )
     errors = store().save(body)
     if errors:
         return fail("Save refused.", 400, errors=errors)

@@ -139,11 +139,7 @@ export function createOverview({ camera, canvas, graph, view, controls }) {
       const depth = point.dot(viewForward)
       const across = Math.abs(point.dot(viewRight))
       const above = Math.abs(point.dot(viewUp))
-      needed = Math.max(
-        needed,
-        across / tanH + reach / sinH - depth,
-        above / tanV + reach / sinV - depth
-      )
+      needed = Math.max(needed, across / tanH + reach / sinH - depth, above / tanV + reach / sinV - depth)
     }
     fitDistance = Math.max(needed * FIT_MARGIN, maxReach * MIN_FIT_RADII, MIN_FIT)
 

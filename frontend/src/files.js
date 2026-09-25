@@ -15,7 +15,13 @@
  * still works from there too. Either way the password lives only in the
  * closure below for the length of the session.
  */
-import { cryptoAvailable, peekHeader, readContainer, writeContainer, ContainerPasswordError } from './format/container.js'
+import {
+  cryptoAvailable,
+  peekHeader,
+  readContainer,
+  writeContainer,
+  ContainerPasswordError,
+} from './format/container.js'
 
 const SUFFIX = '.atlasmap'
 const DEFAULT_FILENAME = `map${SUFFIX}`
@@ -172,7 +178,8 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
       try {
         applyPayload(await readContainer(bytes, attempt))
       } catch (error) {
-        if (error instanceof ContainerPasswordError) return { ok: false, wrongPassword: true, error: error.message }
+        if (error instanceof ContainerPasswordError)
+          return { ok: false, wrongPassword: true, error: error.message }
         return { ok: false, error: error.message || 'the file does not hold a graph' }
       }
       password = attempt

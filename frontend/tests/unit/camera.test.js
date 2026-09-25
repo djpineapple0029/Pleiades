@@ -37,7 +37,8 @@ describe('camera round trip through the saved payload', () => {
 
       // And the controls have to be able to keep turning from the restored state.
       const resumed = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ')
-      const controlsResume = Math.abs(resumed.x - pitch) < 1e-9 && Math.abs(Math.cos(resumed.y) - Math.cos(yaw)) < 1e-9
+      const controlsResume =
+        Math.abs(resumed.x - pitch) < 1e-9 && Math.abs(Math.cos(resumed.y) - Math.cos(yaw)) < 1e-9
 
       it('payload is finite', () => expect(payloadIsFinite).toBe(true))
       it('view direction preserved', () => expect(viewDirectionPreserved).toBe(true))

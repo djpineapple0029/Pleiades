@@ -88,8 +88,7 @@ def render(stats: dict, addrs: dict, first_password: str | None) -> str:
         lines.append(f"    same network     {GREEN}http://{addrs['lan']}:{PORT}{RESET}")
     if addrs["public"]:
         lines.append(
-            f"    internet         {YELLOW}http://{addrs['public']}:{PORT}{RESET} "
-            f"{DIM}(needs a port-forward){RESET}"
+            f"    internet         {YELLOW}http://{addrs['public']}:{PORT}{RESET} {DIM}(needs a port-forward){RESET}"
         )
     else:
         lines.append(f"    internet         {DIM}offline / unknown{RESET}")
@@ -107,16 +106,12 @@ def render(stats: dict, addrs: dict, first_password: str | None) -> str:
         f"     data {human_bytes(stats['bytes_sent'])}"
     )
     lines.append(
-        f"    {GREEN}2xx {st.get("2xx", 0):>5}{RESET}   {CYAN}3xx {st.get("3xx", 0):>5}{RESET}   "
-        f"{YELLOW}4xx {st.get("4xx", 0):>5}{RESET}   {RED}5xx {st.get("5xx", 0):>5}{RESET}"
+        f"    {GREEN}2xx {st.get('2xx', 0):>5}{RESET}   {CYAN}3xx {st.get('3xx', 0):>5}{RESET}   "
+        f"{YELLOW}4xx {st.get('4xx', 0):>5}{RESET}   {RED}5xx {st.get('5xx', 0):>5}{RESET}"
     )
     lines.append(
         f"    unique clients {stats['unique_clients']:>3}"
-        + (
-            "   " + ", ".join(f"{ip}×{n}" for ip, n in stats["top_clients"])
-            if stats["top_clients"]
-            else ""
-        )
+        + ("   " + ", ".join(f"{ip}×{n}" for ip, n in stats["top_clients"]) if stats["top_clients"] else "")
     )
     lines.append("")
     lines.append(f"  {BOLD}Recent{RESET}")

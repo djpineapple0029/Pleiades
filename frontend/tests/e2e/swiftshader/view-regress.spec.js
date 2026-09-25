@@ -45,7 +45,8 @@ test('a loaded map renders, raycasts and balances like a hand-built one', async 
 
     // A map with a shape worth balancing, saved and reopened for real.
     const ids = []
-    for (let i = 0; i < 40; i++) ids.push(graph.addNode({ x: (i % 8) * 40 - 140, y: Math.floor(i / 8) * 40 - 80, z: 0 }).id)
+    for (let i = 0; i < 40; i++)
+      ids.push(graph.addNode({ x: (i % 8) * 40 - 140, y: Math.floor(i / 8) * 40 - 80, z: 0 }).id)
     for (let i = 1; i < 40; i++) graph.addEdge(ids[i], ids[Math.floor(i / 3)])
     view.sync()
     files.setCredentials('pw', 'render test')
@@ -121,7 +122,9 @@ test('a loaded map renders, raycasts and balances like a hand-built one', async 
     r.backEdgeCount = graph.edges.size
     r.backRestart = physics.start()
     for (let i = 0; i < 20; i++) physics.update()
-    r.backFinite = [...graph.nodes.values()].every((n) => Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z))
+    r.backFinite = [...graph.nodes.values()].every(
+      (n) => Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z),
+    )
     r.nodeRadius = NODE_RADIUS
     return r
   }, threeUrl)
@@ -138,7 +141,9 @@ test('a loaded map renders, raycasts and balances like a hand-built one', async 
   expect.soft(out.finite, 'positions stay finite').toBe(true)
   expect.soft(out.midpointHitAfterSettle?.kind, 'edges still pickable after a settle').toBe('edge')
   expect.soft(out.backResult?.ok, 'second load succeeded').toBe(true)
-  expect.soft(out.backNodeCount === 40 && out.backEdgeCount === 39, '40-node map restored over the small one').toBe(true)
+  expect
+    .soft(out.backNodeCount === 40 && out.backEdgeCount === 39, '40-node map restored over the small one')
+    .toBe(true)
   expect.soft(out.backRestart === true && out.backFinite === true, 'and balances without NaN').toBe(true)
   expect.soft(errors, 'no console errors or warnings').toEqual([])
 })

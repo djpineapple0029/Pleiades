@@ -45,12 +45,21 @@ describe('toPayload is a copy, not a view', () => {
 
 describe('ids continue above a loaded file', () => {
   const fresh = createGraph()
-  fresh.load({ nodes: [{ id: 'n7', x: 0, y: 0, z: 0 }, { id: 'n2', x: 0, y: 0, z: 0 }], edges: [] })
+  fresh.load({
+    nodes: [
+      { id: 'n7', x: 0, y: 0, z: 0 },
+      { id: 'n2', x: 0, y: 0, z: 0 },
+    ],
+    edges: [],
+  })
   const minted = fresh.addNode({ x: 0, y: 0, z: 0 })
   it('new node id clears the highest loaded', () => expect(minted.id).toBe('n8'))
 
   fresh.load({
-    nodes: [{ id: 'n1', x: 0, y: 0, z: 0 }, { id: 'n2', x: 0, y: 0, z: 0 }],
+    nodes: [
+      { id: 'n1', x: 0, y: 0, z: 0 },
+      { id: 'n2', x: 0, y: 0, z: 0 },
+    ],
     edges: [{ id: 'e5', from: 'n1', to: 'n2' }],
   })
   const newEdgeIdClearsHighest = fresh.addEdge('n1', 'n2') === null || true
@@ -58,7 +67,11 @@ describe('ids continue above a loaded file', () => {
 
   const g3 = createGraph()
   g3.load({
-    nodes: [{ id: 'n1', x: 0, y: 0, z: 0 }, { id: 'n2', x: 0, y: 0, z: 0 }, { id: 'n3', x: 0, y: 0, z: 0 }],
+    nodes: [
+      { id: 'n1', x: 0, y: 0, z: 0 },
+      { id: 'n2', x: 0, y: 0, z: 0 },
+      { id: 'n3', x: 0, y: 0, z: 0 },
+    ],
     edges: [{ id: 'e4', from: 'n1', to: 'n2' }],
   })
   it('edge seq continues', () => expect(g3.addEdge('n1', 'n3').id).toBe('e5'))
@@ -66,7 +79,13 @@ describe('ids continue above a loaded file', () => {
 
 describe('non-generated ids do not collide', () => {
   const odd = createGraph()
-  odd.load({ nodes: [{ id: 'root', x: 0, y: 0, z: 0 }, { id: 'n1', x: 0, y: 0, z: 0 }], edges: [] })
+  odd.load({
+    nodes: [
+      { id: 'root', x: 0, y: 0, z: 0 },
+      { id: 'n1', x: 0, y: 0, z: 0 },
+    ],
+    edges: [],
+  })
   const after = [odd.addNode({ x: 0, y: 0, z: 0 }), odd.addNode({ x: 0, y: 0, z: 0 })]
   const mintsPastTakenId = after[0].id === 'n2' && after[1].id === 'n3'
   const noIdOverwritten = odd.nodes.size === 4
@@ -78,7 +97,8 @@ describe('non-generated ids do not collide', () => {
 describe('load replaces rather than merges', () => {
   const g4 = createGraph()
   g4.addNode({ x: 0, y: 0, z: 0 })
-  const nodesRef = g4.nodes, edgesRef = g4.edges
+  const nodesRef = g4.nodes,
+    edgesRef = g4.edges
   g4.load({ nodes: [{ id: 'z1', x: 1, y: 2, z: 3 }], edges: [] })
 
   it('old nodes gone', () => expect(g4.nodes.size === 1 && g4.getNode('z1') !== null).toBe(true))
@@ -88,7 +108,10 @@ describe('load replaces rather than merges', () => {
 describe('degenerate edges are dropped, not carried in', () => {
   const g5 = createGraph()
   g5.load({
-    nodes: [{ id: 'n1', x: 0, y: 0, z: 0 }, { id: 'n2', x: 0, y: 0, z: 0 }],
+    nodes: [
+      { id: 'n1', x: 0, y: 0, z: 0 },
+      { id: 'n2', x: 0, y: 0, z: 0 },
+    ],
     edges: [
       { id: 'e1', from: 'n1', to: 'n1' },
       { id: 'e2', from: 'n1', to: 'n2' },
@@ -97,7 +120,8 @@ describe('degenerate edges are dropped, not carried in', () => {
   })
   it('self-loop dropped', () => expect(Boolean(g5.getEdge('e1'))).toBe(false))
   it('reverse duplicate dropped', () => expect(g5.edges.size === 1 && Boolean(g5.getEdge('e2'))).toBe(true))
-  it('degree matches surviving edges', () => expect(g5.degree('n1') === 1 && g5.degree('n2') === 1).toBe(true))
+  it('degree matches surviving edges', () =>
+    expect(g5.degree('n1') === 1 && g5.degree('n2') === 1).toBe(true))
 })
 
 describe('defaults fill in for a thin payload', () => {
@@ -128,7 +152,15 @@ describe('rejections leave the previous graph untouched', () => {
     ['edges not an array', { nodes: [], edges: {} }],
     ['node without an id', { nodes: [{ x: 0, y: 0, z: 0 }] }],
     ['node id not a string', { nodes: [{ id: 3, x: 0, y: 0, z: 0 }] }],
-    ['duplicate node id', { nodes: [{ id: 'a', x: 0, y: 0, z: 0 }, { id: 'a', x: 0, y: 0, z: 0 }] }],
+    [
+      'duplicate node id',
+      {
+        nodes: [
+          { id: 'a', x: 0, y: 0, z: 0 },
+          { id: 'a', x: 0, y: 0, z: 0 },
+        ],
+      },
+    ],
     ['NaN position', { nodes: [{ id: 'a', x: NaN, y: 0, z: 0 }] }],
     ['null position', { nodes: [{ id: 'a', x: null, y: 0, z: 0 }] }],
     ['string position', { nodes: [{ id: 'a', x: '2', y: 0, z: 0 }] }],
@@ -137,8 +169,20 @@ describe('rejections leave the previous graph untouched', () => {
     ['empty-string position', { nodes: [{ id: 'a', x: '', y: 0, z: 0 }] }],
     ['missing position', { nodes: [{ id: 'a', y: 0, z: 0 }] }],
     ['Infinity position', { nodes: [{ id: 'a', x: Infinity, y: 0, z: 0 }] }],
-    ['edge to a missing node', { nodes: [{ id: 'a', x: 0, y: 0, z: 0 }], edges: [{ id: 'e1', from: 'a', to: 'ghost' }] }],
-    ['edge without an id', { nodes: [{ id: 'a', x: 0, y: 0, z: 0 }, { id: 'b', x: 0, y: 0, z: 0 }], edges: [{ from: 'a', to: 'b' }] }],
+    [
+      'edge to a missing node',
+      { nodes: [{ id: 'a', x: 0, y: 0, z: 0 }], edges: [{ id: 'e1', from: 'a', to: 'ghost' }] },
+    ],
+    [
+      'edge without an id',
+      {
+        nodes: [
+          { id: 'a', x: 0, y: 0, z: 0 },
+          { id: 'b', x: 0, y: 0, z: 0 },
+        ],
+        edges: [{ from: 'a', to: 'b' }],
+      },
+    ],
     ['node is a string', { nodes: ['a'] }],
     ['edge is null', { nodes: [], edges: [null] }],
   ]
@@ -259,22 +303,43 @@ describe('blend (the faded cluster colour a Balance leaves)', () => {
 
   // Anything but three channels on 0..1 reads as none — including every file
   // written before blends existed, which has no field at all.
-  const bad = [undefined, null, 'red', [0.1, 0.2], [0.1, 0.2, 0.3, 0.4], [0.1, 'x', 0.3], [0.1, 1.5, 0.3], [-0.1, 0.2, 0.3], [NaN, 0.2, 0.3]]
+  const bad = [
+    undefined,
+    null,
+    'red',
+    [0.1, 0.2],
+    [0.1, 0.2, 0.3, 0.4],
+    [0.1, 'x', 0.3],
+    [0.1, 1.5, 0.3],
+    [-0.1, 0.2, 0.3],
+    [NaN, 0.2, 0.3],
+  ]
   const readsAsNone = bad.map((blend) => {
     const h = createGraph()
     h.load({ nodes: [{ id: 'n1', x: 0, y: 0, z: 0, cluster_color_id: 2, blend }], edges: [] })
     return h.getNode('n1').blend
   })
-  it('a missing or damaged blend loads as none', () => expect(readsAsNone.every((v) => v === null)).toBe(true))
+  it('a missing or damaged blend loads as none', () =>
+    expect(readsAsNone.every((v) => v === null)).toBe(true))
   const kept = createGraph()
   kept.load({ nodes: [{ id: 'n1', x: 0, y: 0, z: 0, cluster_color_id: 2 }], edges: [] })
-  it('loading never computes a blend, even for a clustered node', () => expect(kept.getNode('n1').blend).toBeNull())
+  it('loading never computes a blend, even for a clustered node', () =>
+    expect(kept.getNode('n1').blend).toBeNull())
 
   // reblend writes it; recluster, the start of the next Balance, drops it.
   const c = createGraph()
   const ids = []
   for (let i = 0; i < 6; i++) ids.push(c.addNode({ x: i * 10, y: 0, z: 0 }).id)
-  for (const [p, q] of [[0, 1], [1, 2], [0, 2], [3, 4], [4, 5], [3, 5], [2, 3]]) c.addEdge(ids[p], ids[q])
+  for (const [p, q] of [
+    [0, 1],
+    [1, 2],
+    [0, 2],
+    [3, 4],
+    [4, 5],
+    [3, 5],
+    [2, 3],
+  ])
+    c.addEdge(ids[p], ids[q])
   c.recluster()
   const rev = c.revision
   const moved = c.reblend()
@@ -287,5 +352,6 @@ describe('blend (the faded cluster colour a Balance leaves)', () => {
   it('and bumps the revision so tints ease', () => expect(bumped).toBe(true))
   it('a second reblend over an unchanged map changes nothing', () => expect(secondIsNoop).toBe(true))
   c.recluster()
-  it('the next recluster drops every blend', () => expect(ids.every((id) => c.getNode(id).blend === null)).toBe(true))
+  it('the next recluster drops every blend', () =>
+    expect(ids.every((id) => c.getNode(id).blend === null)).toBe(true))
 })

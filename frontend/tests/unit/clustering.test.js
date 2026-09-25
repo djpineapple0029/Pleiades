@@ -28,7 +28,8 @@ describe('clustering', () => {
   const first = g.recluster()
   it('two blobs are two clusters', () => expect(first.clusters).toBe(2))
   it('recluster reports what it moved', () => expect(first.moved).toBe(16))
-  const a0 = colorsOf(g, blobs[0]), b0 = colorsOf(g, blobs[1])
+  const a0 = colorsOf(g, blobs[0]),
+    b0 = colorsOf(g, blobs[1])
   const blob0OneColour = allSame(a0)
   const blob1OneColour = allSame(b0)
   const blobsDiffer = a0[0] !== b0[0]
@@ -45,7 +46,8 @@ describe('clustering', () => {
   const again = g.recluster()
   const noMovesUnchanged = again.moved === 0
   const noRevisionBump = g.revision === rev
-  const colorsIdenticalAfterRerun = String(colorsOf(g, blobs[0])) === String(a0) && String(colorsOf(g, blobs[1])) === String(b0)
+  const colorsIdenticalAfterRerun =
+    String(colorsOf(g, blobs[0])) === String(a0) && String(colorsOf(g, blobs[1])) === String(b0)
   it('re-partitioning an unchanged graph moves nothing', () => expect(noMovesUnchanged).toBe(true))
   it('and does not bump the revision', () => expect(noRevisionBump).toBe(true))
   it('colours are identical after a re-run', () => expect(colorsIdenticalAfterRerun).toBe(true))
@@ -80,16 +82,19 @@ describe('clustering', () => {
   const one = gs.recluster()
   it('a single clique is one cluster', () => expect(one.clusters).toBe(1))
   const wasColor = gs.getNode(ring[0]).cluster_color_id
-  const left = ring.slice(0, 9), right = ring.slice(9)
+  const left = ring.slice(0, 9),
+    right = ring.slice(9)
   for (const edge of [...gs.edges.values()]) {
-    const across = (left.includes(edge.from) && right.includes(edge.to)) || (right.includes(edge.from) && left.includes(edge.to))
+    const across =
+      (left.includes(edge.from) && right.includes(edge.to)) ||
+      (right.includes(edge.from) && left.includes(edge.to))
     if (across) gs.removeEdge(edge.id)
   }
   const split = gs.recluster()
   it('the split is two clusters', () => expect(split.clusters).toBe(2))
   const largerKeepsColour = gs.getNode(left[0]).cluster_color_id === wasColor
   const largerAllOneColour = allSame(colorsOf(gs, left))
-  it("the larger piece keeps the colour", () => expect(largerKeepsColour).toBe(true))
+  it('the larger piece keeps the colour', () => expect(largerKeepsColour).toBe(true))
   it('the larger piece is all one colour', () => expect(largerAllOneColour).toBe(true))
   const smallColor = gs.getNode(right[0]).cluster_color_id
   const smallerTookNewColour = allSame(colorsOf(gs, right)) && smallColor > 0 && smallColor !== wasColor
@@ -99,7 +104,8 @@ describe('clustering', () => {
   for (const a of left) for (const b of right) gs.addEdge(a, b)
   const merged = gs.recluster()
   it('joining them back up is one cluster again', () => expect(merged.clusters).toBe(1))
-  const mergedKeepsLargerColour = gs.getNode(right[0]).cluster_color_id === wasColor && gs.getNode(left[0]).cluster_color_id === wasColor
+  const mergedKeepsLargerColour =
+    gs.getNode(right[0]).cluster_color_id === wasColor && gs.getNode(left[0]).cluster_color_id === wasColor
   it("the merged cluster keeps the larger piece's colour", () => expect(mergedKeepsLargerColour).toBe(true))
 
   // --- nothing to cluster ----------------------------------------------------
@@ -112,7 +118,8 @@ describe('clustering', () => {
   const empty = createGraph()
   it('an empty graph is fine', () => expect(empty.recluster().clusters).toBe(0))
   const pair = createGraph()
-  const p1 = pair.addNode({ x: 0, y: 0, z: 0 }).id, p2 = pair.addNode({ x: 0, y: 0, z: 0 }).id
+  const p1 = pair.addNode({ x: 0, y: 0, z: 0 }).id,
+    p2 = pair.addNode({ x: 0, y: 0, z: 0 }).id
   pair.addEdge(p1, p2)
   const pairIsCluster = pair.recluster().clusters === 1 && pair.getNode(p1).cluster_color_id > 0
   it('a connected pair is a cluster', () => expect(pairIsCluster).toBe(true))
@@ -123,7 +130,8 @@ describe('clustering', () => {
   for (let i = 0; i < 5; i++) clique.push(mixed.addNode({ x: 0, y: 0, z: 0 }).id)
   for (const a of clique) for (const b of clique) if (a < b) mixed.addEdge(a, b)
   mixed.recluster()
-  const loneStaysUncoloured = mixed.getNode(lone).cluster_color_id === 0 && mixed.getNode(clique[0]).cluster_color_id > 0
+  const loneStaysUncoloured =
+    mixed.getNode(lone).cluster_color_id === 0 && mixed.getNode(clique[0]).cluster_color_id > 0
   it('a loose node beside a cluster stays uncoloured', () => expect(loneStaysUncoloured).toBe(true))
 
   // --- persistence -----------------------------------------------------------
@@ -141,23 +149,28 @@ describe('clustering', () => {
 
   // --- the palette -----------------------------------------------------------
   it('no cluster has no ink', () => expect(clusterInk(0)).toBeNull())
-  const everyIdMapsIntoPalette = clusterInk(1) === CLUSTER_INKS[0] && clusterInk(CLUSTER_INKS.length + 1) === CLUSTER_INKS[0]
+  const everyIdMapsIntoPalette =
+    clusterInk(1) === CLUSTER_INKS[0] && clusterInk(CLUSTER_INKS.length + 1) === CLUSTER_INKS[0]
   it('every id maps into the palette', () => expect(everyIdMapsIntoPalette).toBe(true))
   const inksAreSRGB = CLUSTER_INKS.every((c) => c.length === 3 && c.every((v) => v >= 0 && v <= 1))
   it('inks are sRGB on 0..1', () => expect(inksAreSRGB).toBe(true))
   const inksLightEnough = CLUSTER_INKS.every((c) => Math.max(...c) > 0.8 && (c[0] + c[1] + c[2]) / 3 > 0.55)
   it('inks are light enough to read as a star and as ink', () => expect(inksLightEnough).toBe(true))
-  const hues = CLUSTER_INKS.map((c) => `${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)}`)
+  const hues = CLUSTER_INKS.map(
+    (c) => `${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)}`,
+  )
   const paletteDistinct = new Set(hues).size === CLUSTER_INKS.length
-  it('the palette is 20 distinct colours', () => expect(paletteDistinct && CLUSTER_INKS.length === 20).toBe(true))
+  it('the palette is 20 distinct colours', () =>
+    expect(paletteDistinct && CLUSTER_INKS.length === 20).toBe(true))
   // Saved files index into the palette, so the first twelve may never move.
   const originalTwelve = [140, 300, 32, 180, 262, 342, 100, 210, 58, 322, 158, 18]
-  it('the original twelve hues are still first, in order', () => expect(originalTwelve.every((hue, i) => hueOf(i + 1) === hue)).toBe(true))
+  it('the original twelve hues are still first, in order', () =>
+    expect(originalTwelve.every((hue, i) => hueOf(i + 1) === hue)).toBe(true))
   it('sky blue is held back as late', () => expect(LATE_IDS.has(8)).toBe(true))
 
   // --- new colours are random, not always the same pair -----------------------
   /** A deterministic rng: a tiny LCG, so each seed gives one sequence. */
-  const lcg = (seed) => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 0x100000000)
+  const lcg = (seed) => () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 0x100000000
   /** `k` disjoint cliques of 4, none coloured yet. */
   function cliques(k) {
     const nodes = new Map()
@@ -179,7 +192,12 @@ describe('clustering', () => {
     const { nodes, edges } = cliques(3)
     const { colors } = computeClusters(nodes, edges, { rng: lcg(seed) })
     const picked = [...new Set([...colors.values()].filter(Boolean))]
-    pairs.add(picked.slice().sort((x, y) => x - y).join(','))
+    pairs.add(
+      picked
+        .slice()
+        .sort((x, y) => x - y)
+        .join(','),
+    )
     for (let i = 0; i < picked.length; i++)
       for (let j = i + 1; j < picked.length; j++) {
         const gap = Math.abs(hueOf(picked[i]) - hueOf(picked[j])) % 360
@@ -187,7 +205,8 @@ describe('clustering', () => {
       }
   }
   it('different seeds give different first colours', () => expect(pairs.size).toBeGreaterThan(10))
-  it('a few new groups never land on neighbouring hues', () => expect(Math.min(...hueGaps)).toBeGreaterThanOrEqual(40))
+  it('a few new groups never land on neighbouring hues', () =>
+    expect(Math.min(...hueGaps)).toBeGreaterThanOrEqual(40))
   const { nodes: n1, edges: e1 } = cliques(3)
   const firstA = computeClusters(n1, e1, { rng: lcg(7) }).colors
   const { nodes: n2, edges: e2 } = cliques(3)
@@ -209,7 +228,8 @@ describe('clustering', () => {
   const { nodes: full, edges: fullEdges } = cliques(PALETTE_SIZE + 2)
   const overflow = computeClusters(full, fullEdges, { rng: lcg(3) }).colors
   const overflowIds = new Set([...overflow.values()])
-  it('past the palette, ids carry on and stay unique per group', () => expect(overflowIds.size).toBe(PALETTE_SIZE + 2))
+  it('past the palette, ids carry on and stay unique per group', () =>
+    expect(overflowIds.size).toBe(PALETTE_SIZE + 2))
 
   // --- cost ------------------------------------------------------------------
   const big = createGraph()
@@ -230,7 +250,8 @@ describe('clustering', () => {
   // Loosened from the original session's 400ms, same as sizing.test.js's BFS
   // bound: this machine measures ~530ms for Louvain at 3000 nodes under
   // Vitest. Catching a real complexity blowup, not pinning a millisecond figure.
-  it('a re-partition at 3000 nodes stays well clear of a complexity blowup', () => expect(t1 - t0).toBeLessThan(1500))
+  it('a re-partition at 3000 nodes stays well clear of a complexity blowup', () =>
+    expect(t1 - t0).toBeLessThan(1500))
   const stableAtSize = big.recluster().moved === 0
   it('and is stable at that size too', () => expect(stableAtSize).toBe(true))
 })

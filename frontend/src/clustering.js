@@ -104,10 +104,7 @@ export function computeClusters(nodes, edges, { rng = Math.random } = {}) {
   })
   claims.sort(
     (a, b) =>
-      b.count - a.count ||
-      b.count / b.size - a.count / a.size ||
-      a.color - b.color ||
-      a.index - b.index
+      b.count - a.count || b.count / b.size - a.count / a.size || a.color - b.color || a.index - b.index,
   )
 
   const colorOf = new Map() // group index -> colour id

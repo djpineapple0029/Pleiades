@@ -59,8 +59,22 @@ MODIFIER_ORDER = ["Mod", "Ctrl", "Cmd", "Alt", "Shift"]
 NAMED_KEYS = {
     name.lower(): name
     for name in [
-        "Space", "Shift", "Enter", "Tab", "Backspace", "Delete", "Insert", "Home", "End",
-        "PageUp", "PageDown", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Escape",
+        "Space",
+        "Shift",
+        "Enter",
+        "Tab",
+        "Backspace",
+        "Delete",
+        "Insert",
+        "Home",
+        "End",
+        "PageUp",
+        "PageDown",
+        "ArrowUp",
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowRight",
+        "Escape",
         *(f"F{n}" for n in range(1, 13)),
     ]
 }
@@ -72,8 +86,46 @@ CHAR_KEYS = set("/?[]{};:'\",.<>-_=`~!@#$%^&*()|\\")
 # that would reload or close the tab. Each is listed per platform: Mod stands
 # for both Ctrl and Cmd, so a Mod chord is refused if either half is here.
 FORBIDDEN = {
-    **{f"Ctrl+{k}": "the browser keeps it" for k in ["N", "T", "W", "R", "L", "I", "Shift+N", "Shift+T", "Shift+C", "Shift+P", "Shift+E", "Shift+R", "Shift+W"]},
-    **{f"Cmd+{k}": "the browser keeps it" for k in ["N", "T", "W", "Q", "R", "L", "I", "H", "M", "Y", ",", "Shift+N", "Shift+T", "Shift+C", "Shift+P", "Shift+R", "Shift+W"]},
+    **{
+        f"Ctrl+{k}": "the browser keeps it"
+        for k in [
+            "N",
+            "T",
+            "W",
+            "R",
+            "L",
+            "I",
+            "Shift+N",
+            "Shift+T",
+            "Shift+C",
+            "Shift+P",
+            "Shift+E",
+            "Shift+R",
+            "Shift+W",
+        ]
+    },
+    **{
+        f"Cmd+{k}": "the browser keeps it"
+        for k in [
+            "N",
+            "T",
+            "W",
+            "Q",
+            "R",
+            "L",
+            "I",
+            "H",
+            "M",
+            "Y",
+            ",",
+            "Shift+N",
+            "Shift+T",
+            "Shift+C",
+            "Shift+P",
+            "Shift+R",
+            "Shift+W",
+        ]
+    },
     **{f"{m}+{d}": "switches browser tabs" for m in ["Ctrl", "Cmd"] for d in "0123456789"},
     "F5": "reloads the page",
     "F11": "the browser keeps it",
@@ -188,7 +240,7 @@ def validate_keybinds(raw: object) -> tuple[dict[str, list[str]], list[str]]:
     reported: set[tuple[str, str]] = set()
     for variant, ids in owners.items():
         for i, a in enumerate(ids):
-            for b in ids[i + 1:]:
+            for b in ids[i + 1 :]:
                 if a == b or (a, b) in reported:
                     continue
                 shared = set(ACTIONS[a]["contexts"]) & set(ACTIONS[b]["contexts"])
@@ -317,8 +369,13 @@ def verify_password(password: str, stored: str) -> bool:
             return False
         expected = base64.b64decode(digest)
         actual = hashlib.scrypt(
-            password.encode(), salt=base64.b64decode(salt), n=int(n), r=int(r), p=int(p),
-            maxmem=64 * 1024 * 1024, dklen=len(expected),
+            password.encode(),
+            salt=base64.b64decode(salt),
+            n=int(n),
+            r=int(r),
+            p=int(p),
+            maxmem=64 * 1024 * 1024,
+            dklen=len(expected),
         )
     except (ValueError, TypeError):
         return False
@@ -437,9 +494,11 @@ class ConfigStore:
                 self._mtime = self._stat()
                 return
             raw = doc.unwrap()
-            values, problems = validate_values({k: v for k, v in raw.items() if k != "admin"} | {
-                "admin": {k: v for k, v in raw.get("admin", {}).items() if k not in ("password", "password_hash")}
-            }, strict=False)
+            values, problems = validate_values(
+                {k: v for k, v in raw.items() if k != "admin"}
+                | {"admin": {k: v for k, v in raw.get("admin", {}).items() if k not in ("password", "password_hash")}},
+                strict=False,
+            )
             unknown = [f"{name}: no such section" for name in raw if name not in ("keybinds", *SECTIONS)]
             self._doc = doc
             self.values = values

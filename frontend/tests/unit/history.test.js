@@ -40,7 +40,12 @@ describe('history.js', () => {
     const h = createHistory({ limit: 3 })
     for (const label of ['a', 'b', 'c', 'd']) h.record(entry(label))
     expect(h.size).toBe(3)
-    expect([h.undo(), h.undo(), h.undo(), h.undo()].map((e) => e?.label ?? null)).toEqual(['d', 'c', 'b', null])
+    expect([h.undo(), h.undo(), h.undo(), h.undo()].map((e) => e?.label ?? null)).toEqual([
+      'd',
+      'c',
+      'b',
+      null,
+    ])
   })
 
   it('clear empties both stacks', () => {

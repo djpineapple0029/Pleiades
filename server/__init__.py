@@ -17,10 +17,7 @@ from .stats import Stats, instrument
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-BUILD_MISSING = (
-    "Frontend build missing at server/static/. Run:\n"
-    "  cd frontend && npm install && npm run build\n"
-)
+BUILD_MISSING = "Frontend build missing at server/static/. Run:\n  cd frontend && npm install && npm run build\n"
 
 
 def create_app(config_path: Path | str | None = None) -> Flask:

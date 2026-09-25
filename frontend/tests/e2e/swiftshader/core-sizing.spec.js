@@ -23,9 +23,11 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
     const { createFiles } = await import('/src/files.js')
     const { CORE_SIZE } = await import('/src/sizing.js')
 
-    const W = 800, H = 500
+    const W = 800,
+      H = 500
     const canvas = document.createElement('canvas')
-    canvas.width = W; canvas.height = H
+    canvas.width = W
+    canvas.height = H
     document.body.append(canvas)
     const renderer = new THREE.WebGLRenderer({ canvas, preserveDrawingBuffer: true })
     renderer.setSize(W, H, false)
@@ -73,7 +75,10 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
     const drawnRadius = (id) => {
       const m = mesh()
       const node = graph.getNode(id)
-      const mat = new THREE.Matrix4(), pos = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3()
+      const mat = new THREE.Matrix4(),
+        pos = new THREE.Vector3(),
+        q = new THREE.Quaternion(),
+        s = new THREE.Vector3()
       for (let i = 0; i < m.count; i++) {
         m.getMatrixAt(i, mat)
         mat.decompose(pos, q, s)
@@ -97,8 +102,13 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
       return reach
     }
     let clock = 10
-    const frame = (dt = 1 / 60) => { clock += dt; view.update(clock) }
-    const settleSizes = () => { for (let i = 0; i < 120; i++) frame() }
+    const frame = (dt = 1 / 60) => {
+      clock += dt
+      view.update(clock)
+    }
+    const settleSizes = () => {
+      for (let i = 0; i < 120; i++) frame()
+    }
 
     // --- Chain of 11 along x, core in the middle ------------------------------
     const SPACING = 70
@@ -106,7 +116,8 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
     for (let i = 0; i < 11; i++) chain.push(graph.addNode({ x: (i - 5) * SPACING, y: 0, z: 0 }).id)
     for (let i = 1; i < 11; i++) graph.addEdge(chain[i - 1], chain[i])
     view.sync()
-    frame(); frame()
+    frame()
+    frame()
     const mid = chain[5]
     r.beforeRadii = chain.map((id) => drawnRadius(id))
     r.beforeAllPlain = chain.every((id) => Math.abs(drawnRadius(id) - NODE_RADIUS) < 1e-4)
@@ -132,14 +143,21 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
     // Easing: the first frame after the flag moves only part of the way.
     frame()
     r.afterOneFrame = drawnRadius(mid) / NODE_RADIUS
-    frame(); frame(); frame(); frame()
+    frame()
+    frame()
+    frame()
+    frame()
     r.afterFiveFrames = drawnRadius(mid) / NODE_RADIUS
     settleSizes()
     r.afterRadii = chain.map((id) => drawnRadius(id))
-    r.afterMatchesTarget = chain.every((id) => Math.abs(drawnRadius(id) - NODE_RADIUS * graph.sizeOf(id)) < 1e-4)
+    r.afterMatchesTarget = chain.every(
+      (id) => Math.abs(drawnRadius(id) - NODE_RADIUS * graph.sizeOf(id)) < 1e-4,
+    )
     r.coreDrawn = drawnRadius(mid) / NODE_RADIUS
     r.hopSizes = [0, 1, 2, 3, 4, 5].map((h) => drawnRadius(chain[5 + h]) / NODE_RADIUS)
-    r.symmetric = [1, 2, 3, 4, 5].every((h) => Math.abs(drawnRadius(chain[5 + h]) - drawnRadius(chain[5 - h])) < 1e-4)
+    r.symmetric = [1, 2, 3, 4, 5].every(
+      (h) => Math.abs(drawnRadius(chain[5 + h]) - drawnRadius(chain[5 - h])) < 1e-4,
+    )
 
     view.update(T0) // sizes are settled; this only rewinds the pulse clock
     render(true)
@@ -181,7 +199,8 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
     settleSizes()
     const beforeCut = drawnRadius(chain[7])
     graph.removeNode(chain[6])
-    view.syncNodes(); view.syncEdges()
+    view.syncNodes()
+    view.syncEdges()
     settleSizes()
     // Size no longer depends on links, so cutting one changes nothing.
     r.cutLeavesSize = drawnRadius(chain[7]) === beforeCut && Math.abs(beforeCut - NODE_RADIUS) < 1e-4
@@ -246,15 +265,33 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
       settleSizes()
       settle()
       const h = graph.getNode(hub)
-      const dists = leaves.map((id) => { const n = graph.getNode(id); return Math.hypot(n.x - h.x, n.y - h.y, n.z - h.z) })
+      const dists = leaves.map((id) => {
+        const n = graph.getNode(id)
+        return Math.hypot(n.x - h.x, n.y - h.y, n.z - h.z)
+      })
       let minLeafGap = Infinity
-      for (let i = 0; i < leaves.length; i++) for (let j = i + 1; j < leaves.length; j++) {
-        const a = graph.getNode(leaves[i]), b = graph.getNode(leaves[j])
-        minLeafGap = Math.min(minLeafGap, Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) - view.radiusOf(leaves[i]) - view.radiusOf(leaves[j]))
-      }
-      const minSurfaceGap = Math.min(...leaves.map((id, i) => dists[i] - view.radiusOf(hub) - view.radiusOf(id)))
+      for (let i = 0; i < leaves.length; i++)
+        for (let j = i + 1; j < leaves.length; j++) {
+          const a = graph.getNode(leaves[i]),
+            b = graph.getNode(leaves[j])
+          minLeafGap = Math.min(
+            minLeafGap,
+            Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) - view.radiusOf(leaves[i]) - view.radiusOf(leaves[j]),
+          )
+        }
+      const minSurfaceGap = Math.min(
+        ...leaves.map((id, i) => dists[i] - view.radiusOf(hub) - view.radiusOf(id)),
+      )
       const finite = [...graph.nodes.values()].every((n) => Number.isFinite(n.x + n.y + n.z))
-      return { meanDist: dists.reduce((a, b) => a + b, 0) / dists.length, minDist: Math.min(...dists), minSurfaceGap, minLeafGap, finite, hubR: view.radiusOf(hub), leafR: view.radiusOf(leaves[0]) }
+      return {
+        meanDist: dists.reduce((a, b) => a + b, 0) / dists.length,
+        minDist: Math.min(...dists),
+        minSurfaceGap,
+        minLeafGap,
+        finite,
+        hubR: view.radiusOf(hub),
+        leafR: view.radiusOf(leaves[0]),
+      }
     }
     r.plainStar = star(false)
     r.coreStar = star(true)
@@ -265,7 +302,8 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
     physics.reset()
     const pair = [graph.addNode({ x: 0, y: 0, z: 0 }).id, graph.addNode({ x: 30, y: 0, z: 0 }).id]
     graph.addEdge(pair[0], pair[1])
-    view.syncNodes(); view.syncEdges()
+    view.syncNodes()
+    view.syncEdges()
     physics.start()
     for (let i = 0; i < 20; i++) physics.update()
     graph.setCore(pair[0], true)
@@ -280,7 +318,8 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
     view.sync()
     physics.reset()
     const ids = []
-    for (let i = 0; i < 3000; i++) ids.push(graph.addNode({ x: (i % 60) * 12, y: Math.floor(i / 60) * 12, z: 0 }).id)
+    for (let i = 0; i < 3000; i++)
+      ids.push(graph.addNode({ x: (i % 60) * 12, y: Math.floor(i / 60) * 12, z: 0 }).id)
     for (let i = 1; i < 3000; i++) graph.addEdge(ids[i], ids[Math.floor(i / 2)])
     view.sync()
     for (let i = 0; i < 30; i++) graph.setCore(ids[i * 97], true)
@@ -294,32 +333,75 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
     t0 = performance.now()
     for (let i = 0; i < 30; i++) frame()
     r.idleFrame3000 = (performance.now() - t0) / 30
-    r.calls = (() => { look(360, 300, 0, 900); renderer.info.reset(); render(); return renderer.info.render.calls })()
+    r.calls = (() => {
+      look(360, 300, 0, 900)
+      renderer.info.reset()
+      render()
+      return renderer.info.render.calls
+    })()
     r.coreSize = CORE_SIZE
     return r
   }, threeUrl)
 
-  await testInfo.attach('shotBefore.png', { body: Buffer.from(out.shotBefore.split(',')[1], 'base64'), contentType: 'image/png' })
-  await testInfo.attach('shotAfter.png', { body: Buffer.from(out.shotAfter.split(',')[1], 'base64'), contentType: 'image/png' })
+  await testInfo.attach('shotBefore.png', {
+    body: Buffer.from(out.shotBefore.split(',')[1], 'base64'),
+    contentType: 'image/png',
+  })
+  await testInfo.attach('shotAfter.png', {
+    body: Buffer.from(out.shotAfter.split(',')[1], 'base64'),
+    contentType: 'image/png',
+  })
 
   const R = 5
   const C = out.coreSize
   expect.soft(out.beforeAllPlain, 'before: every node is 1x, whatever its links').toBe(true)
   expect.soft(out.afterOneFrame, 'core eases, does not snap (1 frame partial)').toBeGreaterThan(1.1)
   expect.soft(out.afterOneFrame).toBeLessThan(C - 0.1)
-  expect.soft(out.afterFiveFrames > out.afterOneFrame && out.afterFiveFrames < C, 'core eases (5 frames further along)').toBe(true)
+  expect
+    .soft(
+      out.afterFiveFrames > out.afterOneFrame && out.afterFiveFrames < C,
+      'core eases (5 frames further along)',
+    )
+    .toBe(true)
   expect.soft(out.afterMatchesTarget, 'settled radii match graph.sizeOf').toBe(true)
   expect.soft(Math.abs(out.coreDrawn - C), 'core drawn at CORE_SIZE').toBeLessThan(1e-4)
-  expect.soft(out.hopSizes.slice(1).every((v) => Math.abs(v - 1) < 1e-4), "nothing around the core grows: hops 1-5 stay 1x").toBe(true)
+  expect
+    .soft(
+      out.hopSizes.slice(1).every((v) => Math.abs(v - 1) < 1e-4),
+      'nothing around the core grows: hops 1-5 stay 1x',
+    )
+    .toBe(true)
   expect.soft(out.symmetric, 'symmetric on both sides').toBe(true)
-  expect.soft(out.afterRadii.every((v, i) => i === 5 || v === out.beforeRadii[i]), 'every other node untouched').toBe(true)
-  expect.soft(out.brightAfter, 'on screen: core region lit after, not before').toBeGreaterThan(out.brightBefore + 60)
+  expect
+    .soft(
+      out.afterRadii.every((v, i) => i === 5 || v === out.beforeRadii[i]),
+      'every other node untouched',
+    )
+    .toBe(true)
+  expect
+    .soft(out.brightAfter, 'on screen: core region lit after, not before')
+    .toBeGreaterThan(out.brightBefore + 60)
   const g = out.growth
   expect.soft(g[5], 'on screen: core footprint ~2x its old one').toBeGreaterThan(1.8)
-  expect.soft(g.every((v, i) => i === 5 || v === 1), 'on screen: every other star unchanged').toBe(true)
-  expect.soft(out.pickBefore !== out.midId && out.pickAfter === out.midId, 'pick radius grows: miss before, hit after').toBe(true)
+  expect
+    .soft(
+      g.every((v, i) => i === 5 || v === 1),
+      'on screen: every other star unchanged',
+    )
+    .toBe(true)
+  expect
+    .soft(
+      out.pickBefore !== out.midId && out.pickAfter === out.midId,
+      'pick radius grows: miss before, hit after',
+    )
+    .toBe(true)
   expect.soft(Math.abs(out.haloScaleCore / out.haloScaleLeaf - C), 'halo scales with node').toBeLessThan(1e-4)
-  expect.soft(out.endOnPick !== null && !String(out.endOnPick).startsWith('e'), 'looking down the chain, the end node beats the edges').toBe(true)
+  expect
+    .soft(
+      out.endOnPick !== null && !String(out.endOnPick).startsWith('e'),
+      'looking down the chain, the end node beats the edges',
+    )
+    .toBe(true)
   expect.soft(out.unmarkRestores, 'unmark restores sizes').toBe(true)
   expect.soft(out.cutLeavesSize, 'deleting a neighbour does not resize anything').toBe(true)
   expect.soft(out.flagOnlyRetargets, 'a core flag resizes with no view call').toBe(true)
@@ -327,12 +409,16 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
   expect.soft(out.roundTripCore && out.roundTripRadii, 'round trip keeps core and sizes').toBe(true)
   expect.soft(out.plainStar.finite && out.coreStar.finite, 'layout finite').toBe(true)
   // Rest length grows by 13 * (CORE_SIZE - 1) ~ 16 for a core hub.
-  expect.soft(out.coreStar.meanDist, 'core hub pushes neighbours further out').toBeGreaterThan(out.plainStar.meanDist + 10)
+  expect
+    .soft(out.coreStar.meanDist, 'core hub pushes neighbours further out')
+    .toBeGreaterThan(out.plainStar.meanDist + 10)
   expect.soft(out.coreStar.minSurfaceGap, 'core hub surfaces keep a gap to neighbours').toBeGreaterThan(20)
   expect.soft(out.coreStar.minLeafGap, 'neighbours do not overlap each other').toBeGreaterThan(0)
   // Link rest length: 60 + 13*(core - 1) + 13*(plain - 1), and plain is 1x.
   const pairRest = 60 + 2.6 * R * (C - 1)
-  expect.soft(Math.abs(out.pairDist - pairRest), 'core toggled mid-run is picked up by physics').toBeLessThan(4)
+  expect
+    .soft(Math.abs(out.pairDist - pairRest), 'core toggled mid-run is picked up by physics')
+    .toBeLessThan(4)
   expect.soft(out.bfs3000, '3000 nodes: size recompute under 5 ms').toBeLessThan(5)
   // Loosened from the original session's 2ms/0.2ms: those assume an idle,
   // dedicated machine. On a normally-loaded dev box these two sub-2ms

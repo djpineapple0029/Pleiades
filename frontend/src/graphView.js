@@ -453,7 +453,7 @@ export function createGraphView(graph, scene, renderer) {
         opacity: 0.8,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
-      })
+      }),
     )
     halo.renderOrder = 2
     halo.visible = false
@@ -545,7 +545,7 @@ export function createGraphView(graph, scene, renderer) {
       transparent: true,
       opacity: 0.9,
       depthWrite: false,
-    })
+    }),
   )
   // CSS px, as LineSegments2.onBeforeRender will keep it.
   const viewport = renderer.getViewport(new THREE.Vector4())
@@ -560,7 +560,7 @@ export function createGraphView(graph, scene, renderer) {
   // unbloomed and reads as a hologram rather than another star.
   const ghostMesh = new THREE.Mesh(
     new THREE.SphereGeometry(1, 24, 16),
-    new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.35, depthWrite: false })
+    new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.35, depthWrite: false }),
   )
   ghostMesh.visible = false
   root.add(ghostMesh)
@@ -582,7 +582,7 @@ export function createGraphView(graph, scene, renderer) {
     geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), STAR_EXTENT * Math.SQRT2)
     geometry.boundingBox = new THREE.Box3().setFromCenterAndSize(
       new THREE.Vector3(),
-      new THREE.Vector3().setScalar(STAR_EXTENT * 2 * Math.SQRT2)
+      new THREE.Vector3().setScalar(STAR_EXTENT * 2 * Math.SQRT2),
     )
     starAttribute = new THREE.InstancedBufferAttribute(new Float32Array(next * 3), 3)
     tintAttribute = new THREE.InstancedBufferAttribute(new Float32Array(next * 3), 3)

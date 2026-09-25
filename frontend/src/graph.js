@@ -333,9 +333,7 @@ export function createGraph() {
     let moved = 0
     for (const node of nodes.values()) {
       const next = blends.get(node.id) ?? null
-      const same =
-        next === node.blend ||
-        (next && node.blend && next.every((v, i) => v === node.blend[i]))
+      const same = next === node.blend || (next && node.blend && next.every((v, i) => v === node.blend[i]))
       if (same) continue
       node.blend = next
       moved++
@@ -436,9 +434,7 @@ export function createGraph() {
     // The file's colours are authoritative — a reopened map keeps the clusters
     // it was saved with, and is not re-partitioned until the next Balance. An
     // older file with no colours in it simply reads as unclustered.
-    clusterCount = new Set(
-      [...nodes.values()].map((node) => node.cluster_color_id).filter(Boolean)
-    ).size
+    clusterCount = new Set([...nodes.values()].map((node) => node.cluster_color_id).filter(Boolean)).size
     changed()
   }
 

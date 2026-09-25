@@ -11,7 +11,10 @@
 import { readFileSync } from 'node:fs'
 import { test, expect } from '@playwright/test'
 
-test('encrypted save/reopen: shadow-hosted password field, wrong/right password', async ({ page, context }) => {
+test('encrypted save/reopen: shadow-hosted password field, wrong/right password', async ({
+  page,
+  context,
+}) => {
   const pageErrors = []
   page.on('pageerror', (e) => pageErrors.push(String(e)))
 
@@ -23,13 +26,24 @@ test('encrypted save/reopen: shadow-hosted password field, wrong/right password'
   await page.waitForTimeout(200)
 
   // Ctrl+S: first save. This time set an actual password.
-  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyS', key: 's', ctrlKey: true, bubbles: true })))
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', { code: 'KeyS', key: 's', ctrlKey: true, bubbles: true }),
+    ),
+  )
   await page.waitForTimeout(200)
 
   // Confirm the password field is a shadow-hosted input, invisible to a plain
   // querySelector('input[type=password]') from outside the module.
-  const passwordFieldPierceable = await page.evaluate(() => document.querySelectorAll('input[type=password]').length)
-  expect.soft(passwordFieldPierceable, 'password input is not reachable via a light-DOM query (closed shadow root)').toBe(0)
+  const passwordFieldPierceable = await page.evaluate(
+    () => document.querySelectorAll('input[type=password]').length,
+  )
+  expect
+    .soft(
+      passwordFieldPierceable,
+      'password input is not reachable via a light-DOM query (closed shadow root)',
+    )
+    .toBe(0)
 
   // Type into filename, tab to password, type a password, tab to confirm, type it again, commit.
   await page.keyboard.type('secret-map')
@@ -40,7 +54,12 @@ test('encrypted save/reopen: shadow-hosted password field, wrong/right password'
   const [download] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Enter')])
   const savedPath = await download.path()
   await page.waitForTimeout(200)
-  expect.soft(await page.evaluate(() => document.getElementById('editor').hidden), 'editor closed after committing a real password with Enter from the last field').toBe(true)
+  expect
+    .soft(
+      await page.evaluate(() => document.getElementById('editor').hidden),
+      'editor closed after committing a real password with Enter from the last field',
+    )
+    .toBe(true)
 
   const bytes = readFileSync(savedPath)
   expect.soft(bytes[4] === 2 && bytes[5] === 1, 'saved file is v2, mode 1 (encrypted)').toBe(true)
@@ -56,22 +75,41 @@ test('encrypted save/reopen: shadow-hosted password field, wrong/right password'
 
   const [chooser] = await Promise.all([
     page2.waitForEvent('filechooser'),
-    page2.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyO', key: 'o', ctrlKey: true, bubbles: true }))),
+    page2.evaluate(() =>
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { code: 'KeyO', key: 'o', ctrlKey: true, bubbles: true }),
+      ),
+    ),
   ])
   await chooser.setFiles(savedPath)
   await page2.waitForTimeout(300)
-  expect.soft(await page2.evaluate(() => !document.getElementById('editor').hidden), 'an encrypted file does show the password prompt').toBe(true)
+  expect
+    .soft(
+      await page2.evaluate(() => !document.getElementById('editor').hidden),
+      'an encrypted file does show the password prompt',
+    )
+    .toBe(true)
 
   await page2.keyboard.type('wrong-password')
   await page2.keyboard.press('Enter')
   await page2.waitForTimeout(300)
   const note = await page2.evaluate(() => document.querySelector('.editor-note')?.textContent)
-  expect.soft(Boolean(note) && /wrong password|altered/i.test(note ?? ''), 'wrong password re-prompts with an error note').toBe(true)
+  expect
+    .soft(
+      Boolean(note) && /wrong password|altered/i.test(note ?? ''),
+      'wrong password re-prompts with an error note',
+    )
+    .toBe(true)
 
   await page2.keyboard.type('hunter2')
   await page2.keyboard.press('Enter')
   await page2.waitForTimeout(300)
-  expect.soft(await page2.evaluate(() => document.getElementById('editor').hidden), 'correct password opens the file').toBe(true)
+  expect
+    .soft(
+      await page2.evaluate(() => document.getElementById('editor').hidden),
+      'correct password opens the file',
+    )
+    .toBe(true)
   const hud = await page2.evaluate(() => document.getElementById('hud')?.textContent)
   expect.soft(/\b1 nodes\b/.test(hud ?? ''), 'the graph loaded (1 nodes)').toBe(true)
 

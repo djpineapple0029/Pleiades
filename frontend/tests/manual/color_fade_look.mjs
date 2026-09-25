@@ -22,12 +22,132 @@ mkdirSync(DIR, { recursive: true })
 const TEMPLATE = fileURLToPath(new URL('../../../server/static/viewer-template.html', import.meta.url))
 
 const TOPICS = {
-  Physics: ['Momentum', 'Entropy', 'Fields', 'Symmetry', 'Relativity', 'Quanta', 'Spin', 'Gravity', 'Optics', 'Thermodynamics', 'Particles', 'Waves', 'Energy', 'Mass', 'Charge', 'Magnetism', 'Friction', 'Inertia', 'Plasma'],
-  Philosophy: ['Ethics', 'Logic', 'Metaphysics', 'Epistemology', 'Kant', 'Hume', 'Plato', 'Stoicism', 'Virtue', 'Free will', 'Mind', 'Truth', 'Causation', 'Aesthetics', 'Descartes', 'Nietzsche', 'Duty', 'Being', 'Doubt'],
-  Language: ['Syntax', 'Morphology', 'Prosody', 'Semantics', 'Deixis', 'Register', 'Corpus', 'Phonology', 'Grammar', 'Dialect', 'Etymology', 'Pragmatics', 'Metaphor', 'Tense', 'Lexicon', 'Idiom', 'Script', 'Accent', 'Rhetoric'],
-  Cities: ['Transit', 'Zoning', 'Density', 'Streets', 'Housing', 'Parks', 'Utilities', 'Suburbs', 'Traffic', 'Bridges', 'Markets', 'Districts', 'Rail', 'Sewers', 'Skyline', 'Plazas', 'Tenements', 'Harbour', 'Walls'],
-  Biology: ['Cells', 'Genes', 'Evolution', 'Proteins', 'Ecology', 'Species', 'Enzymes', 'Neurons', 'Mitosis', 'DNA', 'Fungi', 'Bacteria', 'Symbiosis', 'Immunity', 'Hormones', 'Photosynthesis', 'Habitat', 'Fossils', 'Mutation'],
-  Music: ['Harmony', 'Rhythm', 'Melody', 'Timbre', 'Counterpoint', 'Scales', 'Tempo', 'Chords', 'Jazz', 'Fugue', 'Opera', 'Blues', 'Improvisation', 'Notation', 'Cadence', 'Dynamics', 'Orchestra', 'Tuning', 'Motif'],
+  Physics: [
+    'Momentum',
+    'Entropy',
+    'Fields',
+    'Symmetry',
+    'Relativity',
+    'Quanta',
+    'Spin',
+    'Gravity',
+    'Optics',
+    'Thermodynamics',
+    'Particles',
+    'Waves',
+    'Energy',
+    'Mass',
+    'Charge',
+    'Magnetism',
+    'Friction',
+    'Inertia',
+    'Plasma',
+  ],
+  Philosophy: [
+    'Ethics',
+    'Logic',
+    'Metaphysics',
+    'Epistemology',
+    'Kant',
+    'Hume',
+    'Plato',
+    'Stoicism',
+    'Virtue',
+    'Free will',
+    'Mind',
+    'Truth',
+    'Causation',
+    'Aesthetics',
+    'Descartes',
+    'Nietzsche',
+    'Duty',
+    'Being',
+    'Doubt',
+  ],
+  Language: [
+    'Syntax',
+    'Morphology',
+    'Prosody',
+    'Semantics',
+    'Deixis',
+    'Register',
+    'Corpus',
+    'Phonology',
+    'Grammar',
+    'Dialect',
+    'Etymology',
+    'Pragmatics',
+    'Metaphor',
+    'Tense',
+    'Lexicon',
+    'Idiom',
+    'Script',
+    'Accent',
+    'Rhetoric',
+  ],
+  Cities: [
+    'Transit',
+    'Zoning',
+    'Density',
+    'Streets',
+    'Housing',
+    'Parks',
+    'Utilities',
+    'Suburbs',
+    'Traffic',
+    'Bridges',
+    'Markets',
+    'Districts',
+    'Rail',
+    'Sewers',
+    'Skyline',
+    'Plazas',
+    'Tenements',
+    'Harbour',
+    'Walls',
+  ],
+  Biology: [
+    'Cells',
+    'Genes',
+    'Evolution',
+    'Proteins',
+    'Ecology',
+    'Species',
+    'Enzymes',
+    'Neurons',
+    'Mitosis',
+    'DNA',
+    'Fungi',
+    'Bacteria',
+    'Symbiosis',
+    'Immunity',
+    'Hormones',
+    'Photosynthesis',
+    'Habitat',
+    'Fossils',
+    'Mutation',
+  ],
+  Music: [
+    'Harmony',
+    'Rhythm',
+    'Melody',
+    'Timbre',
+    'Counterpoint',
+    'Scales',
+    'Tempo',
+    'Chords',
+    'Jazz',
+    'Fugue',
+    'Opera',
+    'Blues',
+    'Improvisation',
+    'Notation',
+    'Cadence',
+    'Dynamics',
+    'Orchestra',
+    'Tuning',
+    'Motif',
+  ],
 }
 // Nodes genuinely about two topics — the ones a hard partition colours wrong.
 const BRIDGES = [
@@ -43,7 +163,7 @@ const BRIDGES = [
 
 /** A small seeded rng, so every run builds the same map. */
 let seed = 7
-const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647
 
 const nodes = []
 const edges = []
@@ -57,9 +177,15 @@ names.forEach((topic, t) => {
   const members = [topic, ...TOPICS[topic]]
   members.forEach((label, i) => {
     nodes.push({
-      id: `n${t}_${i}`, label, notes: '', links: [],
-      x: (rand() - 0.5) * 600, y: (rand() - 0.5) * 600, z: (rand() - 0.5) * 600,
-      cluster_color_id: 0, is_core: i === 0,
+      id: `n${t}_${i}`,
+      label,
+      notes: '',
+      links: [],
+      x: (rand() - 0.5) * 600,
+      y: (rand() - 0.5) * 600,
+      z: (rand() - 0.5) * 600,
+      cluster_color_id: 0,
+      is_core: i === 0,
     })
   })
   // Core to a handful of members, and a loose web among the rest.
@@ -71,8 +197,19 @@ names.forEach((topic, t) => {
 })
 BRIDGES.forEach(([label, a, b], i) => {
   const id = `b${i}`
-  nodes.push({ id, label, notes: '', links: [], x: (rand() - 0.5) * 600, y: (rand() - 0.5) * 600, z: (rand() - 0.5) * 600, cluster_color_id: 0, is_core: false })
-  const ta = names.indexOf(a), tb = names.indexOf(b)
+  nodes.push({
+    id,
+    label,
+    notes: '',
+    links: [],
+    x: (rand() - 0.5) * 600,
+    y: (rand() - 0.5) * 600,
+    z: (rand() - 0.5) * 600,
+    cluster_color_id: 0,
+    is_core: false,
+  })
+  const ta = names.indexOf(a),
+    tb = names.indexOf(b)
   link(id, `n${ta}_${1 + Math.floor(rand() * 5)}`)
   link(id, `n${ta}_${7 + Math.floor(rand() * 5)}`)
   link(id, `n${tb}_${1 + Math.floor(rand() * 5)}`)
@@ -96,17 +233,20 @@ page.on('pageerror', (x) => errs.push(String(x)))
 // --- Balance, with the app's own graph and physics -------------------------------
 await page.goto('http://localhost:5180/')
 await page.waitForTimeout(1000)
-const balanced = await page.evaluate(async (input) => {
-  const { createGraph } = await import('/src/graph.js')
-  const { createPhysics } = await import('/src/physics.js')
-  const graph = createGraph()
-  graph.load(input)
-  const physics = createPhysics(graph, { syncNodes() {}, updateEdgePositions() {} })
-  physics.start()
-  let guard = 0
-  while (physics.isRunning && guard++ < 20000) physics.update()
-  return { payload: graph.toPayload(), clusters: graph.clusterCount }
-}, { nodes, edges: cleanEdges })
+const balanced = await page.evaluate(
+  async (input) => {
+    const { createGraph } = await import('/src/graph.js')
+    const { createPhysics } = await import('/src/physics.js')
+    const graph = createGraph()
+    graph.load(input)
+    const physics = createPhysics(graph, { syncNodes() {}, updateEdgePositions() {} })
+    physics.start()
+    let guard = 0
+    while (physics.isRunning && guard++ < 20000) physics.update()
+    return { payload: graph.toPayload(), clusters: graph.clusterCount }
+  },
+  { nodes, edges: cleanEdges },
+)
 console.log(`balanced: ${nodes.length} nodes, ${cleanEdges.length} edges, ${balanced.clusters} clusters`)
 writeFileSync(`${DIR}/color_balanced.json`, JSON.stringify(balanced.payload))
 
@@ -118,9 +258,15 @@ const variants = {
   fade: balanced.payload.nodes,
 }
 for (const [name, variantNodes] of Object.entries(variants)) {
-  const payload = { nodes: variantNodes, edges: balanced.payload.edges, camera: { position: [0, 0, 1400], rotation: [0, 0, 0] } }
+  const payload = {
+    nodes: variantNodes,
+    edges: balanced.payload.edges,
+    camera: { position: [0, 0, 1400], rotation: [0, 0, 0] },
+  }
   const json = JSON.stringify(payload).replaceAll('<', '\\u003c')
-  const html = template.replace('__ATLASMAP_TITLE__', () => `colour ${name}`).replace('__ATLASMAP_PAYLOAD__', () => json)
+  const html = template
+    .replace('__ATLASMAP_TITLE__', () => `colour ${name}`)
+    .replace('__ATLASMAP_PAYLOAD__', () => json)
   const file = `${DIR}/color_${name}.html`
   writeFileSync(file, html)
   await page.goto(`file://${file}`)
@@ -128,7 +274,10 @@ for (const [name, variantNodes] of Object.entries(variants)) {
   await page.screenshot({ path: `${DIR}/color_${name}_overview.png` })
   // Closer: wheel in on the overview's orbit camera.
   await page.mouse.move(640, 400)
-  for (let i = 0; i < 6; i++) { await page.mouse.wheel(0, -300); await page.waitForTimeout(80) }
+  for (let i = 0; i < 6; i++) {
+    await page.mouse.wheel(0, -300)
+    await page.waitForTimeout(80)
+  }
   await page.waitForTimeout(1500)
   await page.screenshot({ path: `${DIR}/color_${name}_close.png` })
   console.log(`wrote color_${name}_overview.png and color_${name}_close.png`)

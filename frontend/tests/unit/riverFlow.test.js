@@ -80,7 +80,10 @@ describe('riverFlow', () => {
     // A star: a core in the middle with six leaves, the same again with a plain
     // centre, far apart.
     const { graph, flow } = setup((g) => {
-      for (const [cx, core] of [[0, true], [2000, false]]) {
+      for (const [cx, core] of [
+        [0, true],
+        [2000, false],
+      ]) {
         const hub = g.addNode({ x: cx, y: 0, z: 0 })
         if (core) g.setCore(hub.id, true)
         for (let i = 0; i < 6; i++) {
@@ -174,7 +177,7 @@ describe('riverFlow', () => {
     expect(mean(after)).toBeLessThan(mean(before) + 2)
   })
 
-  it('a star carried across the map takes its grains\' tails with it', () => {
+  it("a star carried across the map takes its grains' tails with it", () => {
     const { graph, flow } = setup(chain)
     run(flow, 10)
     const star = [...graph.nodes.values()].find((n) => n.y === 900)

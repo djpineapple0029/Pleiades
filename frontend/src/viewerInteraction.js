@@ -29,7 +29,17 @@ function sameTarget(a, b) {
   return Boolean(a && b) && a.kind === b.kind && a.id === b.id
 }
 
-export function createViewerInteraction({ camera, controls, flight, graph, view, overview, hud, speedEl, keymap = createKeymap() }) {
+export function createViewerInteraction({
+  camera,
+  controls,
+  flight,
+  graph,
+  view,
+  overview,
+  hud,
+  speedEl,
+  keymap = createKeymap(),
+}) {
   const raycaster = new THREE.Raycaster()
   const crosshair = new THREE.Vector2(0, 0) // dead centre of the viewport
   const status = createStatus(hud)

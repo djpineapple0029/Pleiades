@@ -144,7 +144,10 @@ export function createDustRivers(graph, parent, { radiusOf }) {
   const streakPositions = new Float32Array(flow.light.length * perGrain * 3)
   const streakLight = new Float32Array(flow.light.length * perGrain)
   const streakHeat = new Float32Array(flow.light.length * perGrain)
-  const tailLight = Float32Array.from({ length: TRAIL_POINTS + 1 }, (_, i) => (1 - i / TRAIL_POINTS) ** TAIL_FALLOFF)
+  const tailLight = Float32Array.from(
+    { length: TRAIL_POINTS + 1 },
+    (_, i) => (1 - i / TRAIL_POINTS) ** TAIL_FALLOFF,
+  )
   const streakGeometry = new THREE.BufferGeometry()
   const streakPosition = new THREE.BufferAttribute(streakPositions, 3).setUsage(THREE.DynamicDrawUsage)
   const streakLit = new THREE.BufferAttribute(streakLight, 1).setUsage(THREE.DynamicDrawUsage)
@@ -155,7 +158,11 @@ export function createDustRivers(graph, parent, { radiusOf }) {
   streakGeometry.setDrawRange(0, 0)
   const streakMaterial = new THREE.ShaderMaterial({
     uniforms: { warm: material.uniforms.warm, cool: material.uniforms.cool, dim: material.uniforms.dim },
-    defines: { FOG_NEAR: glslFloat(FOG_NEAR), FOG_FAR: glslFloat(FOG_FAR), STREAK_GAIN: glslFloat(STREAK_GAIN * GAIN) },
+    defines: {
+      FOG_NEAR: glslFloat(FOG_NEAR),
+      FOG_FAR: glslFloat(FOG_FAR),
+      STREAK_GAIN: glslFloat(STREAK_GAIN * GAIN),
+    },
     vertexShader: STREAK_VERTEX,
     fragmentShader: STREAK_FRAGMENT,
     transparent: true,

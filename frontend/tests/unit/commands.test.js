@@ -243,7 +243,16 @@ describe('commands.js balance', () => {
     // Two triangles joined by one bridge: Louvain splits them.
     const ids = []
     for (let i = 0; i < 6; i++) ids.push(graph.addNode({ x: i * 10, y: 0, z: 0 }).id)
-    for (const [p, q] of [[0, 1], [1, 2], [0, 2], [3, 4], [4, 5], [3, 5], [2, 3]]) graph.addEdge(ids[p], ids[q])
+    for (const [p, q] of [
+      [0, 1],
+      [1, 2],
+      [0, 2],
+      [3, 4],
+      [4, 5],
+      [3, 5],
+      [2, 3],
+    ])
+      graph.addEdge(ids[p], ids[q])
     return ids
   }
 

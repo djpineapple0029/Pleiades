@@ -82,7 +82,28 @@ function sameTarget(a, b) {
  * the password panel, and the panel is a modal surface — only this module knows
  * whether one is already up, and only this module can suspend flight for it.
  */
-export function createInteraction({ camera, controls, lock, flight, graph, view, physics, files, overview, renderSettings, supernova, menu, editor, titleEdit, sidebar, search, flyTo, hud, speedEl, keymap = createKeymap() }) {
+export function createInteraction({
+  camera,
+  controls,
+  lock,
+  flight,
+  graph,
+  view,
+  physics,
+  files,
+  overview,
+  renderSettings,
+  supernova,
+  menu,
+  editor,
+  titleEdit,
+  sidebar,
+  search,
+  flyTo,
+  hud,
+  speedEl,
+  keymap = createKeymap(),
+}) {
   const raycaster = new THREE.Raycaster()
   const crosshair = new THREE.Vector2(0, 0) // dead centre of the viewport
   const forward = new THREE.Vector3()
@@ -456,7 +477,7 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
             { key: 'confirm', label: 'Confirm password', type: 'password' },
           ],
           note,
-          'Save'
+          'Save',
         )
         if (!values) return { ok: false }
         name = values.filename
@@ -547,7 +568,7 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
           `open ${file.name}`,
           [{ key: 'password', label: 'Password', type: 'password' }],
           note,
-          'Open'
+          'Open',
         )
         if (!values) return
 
@@ -680,7 +701,13 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
     // Linear, as the shader has it; getStyle hands back sRGB for CSS.
     const colour = tint ? swatch.setRGB(tint[0], tint[1], tint[2]).getStyle() : 'currentColor'
     const links = `${hit.degree} link${hit.degree === 1 ? '' : 's'}`
-    return { id: hit.id, label: hit.label, mark: hit.mark, swatch: colour, meta: hit.isCore ? `core · ${links}` : links }
+    return {
+      id: hit.id,
+      label: hit.label,
+      mark: hit.mark,
+      swatch: colour,
+      meta: hit.isCore ? `core · ${links}` : links,
+    }
   }
 
   function searchLookup(query) {
