@@ -3,7 +3,9 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
-# Populates ../server/static per vite.config.js's outDir
+# Populates ../server/static per vite.config.js's outDir. Caddy serves this
+# under /pleiades (docker-compose.yml), so the asset URLs need that prefix.
+ENV ATLASMAP_BASE=/pleiades/
 RUN npm run build
 
 FROM python:3.13-slim
