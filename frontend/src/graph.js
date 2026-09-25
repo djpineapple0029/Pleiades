@@ -5,7 +5,9 @@
  * so persistence is a straight JSON round-trip: `toPayload` hands them over
  * as-is and `load` puts them back. Fields later sessions own (`links`,
  * `directed`) are initialised here, round-tripped verbatim, and otherwise left
- * alone.
+ * alone. Fields this build doesn't know at all — a newer build's — ride along
+ * on the node or edge object untouched (`passThrough`), so opening and
+ * re-saving a map in an older build never strips them (V2.md §2.3.1).
  *
  * Node sizes are derived, not stored: `sizeOf` reads a cache that every
  * mutation below throws away, so nothing outside this module has to remember
@@ -25,9 +27,39 @@
 import { computeSizes } from './sizing.js'
 import { computeClusters } from './clustering.js'
 import { computeBlend } from './colorBlend.js'
+import { migrate, PayloadError } from './format/schema.js'
 
 /** Thrown by `load` when a decrypted payload is not a graph. */
-export class PayloadError extends Error {}
+export { PayloadError }
+
+const NODE_KEYS = new Set([
+  'id',
+  'label',
+  'notes',
+  'links',
+  'x',
+  'y',
+  'z',
+  'cluster_color_id',
+  'blend',
+  'is_core',
+])
+const EDGE_KEYS = new Set(['id', 'from', 'to', 'directed', 'label'])
+// What d3-force stamps on whatever it simulates. Physics runs on proxies, so
+// the model never carries these — but a file from before that did might.
+const D3_KEYS = new Set(['index', 'vx', 'vy', 'vz', 'fx', 'fy', 'fz'])
+
+/**
+ * The keys of `raw` this build doesn't own, as a plain object. Spread
+ * *before* the validated fields, so a known field always wins.
+ */
+function passThrough(raw, known) {
+  const extra = {}
+  for (const [key, value] of Object.entries(raw)) {
+    if (!known.has(key) && !D3_KEYS.has(key)) extra[key] = value
+  }
+  return extra
+}
 
 // Deliberately strict: `Number(null)`, `Number('')` and `Number(false)` are all
 // 0, so coercing here would quietly park a damaged node at the origin instead
@@ -367,8 +399,9 @@ export function createGraph() {
    * graph is touched, so a payload that turns out to be broken half way through
    * leaves the map the user already had open intact. Throws `PayloadError`.
    */
-  function load(payload) {
-    if (!payload || typeof payload !== 'object') throw new PayloadError('Payload is not an object.')
+  function load(input) {
+    // Envelope first: a newer schema is refused before anything is built.
+    const payload = migrate(input)
     const nodeList = payload.nodes ?? []
     const edgeList = payload.edges ?? []
     if (!Array.isArray(nodeList)) throw new PayloadError('`nodes` is not an array.')
@@ -382,6 +415,7 @@ export function createGraph() {
       if (typeof id !== 'string' || !id) throw new PayloadError('A node has no id.')
       if (nextNodes.has(id)) throw new PayloadError(`Two nodes share the id ${id}.`)
       nextNodes.set(id, {
+        ...passThrough(raw, NODE_KEYS),
         id,
         label: readString(raw.label),
         notes: readString(raw.notes),
@@ -416,7 +450,14 @@ export function createGraph() {
       }
       if (duplicate) continue
 
-      nextEdges.set(id, { id, from, to, directed: raw.directed === true, label: readString(raw.label) })
+      nextEdges.set(id, {
+        ...passThrough(raw, EDGE_KEYS),
+        id,
+        from,
+        to,
+        directed: raw.directed === true,
+        label: readString(raw.label),
+      })
       nextIncident.get(from).add(id)
       nextIncident.get(to).add(id)
     }

@@ -174,6 +174,10 @@ The key is PBKDF2-HMAC-SHA256 over the password, 600,000 iterations. Those
 parameters are pinned by the version byte, not stored in the header: changing
 them means bumping the version, or every existing file stops opening.
 
+What's inside, once decrypted, is a versioned JSON payload; its shape, the
+compatibility rules and the export allowlist are in
+[`docs/FORMAT.md`](docs/FORMAT.md).
+
 ## Exporting a map to share
 
 `Ctrl+E` writes the map as a single `.html` file. Whoever you send it to opens it
@@ -192,9 +196,10 @@ frozen exactly as exported — there is no physics in it to move anything.
 
 **Two things worth knowing before you send one.** The map inside is plain text,
 readable by anyone who has the file; there is no password and no encryption, which
-is what makes it openable at all. And **node notes are left out of the export** —
-they are the one field that never leaves your `.atlasmap`. Labels, structure,
-positions, sizes, cluster colours and connection names all travel.
+is what makes it openable at all. And **the export carries only what the viewer
+draws**: labels, structure, positions, sizes, cluster colours and connection
+names. Node notes, links, and any field a newer AtlasMap added stay in your
+`.atlasmap` (the list is in `docs/FORMAT.md`).
 
 Exporting changes nothing about the session: it is not a save, and it does not
 take the filename or the password. The `.atlasmap` file is still the thing that
