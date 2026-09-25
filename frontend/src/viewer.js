@@ -18,6 +18,7 @@ import { createScene } from './scene.js'
 import { createFlight } from './flight.js'
 import { createSkybox } from './skybox.js'
 import { createDust } from './dust.js'
+import { createDustRivers } from './dustRivers.js'
 import { createBloom } from './bloom.js'
 import { createGraph } from './graph.js'
 import { createGraphView } from './graphView.js'
@@ -64,6 +65,7 @@ camera.position.set(0, 0, 260)
 
 const graph = createGraph()
 const view = createGraphView(graph, scene, renderer)
+const rivers = createDustRivers(graph, scene, { radiusOf: view.radiusOf })
 const overview = createOverview({ camera, canvas, graph, view, controls: flight.controls })
 
 const interaction = createViewerInteraction({
@@ -151,5 +153,6 @@ renderer.setAnimationLoop(() => {
   overview.update(delta)
   interaction.update()
   view.update(clock.elapsedTime, camera) // getDelta above has just advanced it
+  rivers.update(delta)
   bloom.render() // the whole frame, stars and bloom included
 })

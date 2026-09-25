@@ -4,6 +4,8 @@ import { createScene } from './scene.js'
 import { createFlight } from './flight.js'
 import { createSkybox } from './skybox.js'
 import { createDust } from './dust.js'
+import { createDustRivers } from './dustRivers.js'
+import { createSupernova } from './supernova.js'
 import { createBloom } from './bloom.js'
 import { createGraph } from './graph.js'
 import { createGraphView } from './graphView.js'
@@ -42,6 +44,8 @@ camera.position.set(0, 0, 260)
 
 const graph = createGraph()
 const view = createGraphView(graph, scene, renderer)
+const rivers = createDustRivers(graph, scene, { radiusOf: view.radiusOf })
+const supernova = createSupernova(scene)
 const physics = createPhysics(graph, view)
 const files = createFiles({ graph, view, camera, physics })
 
@@ -73,6 +77,7 @@ const interaction = createInteraction({
   files,
   overview,
   renderSettings,
+  supernova,
   menu: createRadialMenu(document.getElementById('radial-menu')),
   editor: createEditor(document.getElementById('editor')),
   titleEdit: createTitleEdit(),
@@ -158,6 +163,10 @@ renderer.setAnimationLoop(() => {
   // getDelta above has just advanced elapsedTime; reduced motion freezes only
   // this reading, so the star pulse stops while everything else keeps timing.
   view.update(reducedMotion ? frozenElapsed : clock.elapsedTime, camera)
+  // After the view: the rivers read the stars' drawn radii. Reduced motion
+  // holds them still; a supernova under it is only a short flash anyway.
+  supernova.update(delta)
+  rivers.update(reducedMotion ? 0 : delta, supernova.shocks())
   bloom.render() // the whole frame, stars and bloom included
   updateTitle()
 })
@@ -181,6 +190,8 @@ if (import.meta.hot) {
     interaction.dispose()
     lock.dispose()
     view.dispose()
+    rivers.dispose()
+    supernova.dispose()
     bloom.dispose()
     skybox.dispose()
     dust.geometry.dispose()

@@ -75,7 +75,7 @@ function sameTarget(a, b) {
  * the password panel, and the panel is a modal surface — only this module knows
  * whether one is already up, and only this module can suspend flight for it.
  */
-export function createInteraction({ camera, controls, lock, flight, graph, view, physics, files, overview, renderSettings, menu, editor, titleEdit, sidebar, hud, speedEl }) {
+export function createInteraction({ camera, controls, lock, flight, graph, view, physics, files, overview, renderSettings, supernova, menu, editor, titleEdit, sidebar, hud, speedEl }) {
   const raycaster = new THREE.Raycaster()
   const crosshair = new THREE.Vector2(0, 0) // dead centre of the viewport
   const forward = new THREE.Vector3()
@@ -322,6 +322,16 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
   function deleteNode(nodeId) {
     if (sourceId === nodeId) cancelConnect()
     if (moveId === nodeId) cancelMove()
+    // Read before the delete: after it the node, its size and tint are gone.
+    const node = graph.getNode(nodeId)
+    if (node) {
+      supernova?.burst({
+        position: node,
+        radius: view.radiusOf(nodeId),
+        tint: view.tintOf(nodeId),
+        reduced: renderSettings?.reducedMotion,
+      })
+    }
     commands.deleteNode(nodeId)
     clearHover()
   }
