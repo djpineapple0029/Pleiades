@@ -22,6 +22,8 @@ import {
   writeContainer,
   ContainerPasswordError,
 } from './format/container.js'
+import { ENVELOPE_KEYS, envelope, migrate } from './format/schema.js'
+import { exportPayload } from './format/exportPayload.js'
 
 const SUFFIX = '.atlasmap'
 const DEFAULT_FILENAME = `map${SUFFIX}`
@@ -71,6 +73,9 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
   // null after a save taken mid-Balance: the run kept moving nodes past what
   // went into the file, so no later state matches it.
   let savedRevision = graph.contentRevision
+  // Top-level keys of the opened file that this build doesn't own (a newer
+  // build's), written back on save so a round trip here never drops them.
+  let passedThrough = {}
 
   function cameraBlock() {
     return {
@@ -82,7 +87,7 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
   }
 
   function toPayload() {
-    return { ...graph.toPayload(), camera: cameraBlock() }
+    return { ...passedThrough, ...envelope(), ...graph.toPayload(), camera: cameraBlock() }
   }
 
   const isTriple = (value) =>
@@ -97,7 +102,10 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
 
   /** Swaps in a decrypted payload. Throws `PayloadError` if it is not a graph. */
   function applyPayload(payload) {
-    graph.load(payload)
+    const current = migrate(payload)
+    graph.load(current)
+    const own = new Set([...ENVELOPE_KEYS, 'nodes', 'edges', 'camera'])
+    passedThrough = Object.fromEntries(Object.entries(current).filter(([key]) => !own.has(key)))
     // Before the view syncs: bodies keyed by an id the new file happens to
     // reuse would otherwise hand their old velocity to a different node.
     physics.reset()
@@ -212,24 +220,6 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
   }
 
   /**
-   * What goes into an exported file. The graph as saved, minus `notes`.
-   *
-   * **Notes are deliberately dropped.** An export carries no password, so its
-   * contents are readable in a text editor by anyone who has the file, and the
-   * viewer has no editor panel to show notes in anyway. Shipping private
-   * working text inside a map meant for sharing is the wrong default; the
-   * `.atlasmap` file remains the thing that keeps everything.
-   */
-  function exportPayload() {
-    const { nodes, edges } = graph.toPayload()
-    return {
-      nodes: nodes.map(({ notes, ...rest }) => rest),
-      edges,
-      camera: cameraBlock(),
-    }
-  }
-
-  /**
    * Writes the map as a standalone, view-only `.html`: the viewer bundle with
    * the graph spliced into it. No password, no server, and no editing — the
    * code that could change a graph is not in that bundle at all.
@@ -252,7 +242,7 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
 
     // `<` is the only character that can end the JSON's script tag early;
     // escaped as `<` it is the same string to any JSON parser.
-    const json = JSON.stringify(exportPayload()).replaceAll('<', '\\u003c')
+    const json = JSON.stringify(exportPayload(graph.toPayload(), cameraBlock())).replaceAll('<', '\\u003c')
     // The server's keys and flight feel travel with the file, which opens with
     // no server to ask. Spliced first, while the only copy of the marker is the
     // template's own (a map or file name could contain the text). A template
@@ -307,10 +297,12 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
       const trimmed = (nextFilename ?? '').trim()
       filename = !trimmed ? DEFAULT_FILENAME : trimmed.endsWith(SUFFIX) ? trimmed : `${trimmed}${SUFFIX}`
     },
-    /** Forgets password and filename — used when New map starts a fresh document. */
+    /** Forgets password, filename and the last file's passed-through fields —
+     *  used when New map starts a fresh document. */
     clearCredentials() {
       password = null
       filename = DEFAULT_FILENAME
+      passedThrough = {}
     },
     /** Re-baselines the dirty check against the graph's current content
      *  revision, without a save or open — New map's "this is now clean". */

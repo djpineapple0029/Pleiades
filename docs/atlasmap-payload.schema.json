@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "atlasmap-payload.schema.json",
+  "title": "AtlasMap payload, schema 1",
+  "description": "The decrypted JSON inside an .atlasmap container. Unknown keys are allowed everywhere and must be preserved by readers (docs/FORMAT.md, rule 4).",
+  "type": "object",
+  "properties": {
+    "format": { "const": "atlasmap" },
+    "schema": { "const": 1, "description": "Absent means 1." },
+    "app": { "type": "string" },
+    "modified": {
+      "type": "string",
+      "description": "Reserved; not written yet."
+    },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" },
+      "default": []
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edge" },
+      "default": []
+    },
+    "camera": {
+      "type": "object",
+      "properties": {
+        "position": { "$ref": "#/$defs/triple" },
+        "rotation": {
+          "$ref": "#/$defs/triple",
+          "description": "Euler angles, the camera's own order."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "triple": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "number" },
+        { "type": "number" },
+        { "type": "number" }
+      ],
+      "minItems": 3
+    },
+    "node": {
+      "type": "object",
+      "required": ["id", "x", "y", "z"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "default": "" },
+        "notes": { "type": "string", "default": "" },
+        "links": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" },
+        "cluster_color_id": { "type": "integer", "default": 0 },
+        "blend": {
+          "description": "Faded cluster colour, RGB 0-1. Anything else reads as null rather than refusing the file.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "array",
+              "items": { "type": "number", "minimum": 0, "maximum": 1 },
+              "minItems": 3,
+              "maxItems": 3
+            }
+          ],
+          "default": null
+        },
+        "is_core": { "type": "boolean", "default": false }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": ["id", "from", "to"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "directed": { "type": "boolean", "default": false },
+        "label": { "type": "string", "default": "" }
+      }
+    }
+  }
+}
