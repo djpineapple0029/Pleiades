@@ -187,6 +187,10 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
   let nodeCore = new Uint8Array(0)
   let nodeDegree = new Int32Array(0)
   let nodeRadius = new Float32Array(0)
+  // Where each star was last step, and how far it has moved since: a star
+  // carried by hand or by Balance takes its grains' tails along with it.
+  let nodeLast = new Float64Array(0)
+  let nodeDelta = new Float64Array(0)
   let edgeIds = []
   let edgeFrom = new Int32Array(0)
   let edgeTo = new Int32Array(0)
@@ -206,6 +210,11 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
 
   function rebuild() {
     builtRevision = graph.revision
+    // Last step's star positions, by id, so a move that lands in the same step
+    // as a rebuild (a Balance ending, an undone Balance) still carries tails.
+    const lastById = new Map()
+    for (let i = 0; i < nodeIds.length; i++) lastById.set(nodeIds[i], i)
+    const previousLast = nodeLast
     nodeIds = [...graph.nodes.keys()]
     nodeObjs = nodeIds.map((id) => graph.nodes.get(id))
     nodeIndex = new Map(nodeIds.map((id, i) => [id, i]))
@@ -215,6 +224,15 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
     nodeCore = new Uint8Array(n)
     nodeDegree = new Int32Array(n)
     nodeRadius = new Float32Array(n)
+    nodeLast = new Float64Array(n * 3)
+    nodeDelta = new Float64Array(n * 3)
+    for (let i = 0; i < n; i++) {
+      const old = lastById.get(nodeIds[i])
+      const from = old === undefined ? null : old * 3
+      nodeLast[i * 3] = from === null ? nodeObjs[i].x : previousLast[from]
+      nodeLast[i * 3 + 1] = from === null ? nodeObjs[i].y : previousLast[from + 1]
+      nodeLast[i * 3 + 2] = from === null ? nodeObjs[i].z : previousLast[from + 2]
+    }
     for (let i = 0; i < n; i++) {
       const h = hash32(nodeIds[i], 0x5eed0d15)
       const r = frameFromHash(h, scratch)
@@ -537,12 +555,14 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
     clock += dt
     const decay = Math.exp(-dt / PUSH_DECAY)
     writeEdgeFrames()
+    const starsMoved = trackStars()
 
     for (let g = 0; g < count; g++) {
       if (phase[g] === DEAD) {
         light[g] = 0
         continue
       }
+      if (starsMoved && dying[g] !== 2) carryTrail(g)
       const o = g * 3
 
       let respawned = false
@@ -711,6 +731,58 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
         trail[o + 2] = positions[g * 3 + 2]
         if (trailValid[g] < TRAIL_POINTS) trailValid[g]++
       }
+    }
+  }
+
+  /** Records how far every star moved since the last step. True if any did. */
+  function trackStars() {
+    let moved = false
+    for (let i = 0; i < nodeObjs.length; i++) {
+      const node = nodeObjs[i]
+      const o = i * 3
+      const dx = node.x - nodeLast[o]
+      const dy = node.y - nodeLast[o + 1]
+      const dz = node.z - nodeLast[o + 2]
+      nodeDelta[o] = dx
+      nodeDelta[o + 1] = dy
+      nodeDelta[o + 2] = dz
+      if (dx !== 0 || dy !== 0 || dz !== 0) {
+        moved = true
+        nodeLast[o] = node.x
+        nodeLast[o + 1] = node.y
+        nodeLast[o + 2] = node.z
+      }
+    }
+    return moved
+  }
+
+  /**
+   * Shifts grain `g`'s remembered positions by how far the star it's on moved
+   * (in transit, the blend of both ends it is between). The tail stays a
+   * record of the grain's path *around its stars*; left in world space, a star
+   * dragged across the map would pull a long line of stale tail behind it.
+   */
+  function carryTrail(g) {
+    const n = trailValid[g]
+    if (n === 0) return
+    const a = at[g] * 3
+    let dx = nodeDelta[a]
+    let dy = nodeDelta[a + 1]
+    let dz = nodeDelta[a + 2]
+    if (phase[g] === TRANSIT) {
+      const b = to[g] * 3
+      const u = t[g]
+      dx += (nodeDelta[b] - dx) * u
+      dy += (nodeDelta[b + 1] - dy) * u
+      dz += (nodeDelta[b + 2] - dz) * u
+    }
+    if (dx === 0 && dy === 0 && dz === 0) return
+    for (let i = 0; i < n; i++) {
+      const slot = (trailHead - i + TRAIL_POINTS) % TRAIL_POINTS
+      const o = (g * TRAIL_POINTS + slot) * 3
+      trail[o] += dx
+      trail[o + 1] += dy
+      trail[o + 2] += dz
     }
   }
 

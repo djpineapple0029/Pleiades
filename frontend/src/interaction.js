@@ -323,14 +323,10 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
     if (sourceId === nodeId) cancelConnect()
     if (moveId === nodeId) cancelMove()
     // Read before the delete: after it the node, its size and tint are gone.
+    // With motion off the star just goes, with no burst at all.
     const node = graph.getNode(nodeId)
-    if (node) {
-      supernova?.burst({
-        position: node,
-        radius: view.radiusOf(nodeId),
-        tint: view.tintOf(nodeId),
-        reduced: renderSettings?.reducedMotion,
-      })
+    if (node && !renderSettings?.reducedMotion) {
+      supernova?.burst({ position: node, radius: view.radiusOf(nodeId), tint: view.tintOf(nodeId) })
     }
     commands.deleteNode(nodeId)
     clearHover()

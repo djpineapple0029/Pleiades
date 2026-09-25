@@ -174,6 +174,55 @@ describe('riverFlow', () => {
     expect(mean(after)).toBeLessThan(mean(before) + 2)
   })
 
+  it('a star carried across the map takes its grains\' tails with it', () => {
+    const { graph, flow } = setup(chain)
+    run(flow, 10)
+    const star = [...graph.nodes.values()].find((n) => n.y === 900)
+    // Carried 600 units over half a second, as a hand move would.
+    for (let i = 1; i <= 15; i++) {
+      graph.setNodePosition(star.id, i * 40, 900, 0)
+      flow.step(1 / 30)
+    }
+    const out = new Float32Array(16 * 3)
+    let checked = 0
+    for (let g = 0; g < flow.count; g++) {
+      const grain = flow.grain(g)
+      if (grain.node !== star.id || grain.phase !== 'orbit') continue
+      const n = flow.trailOf(g, out)
+      for (let i = 0; i < n; i++) {
+        const d = Math.hypot(out[i * 3] - star.x, out[i * 3 + 1] - star.y, out[i * 3 + 2] - star.z)
+        // Within the swirl (orbits reach ~5 radii, plus wobble), not 600 back.
+        expect(d).toBeLessThan(RADIUS * 7)
+        checked++
+      }
+    }
+    expect(checked).toBeGreaterThan(20)
+  })
+
+  it('tails follow a layout that moves every star and recolours in the same step', () => {
+    const { graph, flow } = setup(chain)
+    run(flow, 10)
+    // What an undone Balance does: every star jumps, and the revision moves.
+    const positions = new Map([...graph.nodes.values()].map((n) => [n.id, [n.x + 500, n.y, n.z + 300]]))
+    const colors = new Map([...graph.nodes.keys()].map((id) => [id, 3]))
+    graph.applyLayout({ positions, colors, clusterCount: 1 })
+    flow.step(1 / 30)
+    const out = new Float32Array(16 * 3)
+    let checked = 0
+    for (let g = 0; g < flow.count; g++) {
+      const grain = flow.grain(g)
+      if (grain.phase !== 'orbit' || grain.dying) continue
+      const star = graph.getNode(grain.node)
+      const n = flow.trailOf(g, out)
+      for (let i = 0; i < n; i++) {
+        const d = Math.hypot(out[i * 3] - star.x, out[i * 3 + 1] - star.y, out[i * 3 + 2] - star.z)
+        expect(d).toBeLessThan(RADIUS * 7)
+        checked++
+      }
+    }
+    expect(checked).toBeGreaterThan(20)
+  })
+
   it('is the same every run for the same seed', () => {
     const a = setup(chain).flow
     const b = setup(chain).flow

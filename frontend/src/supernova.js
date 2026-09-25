@@ -239,7 +239,6 @@ export function createSupernova(scene, { rand = Math.random } = {}) {
       geometry,
       age: Infinity,
       radius: 1,
-      reduced: false,
     })
   }
 
@@ -281,21 +280,20 @@ export function createSupernova(scene, { rand = Math.random } = {}) {
 
   /**
    * Sets a star off where it was. `tint` is linear RGB (`view.tintOf`); null
-   * falls back to white. `reduced`: the flash alone, short, nothing thrown.
+   * falls back to white.
    */
-  function burst({ position, radius, tint, reduced = false }) {
+  function burst({ position, radius, tint }) {
     // The free slot, or the one that went off longest ago.
     let slot = slots[0]
     for (const s of slots) if (s.age > slot.age) slot = s
     slot.age = 0
     slot.radius = radius
-    slot.reduced = reduced
     slot.shared.center.value.set(position.x, position.y, position.z)
     if (tint) slot.shared.tint.value.setRGB(tint[0], tint[1], tint[2])
     else slot.shared.tint.value.setRGB(1, 1, 1)
     slot.flashUniforms.extent.value = radius * FLASH_EXTENT
     slot.particleUniforms.radius.value = radius
-    if (!reduced) seedParticles(slot)
+    seedParticles(slot)
     apply(slot)
   }
 
@@ -305,15 +303,23 @@ export function createSupernova(scene, { rand = Math.random } = {}) {
 
   function apply(slot) {
     const age = slot.age
-    slot.shared.age.value = slot.reduced ? age * 2 : age
-    slot.flash.visible = age < (slot.reduced ? FLASH_LIFE / 2 : FLASH_LIFE)
-    slot.particles.visible = !slot.reduced && age < BURST_LIFE
-    slot.shock.visible = !slot.reduced && age < SHOCK_LIFE
+    slot.shared.age.value = age
+    slot.flash.visible = age < FLASH_LIFE
+    slot.particles.visible = age < BURST_LIFE
+    slot.shock.visible = age < SHOCK_LIFE
     if (slot.shock.visible) {
       // Billboard a little bigger than the shell, so its rim never clips.
       const extent = slot.radius * SHOCK_REACH * 1.1
       slot.shockUniforms.extent.value = extent
       slot.shockUniforms.reach.value = shockRadius(slot) / extent
+    }
+  }
+
+  /** Ends every burst at once — for motion being switched off mid-burst. */
+  function clear() {
+    for (const slot of slots) {
+      slot.age = Infinity
+      slot.flash.visible = slot.particles.visible = slot.shock.visible = false
     }
   }
 
@@ -335,7 +341,7 @@ export function createSupernova(scene, { rand = Math.random } = {}) {
   function shocks() {
     const out = []
     for (const slot of slots) {
-      if (slot.reduced || !(slot.age < SHOCK_LIFE)) continue
+      if (!(slot.age < SHOCK_LIFE)) continue
       const radius = shockRadius(slot)
       const c = slot.shared.center.value
       const life = slot.age / SHOCK_LIFE
@@ -362,5 +368,5 @@ export function createSupernova(scene, { rand = Math.random } = {}) {
     }
   }
 
-  return { burst, update, shocks, dispose }
+  return { burst, update, shocks, clear, dispose }
 }

@@ -53,7 +53,7 @@ const files = createFiles({ graph, view, camera, physics })
 const overview = createOverview({ camera, canvas, graph, view, controls: flight.controls })
 
 // Minimal, in-memory only: freezes the star-pulse clock read by the frame
-// loop below. No other visible motion in the scene is clock-driven.
+// loop below, and switches the dust rivers and the delete supernova off.
 let reducedMotion = false
 let frozenElapsed = 0
 const renderSettings = {
@@ -63,6 +63,8 @@ const renderSettings = {
   toggleReducedMotion() {
     reducedMotion = !reducedMotion
     if (reducedMotion) frozenElapsed = clock.elapsedTime
+    // Motion off means no dust rivers and no supernova, not frozen ones.
+    if (reducedMotion) supernova.clear()
   },
 }
 
@@ -160,13 +162,19 @@ renderer.setAnimationLoop(() => {
   // nodes are this frame, not where they were last frame.
   physics.update()
   interaction.update()
-  // getDelta above has just advanced elapsedTime; reduced motion freezes only
-  // this reading, so the star pulse stops while everything else keeps timing.
-  view.update(reducedMotion ? frozenElapsed : clock.elapsedTime, camera)
-  // After the view: the rivers read the stars' drawn radii. Reduced motion
-  // holds them still; a supernova under it is only a short flash anyway.
-  supernova.update(delta)
-  rivers.update(reducedMotion ? 0 : delta, supernova.shocks())
+  // getDelta above has just advanced elapsedTime. Reduced motion freezes only
+  // the pulse's reading of it: the stars stop breathing, but sizes, tints and
+  // label fades still step (a frozen clock for all of it left new labels
+  // invisible and edits un-eased with motion off).
+  view.update(clock.elapsedTime, camera, reducedMotion ? frozenElapsed : clock.elapsedTime)
+  // After the view: the rivers read the stars' drawn radii. With motion off
+  // neither is drawn at all (deletes don't start a burst then, either).
+  if (reducedMotion) {
+    rivers.hide()
+  } else {
+    supernova.update(delta)
+    rivers.update(delta, supernova.shocks())
+  }
   bloom.render() // the whole frame, stars and bloom included
   updateTitle()
 })

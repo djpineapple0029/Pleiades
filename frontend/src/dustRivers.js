@@ -211,8 +211,17 @@ export function createDustRivers(graph, parent, { radiusOf }) {
   }
 
   /**
-   * Advances the rivers by `dt` seconds (0 holds them still, for reduced
-   * motion) and uploads them. `shocks` are shells pushing grains outward.
+   * Hides the rivers without advancing them — for motion switched off. The
+   * next `update` picks up where they left off, tails carried along with any
+   * star that moved in between.
+   */
+  function hide() {
+    points.visible = streaks.visible = false
+  }
+
+  /**
+   * Advances the rivers by `dt` seconds and uploads them. `shocks` are shells
+   * pushing grains outward.
    */
   function update(dt, shocks) {
     flow.step(dt, shocks)
@@ -244,5 +253,5 @@ export function createDustRivers(graph, parent, { radiusOf }) {
     streakMaterial.dispose()
   }
 
-  return { update, dispose, object: points }
+  return { update, hide, dispose, object: points }
 }

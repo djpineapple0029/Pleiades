@@ -87,19 +87,20 @@ await page.evaluate(() => fx.advance(40, 1 / 30))
 
 const core = payload.nodes.find((n) => n.is_core)
 const c = [core.x, core.y, core.z]
+// Labels fade in over a moment after the camera arrives; give them it.
 await page.evaluate((c) => fx.look([c[0] + 30, c[1] + 60, c[2] + 170], c), c)
-await page.evaluate(() => fx.advance(1 / 60))
+await page.evaluate(() => fx.advance(1.5))
 await shot('rivers_core')
 
 await page.evaluate((c) => fx.look([c[0] + 400, c[1] + 250, c[2] + 520], c), c)
-await page.evaluate(() => fx.advance(1 / 60))
+await page.evaluate(() => fx.advance(1.5))
 await shot('rivers_wide')
 
 // A plain, linked star for the supernova, framed close.
 const victim = payload.nodes.find((n) => !n.is_core && payload.edges.filter((e) => e.from === n.id || e.to === n.id).length >= 3)
 const v = [victim.x, victim.y, victim.z]
 await page.evaluate((v) => fx.look([v[0] + 20, v[1] + 30, v[2] + 110], v), v)
-await page.evaluate(() => fx.advance(1 / 60))
+await page.evaluate(() => fx.advance(1.5))
 await shot('nova_0_before')
 await page.evaluate((id) => fx.explode(id), victim.id)
 let t = 0
