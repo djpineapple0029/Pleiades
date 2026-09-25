@@ -29,6 +29,7 @@ uniform vec2 resolution; // CSS px
 uniform float pixelRatio;
 uniform vec3 warm;
 uniform vec3 cool;
+uniform float dim; // 1 normally; lower while a search dims the map
 attribute float light;
 attribute float heat;
 varying vec3 vColor;
@@ -39,7 +40,7 @@ void main() {
   float coverage = min(1.0, size / GRAIN_MIN_PX);
   float fog = 1.0 - smoothstep(FOG_NEAR, FOG_FAR, length(view.xyz));
   // Brighter by a star, as if lit by it.
-  float lit = light * GAIN * (0.55 + 0.45 * heat) * fog * coverage * coverage;
+  float lit = light * GAIN * (0.55 + 0.45 * heat) * fog * coverage * coverage * dim;
   vColor = mix(cool, warm, heat) * lit;
   gl_PointSize = drawn * pixelRatio;
   gl_Position = projectionMatrix * view;
@@ -62,13 +63,14 @@ void main() {
 const STREAK_VERTEX = /* glsl */ `
 uniform vec3 warm;
 uniform vec3 cool;
+uniform float dim;
 attribute float light;
 attribute float heat;
 varying vec3 vColor;
 void main() {
   vec4 view = modelViewMatrix * vec4(position, 1.0);
   float fog = 1.0 - smoothstep(FOG_NEAR, FOG_FAR, length(view.xyz));
-  vColor = mix(cool, warm, heat) * light * STREAK_GAIN * (0.55 + 0.45 * heat) * fog;
+  vColor = mix(cool, warm, heat) * light * STREAK_GAIN * (0.55 + 0.45 * heat) * fog * dim;
   gl_Position = projectionMatrix * view;
 }
 `
@@ -107,6 +109,7 @@ export function createDustRivers(graph, parent, { radiusOf }) {
       pixelRatio: { value: 1 },
       warm: { value: WARM },
       cool: { value: COOL },
+      dim: { value: 1 },
     },
     defines: {
       GRAIN_SIZE: glslFloat(GRAIN_SIZE),
@@ -151,7 +154,7 @@ export function createDustRivers(graph, parent, { radiusOf }) {
   streakGeometry.setAttribute('heat', streakWarm)
   streakGeometry.setDrawRange(0, 0)
   const streakMaterial = new THREE.ShaderMaterial({
-    uniforms: { warm: material.uniforms.warm, cool: material.uniforms.cool },
+    uniforms: { warm: material.uniforms.warm, cool: material.uniforms.cool, dim: material.uniforms.dim },
     defines: { FOG_NEAR: glslFloat(FOG_NEAR), FOG_FAR: glslFloat(FOG_FAR), STREAK_GAIN: glslFloat(STREAK_GAIN * GAIN) },
     vertexShader: STREAK_VERTEX,
     fragmentShader: STREAK_FRAGMENT,
@@ -253,5 +256,10 @@ export function createDustRivers(graph, parent, { radiusOf }) {
     streakMaterial.dispose()
   }
 
-  return { update, hide, dispose, object: points }
+  /** Scales every grain and tail's light: 1 is normal. Search dims the map. */
+  function setDim(level) {
+    material.uniforms.dim.value = level
+  }
+
+  return { update, hide, setDim, dispose, object: points }
 }

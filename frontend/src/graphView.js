@@ -47,6 +47,13 @@ const TINT_EASE = 0.3
 // which cluster the star belongs to.
 const TINT_VARY_MIN = 0.05
 const TINT_VARY_RANGE = 0.3
+// While a search is up, stars that don't match keep this much of their light,
+// and edges this much of theirs. Low enough that the matches stand out across
+// the whole map, high enough that the shape of the map is still there.
+const DIM_GLOW = 0.12
+const DIM_EDGES = 0.3
+// Time constant, in seconds, of the dim fading in and out as the query changes.
+const GLOW_EASE = 0.1
 
 const HOVER_COLOR = 0xffbe6b
 const SOURCE_COLOR = 0x6bffa8
@@ -109,9 +116,11 @@ function targetTint(node, out) {
 const STAR_VERTEX = /* glsl */ `
 attribute vec3 instanceStar; // phase, rate, seed
 attribute vec3 instanceTint;
+attribute float instanceGlow; // 1 normally; DIM_GLOW for a non-match under search
 uniform float pulseBeat;
 varying vec2 vOffset; // from the star's centre, in node radii
 varying vec3 vTint;
+varying float vGlow;
 varying float vSeed;
 varying float vPulse;
 varying float vFade;
@@ -127,6 +136,7 @@ void main() {
   vPulse = 0.5 - 0.5 * cos(6.283185307 * cycle);
   vPulse *= vPulse;
   vTint = instanceTint;
+  vGlow = instanceGlow;
   vSeed = instanceStar.z;
 
   // Billboard: expand the quad in view space around the instance's centre.
@@ -155,6 +165,7 @@ const STAR_FRAGMENT = /* glsl */ `
 uniform float pulseBeat;
 varying vec2 vOffset;
 varying vec3 vTint;
+varying float vGlow;
 varying float vSeed;
 varying float vPulse;
 varying float vFade;
@@ -331,7 +342,9 @@ void main() {
   vec3 hot = mix(vec3(1.0), vTint, 0.2);
   vec3 colour = hot * core * (1.4 + 0.5 * swell)
     + vTint * (glow * (0.7 + 1.1 * swell) + light * (0.85 + 0.6 * swell));
-  colour *= vFade * (1.0 - smoothstep(STAR_EXTENT * 0.9, STAR_EXTENT, r));
+  // The glow scales the hot core too: a dimmed star with a white-hot centre
+  // would still read as a bright point.
+  colour *= vGlow * vFade * (1.0 - smoothstep(STAR_EXTENT * 0.9, STAR_EXTENT, r));
 
   gl_FragColor = vec4(colour, 1.0);
   #include <tonemapping_fragment>
@@ -410,6 +423,11 @@ export function createGraphView(graph, scene, renderer) {
   // swap-remove can't hand a node another node's colour.
   const shownTint = new Map()
   const targetTints = new Map()
+  // Drawn light per node id (see DIM_GLOW), easing toward `glowOf(id)`.
+  const shownGlow = new Map()
+  // Ids a search has matched, or null when no search is dimming the map.
+  let emphasis = null
+  let shownEdgeDim = 1
   let sizedRevision = -1 // graph.revision the easing last aimed at
   let easing = false
   let lastSeconds = null
@@ -417,6 +435,7 @@ export function createGraphView(graph, scene, renderer) {
   let nodeMesh = null
   let starAttribute = null
   let tintAttribute = null
+  let glowAttribute = null
   allocate(0)
 
   const edges = createEdges(graph, root, renderer, radiusOf)
@@ -467,6 +486,10 @@ export function createGraphView(graph, scene, renderer) {
     }
   }
 
+  function glowOf(id) {
+    return emphasis && !emphasis.has(id) ? DIM_GLOW : 1
+  }
+
   /** Drawn radius of a node, in world units. NODE_RADIUS for one with no instance. */
   function radiusOf(id) {
     return NODE_RADIUS * (shown.get(id) ?? 1)
@@ -502,6 +525,13 @@ export function createGraphView(graph, scene, renderer) {
       array[slot * 3 + 2] = drawn[2]
     }
     tintAttribute.needsUpdate = true
+  }
+
+  /** The drawn glows into the instance attribute. */
+  function writeGlows() {
+    const array = glowAttribute.array
+    for (let slot = 0; slot < slotIds.length; slot++) array[slot] = shownGlow.get(slotIds[slot]) ?? 1
+    glowAttribute.needsUpdate = true
   }
 
   const pendingPositions = new Float32Array(6)
@@ -556,8 +586,10 @@ export function createGraphView(graph, scene, renderer) {
     )
     starAttribute = new THREE.InstancedBufferAttribute(new Float32Array(next * 3), 3)
     tintAttribute = new THREE.InstancedBufferAttribute(new Float32Array(next * 3), 3)
+    glowAttribute = new THREE.InstancedBufferAttribute(new Float32Array(next).fill(1), 1)
     geometry.setAttribute('instanceStar', starAttribute)
     geometry.setAttribute('instanceTint', tintAttribute)
+    geometry.setAttribute('instanceGlow', glowAttribute)
 
     const mesh = new THREE.InstancedMesh(geometry, nodeMaterial, next)
     mesh.name = 'nodes'
@@ -594,6 +626,7 @@ export function createGraphView(graph, scene, renderer) {
       shown.delete(id)
       shownTint.delete(id)
       targetTints.delete(id)
+      shownGlow.delete(id)
       const last = slotIds.pop()
       if (slot < slotIds.length) {
         slotIds[slot] = last
@@ -608,6 +641,7 @@ export function createGraphView(graph, scene, renderer) {
       slotIds.push(id)
       // A new node appears at its size rather than growing into it.
       shown.set(id, graph.sizeOf(id))
+      shownGlow.set(id, glowOf(id))
       changed = true
     }
 
@@ -623,6 +657,7 @@ export function createGraphView(graph, scene, renderer) {
       // empty tint buffer to fill.
       refreshTints()
       writeTints()
+      writeGlows()
     }
 
     nodeMesh.count = count
@@ -664,10 +699,22 @@ export function createGraphView(graph, scene, renderer) {
   function easeAppearance(dt) {
     const keepSize = Math.exp(-dt / SIZE_EASE)
     const keepTint = Math.exp(-dt / TINT_EASE)
+    const keepGlow = Math.exp(-dt / GLOW_EASE)
     let sizeMoved = false
     let tintMoved = false
+    let glowMoved = false
     let moving = false
     for (const id of slotIds) {
+      const glowWanted = glowOf(id)
+      const glow = shownGlow.get(id) ?? 1
+      if (glow !== glowWanted) {
+        let next = glowWanted + (glow - glowWanted) * keepGlow
+        if (Math.abs(next - glowWanted) < 1 / 512) next = glowWanted
+        else moving = true
+        shownGlow.set(id, next)
+        glowMoved = true
+      }
+
       const target = graph.sizeOf(id)
       const current = shown.get(id)
       if (current !== target) {
@@ -696,6 +743,15 @@ export function createGraphView(graph, scene, renderer) {
       edges.writeRadii() // each edge fades out inside its ends' drawn radii
     }
     if (tintMoved) writeTints()
+    if (glowMoved) writeGlows()
+
+    const edgeDim = emphasis ? DIM_EDGES : 1
+    if (shownEdgeDim !== edgeDim) {
+      shownEdgeDim = edgeDim + (shownEdgeDim - edgeDim) * keepGlow
+      if (Math.abs(shownEdgeDim - edgeDim) < 1 / 512) shownEdgeDim = edgeDim
+      else moving = true
+      edges.setDim(shownEdgeDim)
+    }
     return moving
   }
 
@@ -706,11 +762,15 @@ export function createGraphView(graph, scene, renderer) {
     for (const id of slotIds) {
       const wanted = targetTints.get(id)
       if (wanted) shownTint.set(id, [wanted[0], wanted[1], wanted[2]])
+      shownGlow.set(id, glowOf(id))
     }
+    shownEdgeDim = emphasis ? DIM_EDGES : 1
+    edges.setDim(shownEdgeDim)
     sizedRevision = graph.revision
     easing = false
     writeMatrices()
     writeTints()
+    writeGlows()
     edges.writeRadii()
   }
 
@@ -746,6 +806,15 @@ export function createGraphView(graph, scene, renderer) {
     labels.setHovered(target)
     // Held by id, so it survives an edge sync that renumbers the edges.
     edges.setHovered(target?.kind === 'edge' ? target.id : null)
+  }
+
+  /**
+   * Dims every star not in `ids` (an iterable of node ids), and the edges with
+   * them, easing in; null lifts the dim. The search's highlight.
+   */
+  function setEmphasis(ids) {
+    emphasis = ids ? new Set(ids) : null
+    easing = true
   }
 
   function setSource(nodeId) {
@@ -869,6 +938,7 @@ export function createGraphView(graph, scene, renderer) {
     syncEdges,
     updateEdgePositions,
     setHover,
+    setEmphasis,
     /** Live text for a label being edited in place; see `labels.setDraft`. */
     setLabelDraft: labels.setDraft,
     setSource,
@@ -881,6 +951,11 @@ export function createGraphView(graph, scene, renderer) {
     /** A node's drawn tint, linear RGB, as the shader has it. Null if not drawn. */
     tintOf: (id) => shownTint.get(id)?.slice() ?? null,
     labelsShown: labels.shown,
+    /** How lit the map's edges are right now (1, or easing toward DIM_EDGES
+     *  under a search), for anything else drawn over the map to follow. */
+    get mapDim() {
+      return shownEdgeDim
+    },
     dispose,
   }
 }

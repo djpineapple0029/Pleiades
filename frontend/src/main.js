@@ -18,6 +18,8 @@ import { createInteraction } from './interaction.js'
 import { createPointerLock } from './pointerLock.js'
 import { createTitleEdit } from './titleEdit.js'
 import { createNotesSidebar } from './notesSidebar.js'
+import { createSearchPanel } from './searchPanel.js'
+import { createFlyTo } from './flyTo.js'
 
 const MAX_FRAME_DELTA = 0.1 // seconds — clamps the jump after a backgrounded tab
 
@@ -51,6 +53,8 @@ const files = createFiles({ graph, view, camera, physics })
 
 // Drives the same camera as flight does — the bloom pipeline captured that one.
 const overview = createOverview({ camera, canvas, graph, view, controls: flight.controls })
+// Search jumps and Backspace fly the same camera, with flight suspended.
+const flyTo = createFlyTo(camera)
 
 // Minimal, in-memory only: freezes the star-pulse clock read by the frame
 // loop below, and switches the dust rivers and the delete supernova off.
@@ -84,6 +88,8 @@ const interaction = createInteraction({
   editor: createEditor(document.getElementById('editor')),
   titleEdit: createTitleEdit(),
   sidebar: createNotesSidebar(document.getElementById('notes-sidebar')),
+  search: createSearchPanel(document.getElementById('search')),
+  flyTo,
   hud,
   speedEl: speed,
 })
@@ -161,6 +167,9 @@ renderer.setAnimationLoop(() => {
   // Layout before interaction: the crosshair should raycast against where the
   // nodes are this frame, not where they were last frame.
   physics.update()
+  // After physics, so a jump aims at where its star is this frame, and before
+  // interaction, so the crosshair raycasts from where the camera now is.
+  flyTo.update(delta)
   interaction.update()
   // getDelta above has just advanced elapsedTime. Reduced motion freezes only
   // the pulse's reading of it: the stars stop breathing, but sizes, tints and
@@ -173,6 +182,7 @@ renderer.setAnimationLoop(() => {
     rivers.hide()
   } else {
     supernova.update(delta)
+    rivers.setDim(view.mapDim) // a search dims the rivers with the edges
     rivers.update(delta, supernova.shocks())
   }
   bloom.render() // the whole frame, stars and bloom included

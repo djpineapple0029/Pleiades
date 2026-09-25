@@ -196,6 +196,7 @@ uniform float pixelRatio;
 uniform float hovered;
 uniform vec3 moteColor;
 uniform vec3 hoverColor;
+uniform float dim; // 1 normally; lower while a search dims the map
 attribute vec3 instanceStart;
 attribute vec3 instanceEnd;
 attribute vec4 instanceEdge;
@@ -239,7 +240,7 @@ void main() {
   float hover = float(gl_InstanceID) == hovered ? 1.0 : 0.0;
 
   float light = present * ends * (0.55 + 0.45 * hash12(vec2(seed * 97.0, slot)));
-  light *= mix(fog * coverage * coverage, 1.0, hover);
+  light *= mix(fog * coverage * coverage, 1.0, hover) * dim;
   vColor = mix(moteColor, hoverColor, hover) * light;
   gl_PointSize = drawn * pixelRatio;
   gl_Position = projectionMatrix * view;
@@ -320,6 +321,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
       hovered,
       moteColor: { value: MOTE_COLOR },
       hoverColor,
+      dim: { value: 1 },
     },
     defines: DRIFT_DEFINES,
     vertexShader: DRIFT_VERTEX,
@@ -483,5 +485,11 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     driftMaterial.dispose()
   }
 
-  return { sync, updatePositions, writeRadii, update, setHovered, raycast, dispose }
+  /** Scales every edge and mote's light: 1 is normal. Search dims the map. */
+  function setDim(level) {
+    lineMaterial.uniforms.opacity.value = EDGE_OPACITY * level
+    driftMaterial.uniforms.dim.value = level
+  }
+
+  return { sync, updatePositions, writeRadii, update, setHovered, setDim, raycast, dispose }
 }

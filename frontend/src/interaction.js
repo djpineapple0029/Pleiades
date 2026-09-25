@@ -3,6 +3,8 @@ import { NODE_RADIUS } from './graphView.js'
 import { createStatus } from './status.js'
 import { createHistory } from './history.js'
 import { createCommands } from './commands.js'
+import { rankNodes } from './search.js'
+import { FLY_DURATION } from './flyTo.js'
 
 const SPAWN_DISTANCE = 90 // world units ahead of the camera for a new node
 const DOUBLE_CLICK_MS = 320
@@ -10,6 +12,10 @@ const DOUBLE_CLICK_MS = 320
 // ring automatically. A quick arm-then-release still swaps instantly via the
 // existing key dispatch below — this is only for staying on the wedge.
 const SUBMENU_DWELL_MS = 850
+// Search shows this many rows; the rest still light up in the scene.
+const SEARCH_ROWS = 8
+// Poses kept for Backspace to fly back through.
+const MAX_JUMPS = 20
 
 // Clockwise from the top. The core toggle takes the bottom wedge: the side
 // wedges are too narrow for its label, and Edit and Delete keep the sides they
@@ -75,7 +81,7 @@ function sameTarget(a, b) {
  * the password panel, and the panel is a modal surface — only this module knows
  * whether one is already up, and only this module can suspend flight for it.
  */
-export function createInteraction({ camera, controls, lock, flight, graph, view, physics, files, overview, renderSettings, supernova, menu, editor, titleEdit, sidebar, hud, speedEl }) {
+export function createInteraction({ camera, controls, lock, flight, graph, view, physics, files, overview, renderSettings, supernova, menu, editor, titleEdit, sidebar, search, flyTo, hud, speedEl }) {
   const raycaster = new THREE.Raycaster()
   const crosshair = new THREE.Vector2(0, 0) // dead centre of the viewport
   const forward = new THREE.Vector3()
@@ -84,7 +90,7 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
   // Every edit goes through here, which is what makes it undoable.
   const commands = createCommands({ graph, view, physics, history: createHistory() })
 
-  let mode = 'idle' // idle | connecting | menu | editing | moving
+  let mode = 'idle' // idle | connecting | menu | editing | moving | searching | flying
   let hover = null // { kind, id } under the crosshair
   let sourceId = null // connection origin while mode is 'connecting'
   let moveId = null // node being relocated while mode is 'moving'
@@ -103,6 +109,10 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
   // right before it's replaced.
   let loading = false
   let sidebarKey = null // what the notes sidebar last showed: `${id}:${contentRevision}`
+  // Camera poses from before each search jump, newest last, for Backspace.
+  const jumps = []
+  const swatch = new THREE.Color()
+  const starPosition = new THREE.Vector3()
 
   function aheadOfCamera(target) {
     forward.set(0, 0, -1).applyQuaternion(camera.quaternion)
@@ -130,6 +140,11 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
    *  happening. `status.js` layers transient save/open/export messages over
    *  whatever this returns, rather than replacing it. */
   function stateLine() {
+    if (mode === 'searching') return 'find a star · ↑↓ choose · Enter fly there · Esc close'
+    if (mode === 'flying') {
+      const node = hover?.kind === 'node' && graph.getNode(hover.id)
+      return node ? `flying to ${nodeName(node)}` : 'flying back'
+    }
     if (mode === 'connecting') {
       const source = graph.getNode(sourceId)
       // Instruction first, so it survives an ellipsis on a narrow window.
@@ -515,6 +530,7 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
         loading = false
         if (result.ok) {
           commands.clear()
+          forgetJumps()
           status.success(`opened ${file.name} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`)
           overview.refit()
           return
@@ -543,6 +559,7 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
         loading = false
         if (result.ok) {
           commands.clear()
+          forgetJumps()
           status.success(`opened ${file.name} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`)
           // A no-op unless the overview is up, where the orbit would otherwise
           // still be circling the previous map's centre.
@@ -648,10 +665,98 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
     physics.reset()
     view.sync()
     commands.clear()
+    forgetJumps()
     files.clearCredentials()
     files.reset()
     clearHover()
     overview.refit()
+  }
+
+  /** One search row per hit: the star's drawn colour, its name, its links. */
+  function searchRow(hit) {
+    const tint = view.tintOf(hit.id)
+    // Linear, as the shader has it; getStyle hands back sRGB for CSS.
+    const colour = tint ? swatch.setRGB(tint[0], tint[1], tint[2]).getStyle() : 'currentColor'
+    const links = `${hit.degree} link${hit.degree === 1 ? '' : 's'}`
+    return { id: hit.id, label: hit.label, mark: hit.mark, swatch: colour, meta: hit.isCore ? `core · ${links}` : links }
+  }
+
+  function searchLookup(query) {
+    const hits = rankNodes(graph.nodes.values(), query, graph.degree)
+    // Every match lights up, not only the rows shown; no query dims nothing.
+    view.setEmphasis(query.trim() ? hits.map((hit) => hit.id) : null)
+    let note = null
+    if (query.trim() && !hits.length) note = 'no star by that name'
+    else if (hits.length > SEARCH_ROWS) note = `${hits.length} matches · showing the first ${SEARCH_ROWS}`
+    return { rows: hits.slice(0, SEARCH_ROWS).map(searchRow), note }
+  }
+
+  /** The highlighted row's star gets the amber ring and its label, whatever its range. */
+  function searchPreview(id) {
+    hover = id ? { kind: 'node', id } : null
+    view.setHover(hover)
+  }
+
+  function canSearch() {
+    return (controls.isLocked && mode === 'idle') || (overview.isOrbiting && mode === 'idle')
+  }
+
+  /**
+   * `/` or Ctrl/Cmd+F: find a star by name and fly to it. Pointer lock is
+   * kept while flying; from the overview the flight also ends the overview.
+   */
+  async function openSearch() {
+    if (graph.nodes.size === 0) {
+      status.info('no stars yet')
+      return
+    }
+    const fromOverview = overview.isActive
+    mode = 'searching'
+    beginModal()
+    const id = await search.start(searchLookup, searchPreview)
+    // Torn down underneath (a lock loss): that path has already tidied up.
+    if (mode !== 'searching') return
+    const node = id && graph.getNode(id)
+    if (!node) {
+      view.setEmphasis(null)
+      clearHover()
+      endModal()
+      return
+    }
+    jumps.push({ position: camera.position.clone(), quaternion: camera.quaternion.clone() })
+    if (jumps.length > MAX_JUMPS) jumps.shift()
+    // A keypress, so the lock may be asked for straight away. A refusal is
+    // reported by main.js; the flight goes ahead regardless.
+    if (fromOverview && overview.isActive) overview.toggle()
+    mode = 'flying'
+    searchPreview(id)
+    const aim = () => {
+      const star = graph.getNode(id)
+      return star && { position: starPosition.set(star.x, star.y, star.z), radius: view.radiusOf(id) }
+    }
+    flyTo.toStar(aim, renderSettings.reducedMotion ? 0 : FLY_DURATION, () => {
+      // The other matches stay lit until the flight lands.
+      view.setEmphasis(null)
+      endModal()
+    })
+  }
+
+  /** Backspace: back to where the camera was before the last search jump. */
+  function flyBack() {
+    const pose = jumps.pop()
+    if (!pose) {
+      status.info('nothing to fly back to')
+      return
+    }
+    mode = 'flying'
+    beginModal()
+    clearHover()
+    flyTo.toPose(pose.position, pose.quaternion, renderSettings.reducedMotion ? 0 : FLY_DURATION, endModal)
+  }
+
+  /** Poses from one map mean nothing in another. */
+  function forgetJumps() {
+    jumps.length = 0
   }
 
   function openMenu(target) {
@@ -718,7 +823,7 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
   function onMouseDown(event) {
     // A click mid-rename would pull focus out of the hidden text field.
     if (titleEdit.isActive) event.preventDefault()
-    if (!controls.isLocked || mode === 'editing') return
+    if (!controls.isLocked || mode === 'editing' || mode === 'searching' || mode === 'flying') return
 
     if (event.button === 2) {
       event.preventDefault()
@@ -764,7 +869,8 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
   function onKeyDown(event) {
     // While the editor is up it stops keydown from reaching this window
     // listener at all; this is the guard for the frame either side of that.
-    if (mode === 'editing') return
+    // The search field stops its own keys too; a flight takes no input at all.
+    if (mode === 'editing' || mode === 'searching' || mode === 'flying') return
 
     // Save and open first, and always with preventDefault, so the browser's own
     // save-page and open-file dialogs never see the chord. `code`, not `key`:
@@ -783,6 +889,13 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
       if (event.code === 'KeyE') {
         event.preventDefault()
         if (!event.repeat) exportMap()
+        return
+      }
+      // Only taken from the browser when there's a map to search: over the
+      // click-to-fly screen its own find bar is left alone.
+      if (event.code === 'KeyF' && canSearch()) {
+        event.preventDefault()
+        if (!event.repeat) openSearch()
         return
       }
       // `key`, unlike the chords above: undo should follow the letter printed
@@ -819,6 +932,20 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
       return
     }
 
+    // `key`, not `code`: / sits somewhere else on most non-US layouts.
+    if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && canSearch()) {
+      // Or the / itself lands in the field that's about to take focus.
+      event.preventDefault()
+      if (!event.repeat) openSearch()
+      return
+    }
+
+    if (event.key === 'Backspace' && !event.repeat && controls.isLocked && mode === 'idle') {
+      event.preventDefault()
+      flyBack()
+      return
+    }
+
     if (event.code === 'KeyN' && !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && (controls.isLocked || overview.isActive) && mode !== 'menu') {
       sidebar.toggle()
       sidebarKey = null
@@ -846,6 +973,11 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
     if (menu.isOpen) menu.close()
     if (editor.isOpen) editor.cancel()
     if (titleEdit.isActive) titleEdit.cancel() // Esc discards a rename
+    // Esc under lock closes the search (the browser drops the lock with it);
+    // a flight stops where it has got to.
+    if (search.isActive) search.cancel()
+    if (flyTo.isActive) flyTo.cancel()
+    if (mode === 'searching' || mode === 'flying') view.setEmphasis(null)
     menuTarget = null
     if (mode === 'connecting') cancelConnect()
     else if (mode === 'moving') cancelMove() // never commit on lock loss
@@ -876,7 +1008,7 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
      *  swapped in — nothing should steal focus back, or re-lock and edit the
      *  graph that's about to be replaced. */
     get isModal() {
-      return mode === 'menu' || mode === 'editing' || loading
+      return mode === 'menu' || mode === 'editing' || mode === 'searching' || mode === 'flying' || loading
     },
   }
 }

@@ -45,6 +45,8 @@ the lock is never released for a menu or an edit.
 | left-click a node while connecting | link it |
 | right-click / `Esc` while connecting | cancel |
 | `B` | balance: re-group the map by connection density and run the force layout until it settles, or stop a run in progress |
+| `/` or `Ctrl`/`Cmd` `F` | find a star by name: `↑` `↓` choose, `Enter` flies there, `Esc` closes. Works in the overview too |
+| `Backspace` | fly back to where you were before the last search jump (it remembers 20) |
 | `Tab` | overview: fly out until the whole map is in frame and orbit it with the mouse; press again to fly from where the orbit left off |
 | `Ctrl`/`Cmd` `S` | save to a `.atlasmap` file |
 | `Ctrl`/`Cmd` `Shift` `S` | save under a different name or password |
@@ -184,6 +186,9 @@ frontend/src/clustering.js  Louvain communities, and the (random) colour that st
 frontend/src/colorBlend.js  the fade between cluster colours, worked out when a Balance ends
 frontend/src/edges.js  edges and drift motes: distance width, depth fog, endpoint fade
 frontend/src/labels.js names on stars and along lines: reveal rules, glyph atlas, no-overlap placement
+frontend/src/search.js     star-name ranking for / search (pure; prefix, word start, substring)
+frontend/src/searchPanel.js  the / field and its result rows
+frontend/src/flyTo.js      eased camera flights: to a searched star, and back again
 frontend/src/overview.js  Tab: zoom-to-fit, the orbit camera, and the way back to flight
 frontend/src/bloom.js  the frame: stars drawn once into their own target, bloomed, added last
 frontend/src/skybox.js nebula baked into a cube map at startup, distant stars
