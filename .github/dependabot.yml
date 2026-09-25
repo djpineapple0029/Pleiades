@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      # three breaks things between minors (V2.md §2.5.13): always review by
+      # hand, never auto-merge.
+      three:
+        patterns: ['three', '@types/three']
+      vite:
+        patterns: ['vite', 'vitest', '@vitejs/*']
+      graphology:
+        patterns: ['graphology', 'graphology-*']
+      lint:
+        patterns: ['eslint', '@eslint/*', 'globals', 'prettier']
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
