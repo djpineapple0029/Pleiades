@@ -46,7 +46,7 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   // Aim at n1, then a little above it: off a plain node, onto a core one.
   await t(page, 'look(-300, 0)'); await settle(page)
   expect.soft(await t(page, 'hud()'), 'back on n1, not core').toBe('node n1 · 1 links')
-  const UP = -70 // 0.14 rad: ~12.6 units at 90, outside 5.75, inside 15
+  const UP = -50 // 0.10 rad: ~9 units at 90, outside a plain 5, inside a core 11.25
   await t(page, `look(0, ${UP})`); await settle(page)
   expect.soft(await t(page, 'hud()'), 'above plain n1 is empty space').toBe('map.atlasmap · unsaved · 3 nodes · 2 edges')
   await t(page, `look(0, ${-UP})`); await settle(page)
@@ -73,9 +73,12 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   // Name n1 through the Edit wedge: its label appears under it, in the hover
   // colour, since the crosshair is on it.
   const W = 1280, H = 720
-  // Label pixels in the band under the targeted star, below its hover ring.
+  // Label pixels where the callout puts the name: down and to the right of
+  // the targeted star, starting right of its hover ring (also amber) so the
+  // ring is never counted as text. A plain star is 1x now, so the name sits
+  // higher than it did when one link made it 1.15x.
   const labelPixels = async () => {
-    const png = await page.screenshot({ clip: { x: W / 2 - 120, y: H / 2 + 54, width: 240, height: 30 } })
+    const png = await page.screenshot({ clip: { x: W / 2 + 40, y: H / 2 + 28, width: 160, height: 30 } })
     return page.evaluate(async (data) => {
       const img = new Image()
       await new Promise((done) => { img.onload = done; img.src = `data:image/png;base64,${data}` })
@@ -87,7 +90,9 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
       return amber
     }, png.toString('base64'))
   }
-  expect.soft(await labelPixels(), 'no label before naming').toBeLessThan(5)
+  // Measured, not assumed zero: the warm-tinted neighbour's rays reach into
+  // this band and pass the amber test too, so the name is what gets added.
+  const amberBefore = await labelPixels()
   const editMenu = await pickMenu(page, 60, 0)
   expect.soft(editMenu.armed, 'right arms Edit').toBe('Edit')
   await settle(page)
@@ -102,7 +107,7 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   expect.soft(await t(page, 'locked()'), 'still locked after renaming in place').toBe(true)
   expect.soft(await t(page, 'hud()'), 'HUD uses the new label').toBe('node Alpha · 1 links')
   const amber = await labelPixels()
-  expect.soft(amber, 'label drawn under the targeted node, in the hover colour').toBeGreaterThan(30)
+  expect.soft(amber - amberBefore, 'label drawn under the targeted node, in the hover colour').toBeGreaterThan(30)
   await page.screenshot({ path: testInfo.outputPath('app_label.png') })
 
   // Balance with a core in the graph, then everything still picks.

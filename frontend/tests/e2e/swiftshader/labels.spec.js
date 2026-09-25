@@ -153,11 +153,12 @@ test('node labels: reveal, tiers, callout, declutter, hover, edits', async ({ pa
     let firstSeen = null
     for (let d = 400; d >= 60; d -= 5) { lookAt(0, 0, d, 0, 0, 0); run(1, 0.016); if (firstSeen === null && shownOf(lone.id)) firstSeen = d }
     out.firstSeen = firstSeen
-    // One link: 1.15x, range ~304.
+    // One link: still 1x, so the same range as a lone node — a link no longer
+    // carries the name further.
     const friend = graph.addNode({ x: 3000, y: 0, z: 0, label: 'friend' })
     graph.addEdge(lone.id, friend.id)
     run(20)
-    out.oneLink = [220, 280, 320].map((d) => {
+    out.oneLink = [140, 180, 220].map((d) => {
       lookAt(0, 0, d, 0, 0, 0); run(20)
       const l = shownOf(lone.id)
       return +((l ? l.opacity / l.dim : 0)).toFixed(3)
@@ -189,10 +190,14 @@ test('node labels: reveal, tiers, callout, declutter, hover, edits', async ({ pa
     const back = graph.addNode({ x: 300, y: 0, z: -900, label: 'behind' })
     for (const id of [front.id, back.id]) graph.setCore(id, true)
     view.sync()
-    lookAt(0, 0, 150, 0, 0, 0); run(40)
+    // 110 rather than 150: a core is 2.25x now, not 3x, so its name at 150 is
+    // a size smaller than it was.
+    lookAt(0, 0, 110, 0, 0, 0); run(40)
     out.depthPair = [shownOf(front.id)?.fontPx, shownOf(back.id)?.fontPx].map((v) => (v ? +v.toFixed(2) : null))
 
-    // --- Tiers: a core in capitals, a landmark brighter, the rest as typed --------
+    // --- Tiers: a core in capitals, the rest as typed ------------------------------
+    // A core's neighbour used to be a landmark (it grew to 2.24x); with only
+    // cores bigger than 1x it is plain like everything else.
     reset()
     // Well inside the plain node's 200-unit reveal range, and spread out so
     // three callouts all have room.
@@ -335,9 +340,11 @@ test('node labels: reveal, tiers, callout, declutter, hover, edits', async ({ pa
     lookAt(0, 0, 60, 0, 0, 0); run(20)
     const l = shownOf(lit.id)
     out.litFull = l.opacity === 1 // near enough that nothing is dimmed
-    // A big star straight behind the name's ink, 200 units further on.
+    // A big star straight behind the name's ink, 140 units further on — a
+    // 2.25x core at 200 from the camera, the same apparent size a 3x one had
+    // at 260 before the sizing rule changed.
     const through = new THREE.Vector3(((l.x + l.width / 2) / W) * 2 - 1, 1 - ((l.y + l.height / 2) / H) * 2, 0.5).unproject(camera)
-    through.sub(camera.position).setLength(260).add(camera.position)
+    through.sub(camera.position).setLength(200).add(camera.position)
     const star = graph.addNode({ x: through.x, y: through.y, z: through.z })
     graph.setCore(star.id, true)
     view.syncNodes()
@@ -432,15 +439,15 @@ test('node labels: reveal, tiers, callout, declutter, hover, edits', async ({ pa
 
     // The same again at an ordinary spread rather than a saturated one: here
     // nearly every name should find a clean spot, which is what the first pass
-    // is for. Linked in pairs, so each carries about 300 units.
+    // is for. Scaled to 0.7, for the same reason as the dense map.
     reset()
     const spread = []
     for (let i = 0; i < 60; i++) {
-      spread.push(graph.addNode({ x: (rand() - 0.5) * 620, y: (rand() - 0.5) * 460, z: (rand() - 0.5) * 360, label: `node ${i}` }).id)
+      spread.push(graph.addNode({ x: (rand() - 0.5) * 434, y: (rand() - 0.5) * 322, z: (rand() - 0.5) * 252, label: `node ${i}` }).id)
       if (i % 2) graph.addEdge(spread[i - 1], spread[i])
     }
     view.sync()
-    lookAt(0, 0, 150, 0, 0, -100); run(40)
+    lookAt(0, 0, 105, 0, 0, -70); run(40)
     const open = shown()
     const openField = discs().filter((d) => d.r >= 3)
     let openCrossings = 0, openCleanCrossings = 0
@@ -455,11 +462,12 @@ test('node labels: reveal, tiers, callout, declutter, hover, edits', async ({ pa
     reset()
     const grid = []
     for (let i = 0; i < 100; i++) {
-      grid.push(graph.addNode({ x: (i % 10) * 34 - 153, y: Math.floor(i / 10) * 26 - 117, z: 0, label: `n${i}` }).id)
+      grid.push(graph.addNode({ x: (i % 10) * 22.5 - 101.25, y: Math.floor(i / 10) * 17 - 76.5, z: 0, label: `n${i}` }).id)
       if (i % 2) graph.addEdge(grid[i - 1], grid[i])
     }
     view.sync()
-    lookAt(0, 0, 180, 0, 0, 0)
+    // Grid and camera at ~2/3 scale, so all 100 sit inside the 200-unit range.
+    lookAt(0, 0, 120, 0, 0, 0)
     const counts = []
     for (let i = 0; i < 8; i++) { run(1); counts.push(shown().length) }
     out.batches = counts
@@ -511,12 +519,12 @@ test('node labels: reveal, tiers, callout, declutter, hover, edits', async ({ pa
   expect.soft(r.layer0Empty, 'labels are not in the canvas pass').toBe(true)
   expect.soft(r.reveal.every((p) => within(p.got, p.want, 0.05)), 'reveal fades in from 200 to 150 units (smoothstep, +-0.05), none past 200').toBe(true)
   expect.soft(r.firstSeen !== null && r.firstSeen <= 200 && r.firstSeen >= 190, 'flying straight at a node, its label turns up at ~200 units').toBe(true)
-  expect.soft(r.oneLink[0] === 1 && within(r.oneLink[1], 0.239, 0.03) && r.oneLink[2] === 0, 'one link carries the label further: full at 220, fading at 280, gone at 320').toBe(true)
+  expect.soft(r.oneLink[0] === 1 && within(r.oneLink[1], 0.352, 0.03) && r.oneLink[2] === 0, 'one link does not carry the label further: full at 140, fading at 180, gone at 220').toBe(true)
   expect.soft(r.tooClose && r.behind, "flying through the star hides its label; behind the camera draws nothing").toBe(true)
   expect.soft(r.sizes.every((p, i) => i === 0 || p.px <= r.sizes[i - 1].px) && r.sizes[0].px >= 28 && r.sizes.at(-1).px === 12 && r.sizes[0].px / r.sizes.at(-1).px > 2.3, 'size follows distance: biggest close in, smaller every step out, down to a floor').toBe(true)
   expect.soft(r.sizes[0].dim === 1 && within(r.sizes.at(-1).dim, 0.75, 0.001), 'distance drains a label too: full close in, down to the core floor far out').toBe(true)
   expect.soft(r.depthPair[0], 'of two stars, the nearer one carries the bigger name').toBeGreaterThan(r.depthPair[1] * 1.8)
-  expect.soft(r.tiers[0]?.tier === 'core' && r.tiers[0]?.text === 'CORE NODE' && r.tiers[1]?.tier === 'landmark' && r.tiers[1]?.text === 'Hop one' && r.tiers[2]?.tier === 'plain' && r.tiers[2]?.text === 'Alone', 'tiers: a core in capitals, its neighbour a landmark, a lone node plain').toBe(true)
+  expect.soft(r.tiers[0]?.tier === 'core' && r.tiers[0]?.text === 'CORE NODE' && r.tiers[1]?.tier === 'plain' && r.tiers[1]?.text === 'Hop one' && r.tiers[2]?.tier === 'plain' && r.tiers[2]?.text === 'Alone', 'tiers: a core in capitals; its neighbour, like a lone node, plain').toBe(true)
   expect.soft(within(r.coreStart, r.coreStartWant, 1.5) && r.coreStartEasing < r.coreStart && r.coreStartEasing > r.coreStartAfter && r.coreStartAfter < r.coreStart / 2, 'marked core: the callout moves out with the grown radius, eases back').toBe(true)
   expect.soft(r.stacked.both && r.stacked.quadrants && r.stacked.apart, 'two stars on the same spot: both named, callouts turned to different sides').toBe(true)
   expect.soft(r.crowdPlaced && r.fading && r.fadedOut, 'in a crowd some names wait, and one that loses its spot fades out').toBe(true)
@@ -531,7 +539,11 @@ test('node labels: reveal, tiers, callout, declutter, hover, edits', async ({ pa
   expect.soft(r.noBloomOutside, 'labels do not bloom: nothing changes outside their ink').toBeLessThanOrEqual(2)
   expect.soft(JSON.stringify(r.drawsPerFrame) === '[1,1]' && r.labelCalls === 2 && r.cameraRestored, 'one draw call for the names and one for the leaders; camera layers restored').toBe(true)
   expect.soft(within(r.ratio.rep[0], r.ratio.rep[1], 0.01) && within(r.ratio.box[0], r.ratio.box[1], 2) && within(r.ratio.centre[0], r.ratio.centre[1], 1), 'pixel ratio 2: same CSS size and place as at 1').toBe(true)
-  expect.soft(r.dense.shown > 20 && r.dense.overlapping === 0 && r.dense.cleanCrossings === 0 && r.dense.clean > 10 && r.dense.crossings < r.dense.shown * 1.5, 'dense map: names shown, none overlapping, clean ones clear of every star').toBe(true)
+  // Clean names as a share of those shown, not a fixed count: with every
+  // non-core at 1x, fewer of this map's names are in range than when links
+  // grew them (30 shown against 86), and the share that finds a clean spot is
+  // the same ~23% either way. The hard invariants are the zeros.
+  expect.soft(r.dense.shown > 20 && r.dense.overlapping === 0 && r.dense.cleanCrossings === 0 && r.dense.clean >= r.dense.shown * 0.15 && r.dense.crossings < r.dense.shown * 1.5, 'dense map: names shown, none overlapping, clean ones clear of every star').toBe(true)
   expect.soft(r.open.shown >= 8 && r.open.clean >= r.open.shown * 0.8 && r.open.cleanCrossings === 0 && r.open.crossings <= r.open.shown - r.open.clean, 'an ordinary spread: nearly every name finds a clean spot, and a clean one is off every star').toBe(true)
   expect.soft(JSON.stringify(r.batches.slice(0, 3)) === '[24,48,72]' && r.batches[4] >= 88 && r.batches[4] === r.batches.at(-1), '100 new labels: 24 rasterised a frame, and all that fit are in by the fifth').toBe(true)
   expect.soft(r.eviction.ever > 400 && r.eviction.worst <= 1 && r.eviction.text === 'label number 0 of the line' && r.eviction.sameRect, 'after 2000 labels cycle through the atlas, the first reads pixel-identical').toBe(true)

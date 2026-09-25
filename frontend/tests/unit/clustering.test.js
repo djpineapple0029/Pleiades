@@ -6,7 +6,8 @@
 // graph is mutated between assertions.
 import { describe, it, expect } from 'vitest'
 import { createGraph } from '../../src/graph.js'
-import { clusterInk, CLUSTER_INKS } from '../../src/palette.js'
+import { clusterInk, CLUSTER_INKS, LATE_IDS, PALETTE_SIZE, hueOf } from '../../src/palette.js'
+import { computeClusters } from '../../src/clustering.js'
 
 /** Two dense blobs of `n` joined by a single edge. */
 function twoBlobs(n = 8) {
@@ -148,7 +149,67 @@ describe('clustering', () => {
   it('inks are light enough to read as a star and as ink', () => expect(inksLightEnough).toBe(true))
   const hues = CLUSTER_INKS.map((c) => `${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)}`)
   const paletteDistinct = new Set(hues).size === CLUSTER_INKS.length
-  it('the palette is 12 distinct colours', () => expect(paletteDistinct).toBe(true))
+  it('the palette is 20 distinct colours', () => expect(paletteDistinct && CLUSTER_INKS.length === 20).toBe(true))
+  // Saved files index into the palette, so the first twelve may never move.
+  const originalTwelve = [140, 300, 32, 180, 262, 342, 100, 210, 58, 322, 158, 18]
+  it('the original twelve hues are still first, in order', () => expect(originalTwelve.every((hue, i) => hueOf(i + 1) === hue)).toBe(true))
+  it('sky blue is held back as late', () => expect(LATE_IDS.has(8)).toBe(true))
+
+  // --- new colours are random, not always the same pair -----------------------
+  /** A deterministic rng: a tiny LCG, so each seed gives one sequence. */
+  const lcg = (seed) => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 0x100000000)
+  /** `k` disjoint cliques of 4, none coloured yet. */
+  function cliques(k) {
+    const nodes = new Map()
+    const edges = new Map()
+    for (let c = 0; c < k; c++) {
+      const ids = []
+      for (let i = 0; i < 4; i++) {
+        const id = `n${c}_${i}`
+        ids.push(id)
+        nodes.set(id, { id, cluster_color_id: 0 })
+      }
+      for (const a of ids) for (const b of ids) if (a < b) edges.set(`${a}-${b}`, { from: a, to: b })
+    }
+    return { nodes, edges }
+  }
+  const pairs = new Set()
+  const hueGaps = []
+  for (let seed = 1; seed <= 20; seed++) {
+    const { nodes, edges } = cliques(3)
+    const { colors } = computeClusters(nodes, edges, { rng: lcg(seed) })
+    const picked = [...new Set([...colors.values()].filter(Boolean))]
+    pairs.add(picked.slice().sort((x, y) => x - y).join(','))
+    for (let i = 0; i < picked.length; i++)
+      for (let j = i + 1; j < picked.length; j++) {
+        const gap = Math.abs(hueOf(picked[i]) - hueOf(picked[j])) % 360
+        hueGaps.push(Math.min(gap, 360 - gap))
+      }
+  }
+  it('different seeds give different first colours', () => expect(pairs.size).toBeGreaterThan(10))
+  it('a few new groups never land on neighbouring hues', () => expect(Math.min(...hueGaps)).toBeGreaterThanOrEqual(40))
+  const { nodes: n1, edges: e1 } = cliques(3)
+  const firstA = computeClusters(n1, e1, { rng: lcg(7) }).colors
+  const { nodes: n2, edges: e2 } = cliques(3)
+  const firstB = computeClusters(n2, e2, { rng: lcg(7) }).colors
+  it('the same seed gives the same colours', () => expect([...firstA]).toEqual([...firstB]))
+  // Random only for groups with no colour yet: re-running with a different rng
+  // over an already-coloured graph keeps every colour.
+  for (const [id, color] of firstA) n1.get(id).cluster_color_id = color
+  const rerun = computeClusters(n1, e1, { rng: lcg(999) }).colors
+  it('a coloured group keeps its colour whatever the rng', () => expect([...rerun]).toEqual([...firstA]))
+  // Late (sky-blue) ids only once everything else is taken.
+  let lateEarly = false
+  for (let seed = 1; seed <= 30; seed++) {
+    const { nodes, edges } = cliques(PALETTE_SIZE - LATE_IDS.size)
+    const { colors } = computeClusters(nodes, edges, { rng: lcg(seed) })
+    if ([...colors.values()].some((color) => LATE_IDS.has(color))) lateEarly = true
+  }
+  it('a late hue is never picked while an early one is free', () => expect(lateEarly).toBe(false))
+  const { nodes: full, edges: fullEdges } = cliques(PALETTE_SIZE + 2)
+  const overflow = computeClusters(full, fullEdges, { rng: lcg(3) }).colors
+  const overflowIds = new Set([...overflow.values()])
+  it('past the palette, ids carry on and stay unique per group', () => expect(overflowIds.size).toBe(PALETTE_SIZE + 2))
 
   // --- cost ------------------------------------------------------------------
   const big = createGraph()

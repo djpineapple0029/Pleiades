@@ -1,12 +1,15 @@
-// Ported from tests/_rescued/e2e/e2e_core.mjs (session 5).
+// Ported from tests/_rescued/e2e/e2e_core.mjs (session 5); expectations
+// rewritten for the core-only sizing rule (balance-color-fade), where a core
+// is CORE_SIZE and every other node 1x — no degree growth, no boost for a
+// core's neighbourhood.
 //
-// Against the real GraphView and physics: a core flag grows the node and
-// its neighbourhood in the instance matrices, on screen, in picking, in the
+// Against the real GraphView and physics: a core flag grows that node, and
+// only that node, in the instance matrices, on screen, in picking, in the
 // halos and in the layout; sizes ease on an edit and snap on a load.
 import { test, expect } from '@playwright/test'
 import { collectConsoleErrors, threeModuleUrl } from '../helpers/gestures.js'
 
-test('core flag grows a node and its neighbourhood', async ({ page }, testInfo) => {
+test('core flag grows that node and nothing around it', async ({ page }, testInfo) => {
   const errors = collectConsoleErrors(page)
   await page.goto('/')
   await page.waitForTimeout(1500)
@@ -18,7 +21,7 @@ test('core flag grows a node and its neighbourhood', async ({ page }, testInfo) 
     const { createGraphView, NODE_RADIUS } = await import('/src/graphView.js')
     const { createPhysics } = await import('/src/physics.js')
     const { createFiles } = await import('/src/files.js')
-    const { CORE_SIZE, coreSize, degreeSize } = await import('/src/sizing.js')
+    const { CORE_SIZE } = await import('/src/sizing.js')
 
     const W = 800, H = 500
     const canvas = document.createElement('canvas')
@@ -106,7 +109,7 @@ test('core flag grows a node and its neighbourhood', async ({ page }, testInfo) 
     frame(); frame()
     const mid = chain[5]
     r.beforeRadii = chain.map((id) => drawnRadius(id))
-    r.beforeMatchesDegree = chain.every((id, i) => Math.abs(drawnRadius(id) - NODE_RADIUS * degreeSize(i === 0 || i === 10 ? 1 : 2)) < 1e-4)
+    r.beforeAllPlain = chain.every((id) => Math.abs(drawnRadius(id) - NODE_RADIUS) < 1e-4)
 
     look(0, 0, 0, 380)
     frame()
@@ -116,9 +119,11 @@ test('core flag grows a node and its neighbourhood', async ({ page }, testInfo) 
     render(true)
     r.shotBefore = canvas.toDataURL('image/png')
     render()
-    // Square to the chain, so clear of the edges' pick padding; inside a core
-    // star's radius (15), outside a plain one's (~6).
-    const probe = NODE_RADIUS * 2.6
+    // Square to the chain; inside a core star's radius (11.25), outside a plain
+    // one's (5). That is inside the edges' ~11.5px pick padding at this range,
+    // so before the flag the pick lands on an edge rather than on nothing —
+    // what matters is that it misses the node before and hits it after.
+    const probe = NODE_RADIUS * 1.9
     r.brightBefore = pixelAtPoint(0, probe * 0.8, 0)
     r.pickBefore = pickAt(0, probe, 0)?.id ?? null
     r.footprintsBefore = chain.map((id) => footprint(graph.getNode(id)))
@@ -135,10 +140,6 @@ test('core flag grows a node and its neighbourhood', async ({ page }, testInfo) 
     r.coreDrawn = drawnRadius(mid) / NODE_RADIUS
     r.hopSizes = [0, 1, 2, 3, 4, 5].map((h) => drawnRadius(chain[5 + h]) / NODE_RADIUS)
     r.symmetric = [1, 2, 3, 4, 5].every((h) => Math.abs(drawnRadius(chain[5 + h]) - drawnRadius(chain[5 - h])) < 1e-4)
-    // Every node here has 2 links except the ends, which are at hop 5.
-    r.expectedHop = [0, 1, 2, 3, 4, 5].map((h) => Math.max(degreeSize(2), h === 0 ? 0 : coreSize(h)))
-    r.expectedHop[0] = coreSize(0)
-    r.expectedHop[5] = degreeSize(1)
 
     view.update(T0) // sizes are settled; this only rewinds the pulse clock
     render(true)
@@ -182,11 +183,12 @@ test('core flag grows a node and its neighbourhood', async ({ page }, testInfo) 
     graph.removeNode(chain[6])
     view.syncNodes(); view.syncEdges()
     settleSizes()
-    r.cutShrinks = drawnRadius(chain[7]) < beforeCut && Math.abs(drawnRadius(chain[7]) - NODE_RADIUS * degreeSize(1)) < 1e-4
-    // Only an edge change, no view call at all: update() alone must retarget.
-    graph.addEdge(chain[5], chain[7])
+    // Size no longer depends on links, so cutting one changes nothing.
+    r.cutLeavesSize = drawnRadius(chain[7]) === beforeCut && Math.abs(beforeCut - NODE_RADIUS) < 1e-4
+    // Only a model change, no view call at all: update() alone must retarget.
+    graph.setCore(chain[7], true)
     settleSizes()
-    r.edgeOnlyRetargets = Math.abs(drawnRadius(chain[7]) - NODE_RADIUS * coreSize(1)) < 1e-4
+    r.flagOnlyRetargets = Math.abs(drawnRadius(chain[7]) - NODE_RADIUS * CORE_SIZE) < 1e-4
 
     // --- Snap on load: a reused id does not ease from the old map's size ----
     const hubPayload = {
@@ -301,39 +303,37 @@ test('core flag grows a node and its neighbourhood', async ({ page }, testInfo) 
   await testInfo.attach('shotAfter.png', { body: Buffer.from(out.shotAfter.split(',')[1], 'base64'), contentType: 'image/png' })
 
   const R = 5
-  expect.soft(out.beforeMatchesDegree, 'before: radii are degree sizes').toBe(true)
-  expect.soft(out.afterOneFrame, 'core eases, does not snap (1 frame partial)').toBeGreaterThan(1.3)
-  expect.soft(out.afterOneFrame).toBeLessThan(2.9)
-  expect.soft(out.afterFiveFrames > out.afterOneFrame && out.afterFiveFrames < 3, 'core eases (5 frames further along)').toBe(true)
+  const C = out.coreSize
+  expect.soft(out.beforeAllPlain, 'before: every node is 1x, whatever its links').toBe(true)
+  expect.soft(out.afterOneFrame, 'core eases, does not snap (1 frame partial)').toBeGreaterThan(1.1)
+  expect.soft(out.afterOneFrame).toBeLessThan(C - 0.1)
+  expect.soft(out.afterFiveFrames > out.afterOneFrame && out.afterFiveFrames < C, 'core eases (5 frames further along)').toBe(true)
   expect.soft(out.afterMatchesTarget, 'settled radii match graph.sizeOf').toBe(true)
-  expect.soft(Math.abs(out.coreDrawn - out.coreSize), 'core drawn at CORE_SIZE').toBeLessThan(1e-4)
-  expect.soft(out.hopSizes.every((v, h) => Math.abs(v - out.expectedHop[h]) < 1e-4), 'hops 0-5 match max(degree, decay)').toBe(true)
-  expect.soft(out.hopSizes[4], 'hop 4 still above a plain 2-link node').toBeGreaterThan(out.beforeRadii[4] / R + 0.03)
-  expect.soft(out.hopSizes.every((v, i, a) => i === 0 || v < a[i - 1]), 'fades monotonically over hops').toBe(true)
+  expect.soft(Math.abs(out.coreDrawn - C), 'core drawn at CORE_SIZE').toBeLessThan(1e-4)
+  expect.soft(out.hopSizes.slice(1).every((v) => Math.abs(v - 1) < 1e-4), "nothing around the core grows: hops 1-5 stay 1x").toBe(true)
   expect.soft(out.symmetric, 'symmetric on both sides').toBe(true)
-  expect.soft(out.afterRadii[4] / out.beforeRadii[4], "neighbour grew visibly (>1.5x)").toBeGreaterThan(1.5)
-  expect.soft(out.afterRadii[0] === out.beforeRadii[0] && out.afterRadii[10] === out.beforeRadii[10], 'hop-5 node untouched').toBe(true)
+  expect.soft(out.afterRadii.every((v, i) => i === 5 || v === out.beforeRadii[i]), 'every other node untouched').toBe(true)
   expect.soft(out.brightAfter, 'on screen: core region lit after, not before').toBeGreaterThan(out.brightBefore + 60)
   const g = out.growth
-  expect.soft(g[5] > g[4] && g[4] > g[3] && g[3] > g[2] && g[6] > g[7] && g[7] > g[8] && g[2] > 1.05 && g[8] > 1.05, "on screen: each star's lit footprint grows, fading over hops").toBe(true)
-  expect.soft(g[5], 'on screen: core footprint ~2x its old one').toBeGreaterThan(1.9)
-  expect.soft(g[0] === 1 && g[10] === 1, 'on screen: hop-5 ends unchanged').toBe(true)
-  expect.soft(out.pickBefore === null && out.pickAfter === out.midId, 'pick radius grows: miss before, hit after').toBe(true)
-  expect.soft(Math.abs(out.haloScaleCore / out.haloScaleLeaf - 3 / (out.beforeRadii[10] / R)), 'halo scales with node').toBeLessThan(1e-4)
+  expect.soft(g[5], 'on screen: core footprint ~2x its old one').toBeGreaterThan(1.8)
+  expect.soft(g.every((v, i) => i === 5 || v === 1), 'on screen: every other star unchanged').toBe(true)
+  expect.soft(out.pickBefore !== out.midId && out.pickAfter === out.midId, 'pick radius grows: miss before, hit after').toBe(true)
+  expect.soft(Math.abs(out.haloScaleCore / out.haloScaleLeaf - C), 'halo scales with node').toBeLessThan(1e-4)
   expect.soft(out.endOnPick !== null && !String(out.endOnPick).startsWith('e'), 'looking down the chain, the end node beats the edges').toBe(true)
   expect.soft(out.unmarkRestores, 'unmark restores sizes').toBe(true)
-  expect.soft(out.cutShrinks, 'delete shrinks the cut-off neighbour').toBe(true)
-  expect.soft(out.edgeOnlyRetargets, 'edge-only edit resizes with no view call').toBe(true)
+  expect.soft(out.cutLeavesSize, 'deleting a neighbour does not resize anything').toBe(true)
+  expect.soft(out.flagOnlyRetargets, 'a core flag resizes with no view call').toBe(true)
   expect.soft(out.loadSnaps && out.loadStaysSnapped, 'load snaps a reused id to its new size').toBe(true)
   expect.soft(out.roundTripCore && out.roundTripRadii, 'round trip keeps core and sizes').toBe(true)
   expect.soft(out.plainStar.finite && out.coreStar.finite, 'layout finite').toBe(true)
-  expect.soft(out.coreStar.meanDist, 'core hub pushes neighbours further out').toBeGreaterThan(out.plainStar.meanDist + 20)
+  // Rest length grows by 13 * (CORE_SIZE - 1) ~ 16 for a core hub.
+  expect.soft(out.coreStar.meanDist, 'core hub pushes neighbours further out').toBeGreaterThan(out.plainStar.meanDist + 10)
   expect.soft(out.coreStar.minSurfaceGap, 'core hub surfaces keep a gap to neighbours').toBeGreaterThan(20)
-  expect.soft(out.coreStar.minLeafGap, 'big neighbours do not overlap each other').toBeGreaterThan(0)
-  // Link rest length: 60 + 13*(core - 1) + 13*(hop1 - 1).
-  const pairRest = 60 + 2.6 * R * (out.coreSize - 1) + 2.6 * R * (out.expectedHop[1] - 1)
+  expect.soft(out.coreStar.minLeafGap, 'neighbours do not overlap each other').toBeGreaterThan(0)
+  // Link rest length: 60 + 13*(core - 1) + 13*(plain - 1), and plain is 1x.
+  const pairRest = 60 + 2.6 * R * (C - 1)
   expect.soft(Math.abs(out.pairDist - pairRest), 'core toggled mid-run is picked up by physics').toBeLessThan(4)
-  expect.soft(out.bfs3000, '3000 nodes: BFS under 5 ms').toBeLessThan(5)
+  expect.soft(out.bfs3000, '3000 nodes: size recompute under 5 ms').toBeLessThan(5)
   // Loosened from the original session's 2ms/0.2ms: those assume an idle,
   // dedicated machine. On a normally-loaded dev box these two sub-2ms
   // per-frame budgets are the first to flake; the bound here is to catch a

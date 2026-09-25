@@ -89,14 +89,15 @@ function writeStar(id, star, slot) {
  * With no cluster (colour id 0) this is the plain star ramp — blue -> white ->
  * warm by a hash of the id — so a map that has never been balanced looks
  * exactly as it did before clustering existed. A clustered node takes its
- * cluster's hue instead, lifted toward white by that same hash so the stars
+ * faded colour (`node.blend`, left by the last Balance), or its cluster's flat
+ * hue if it has none yet, lifted toward white by that same hash so the stars
  * inside one cluster still vary.
  */
-function targetTint(id, colorId, out) {
-  const g = hash32(id, 0x9e3779b9)
+function targetTint(node, out) {
+  const g = hash32(node.id, 0x9e3779b9)
   // Skewed toward the blue end, where most of an unclustered map sits.
   const t = ((g >>> 16) / 0x10000) ** 1.4
-  const ink = clusterInk(colorId)
+  const ink = node.cluster_color_id ? (node.blend ?? clusterInk(node.cluster_color_id)) : null
   if (ink) {
     clusterColor.setRGB(ink[0], ink[1], ink[2], THREE.SRGBColorSpace)
     return out.lerpColors(clusterColor, TINT_WHITE, TINT_VARY_MIN + TINT_VARY_RANGE * t)
@@ -480,7 +481,7 @@ export function createGraphView(graph, scene, renderer) {
     for (const id of slotIds) {
       const node = graph.nodes.get(id)
       if (!node) continue // deleted, not yet synced
-      targetTint(id, node.cluster_color_id, tint)
+      targetTint(node, tint)
       let wanted = targetTints.get(id)
       if (!wanted) targetTints.set(id, (wanted = [0, 0, 0]))
       tint.toArray(wanted)

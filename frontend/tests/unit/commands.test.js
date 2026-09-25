@@ -15,8 +15,9 @@ function stubView() {
   return view
 }
 
-/** Just enough of physics.js: start reclusters and marks the run, like the real one;
- *  `settle` stands in for the ticks by moving every node. */
+/** Just enough of physics.js: start reclusters and marks the run, and stop fades
+ *  the colours, like the real one; `settle` stands in for the ticks by moving
+ *  every node. */
 function stubPhysics(graph) {
   let running = false
   return {
@@ -32,8 +33,9 @@ function stubPhysics(graph) {
       return true
     },
     stop() {
-      if (running) graph.touchContent()
+      if (!running) return
       running = false
+      if (!graph.reblend()) graph.touchContent()
     },
     reset() {
       running = false
@@ -260,8 +262,14 @@ describe('commands.js balance', () => {
     expect(snapshot(ctx.graph)).toEqual(before)
     expect(ctx.graph.contentRevision).toBe(token)
 
+    // Undoing cut the run short, and a run ending — however it ends — is what
+    // fades the colours. So redo puts back where the run had got to, now with
+    // its blends: the same positions and colour ids, plus a blend on each node.
     expect(ctx.commands.redo()).toBe('balance')
-    expect(snapshot(ctx.graph)).toEqual(during)
+    const redone = snapshot(ctx.graph)
+    expect(redone.nodes.every((node) => Array.isArray(node.blend))).toBe(true)
+    const unblended = (shot) => ({ ...shot, nodes: shot.nodes.map((node) => ({ ...node, blend: null })) })
+    expect(unblended(redone)).toEqual(during)
   })
 
   it('undo after the run finished restores the pre-run layout; redo the finished one', () => {
@@ -273,6 +281,10 @@ describe('commands.js balance', () => {
     ctx.physics.stop() // the run ending on its own
     const finished = snapshot(ctx.graph)
     const finishedToken = ctx.graph.contentRevision
+    // The end of a run is what fades the colours, so the finished state has
+    // blends and the one before it had none — undo has to take them away.
+    expect(finished.nodes.every((node) => Array.isArray(node.blend))).toBe(true)
+    expect(before.nodes.every((node) => node.blend === null)).toBe(true)
     ctx.commands.undo()
     expect(snapshot(ctx.graph)).toEqual(before)
     ctx.commands.redo()

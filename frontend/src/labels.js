@@ -9,14 +9,13 @@ import { clusterInk } from './palette.js'
 
 // --- Which labels show -------------------------------------------------------
 // Sizes here are the node's drawn size as a multiple of the base radius, so
-// the rule follows `graph.sizeOf` (degree and core influence) as it eases.
+// the rule follows `graph.sizeOf` as it eases — which is CORE_SIZE for a core
+// and 1x for everything else (`sizing.js`).
 //
-// A node at ALWAYS_ON_SIZE or above is labelled at any distance: every core
-// node (3x), each core's direct neighbours (2.24x), and nodes at the degree
-// cap. Below it a label is revealed within revealRange(size) of the camera,
-// which grows with the cube of the size, so a bigger star's name carries
-// further: 200 units for an unlinked node, 300 at one link, 440 at three,
-// 820 at fifteen, 1100 two hops from a core.
+// A node at ALWAYS_ON_SIZE or above is labelled at any distance, which is every
+// core node (2.25x) and nothing else. Below it a label is revealed within
+// revealRange(size) of the camera, which grows with the cube of the size: 200
+// units for any node that is not a core.
 export const ALWAYS_ON_SIZE = 2
 const REVEAL_BASE = 200
 const REVEAL_GROWTH = 3
@@ -37,7 +36,7 @@ export function revealRange(size) {
 //
 // Nothing is ever always-on, however big those stars are: an overview stays a
 // map of stars rather than a page of prose. A plain pair name themselves within
-// 140 units, a core's connections from 1260 — far enough to read a hub's
+// 140 units, a core's connections from about 710 — far enough to read a hub's
 // spokes on the way in, short enough that the map empties again from outside.
 const EDGE_REVEAL_BASE = 140
 const EDGE_REVEAL_GROWTH = 2
@@ -64,9 +63,11 @@ const EDGE_HEIGHT = 0.38
 
 // --- Four tiers -----------------------------------------------------------------
 // A core is the head of its neighbourhood, so its name is set the way a chart
-// sets a constellation: capitals, widely tracked. Landmarks (a core's
-// neighbours, and anything at the degree cap) are only brighter, and the rest
-// dimmer still — the same words as typed, so a name stays searchable by eye.
+// sets a constellation: capitals, widely tracked. Landmarks (any non-core at
+// ALWAYS_ON_SIZE) are only brighter, and the rest dimmer still — the same words
+// as typed, so a name stays searchable by eye. Under today's sizing rule only a
+// core reaches that size, so no node is a landmark; the tier is kept so a
+// future sizing rule can bring it back without touching the label code.
 // EDGE is not a rank among those three: it is what a connection's name is set
 // in, quieter and smaller than any star's, because it labels the line between
 // two things that are themselves already named.
@@ -141,15 +142,16 @@ const HOVER_INK = srgb(0xffbe6b) // the hover ring's colour
 // enough to read over the soft dark halo. Hover keeps the amber, so the one
 // label under the crosshair is never mistaken for a cluster colour.
 const CLUSTER_INK_MIX = 0.45
-const inkCache = new Map()
-function inkFor(tier, colorId) {
-  if (!colorId) return INK[tier]
-  const key = tier * 1024 + colorId
-  let ink = inkCache.get(key)
+// Keyed by the colour array itself. Palette inks are fixed arrays and a node's
+// `blend` is only ever replaced whole, never edited, so an array's identity is
+// its colour — and a blend that is replaced simply drops out of the WeakMap.
+const inkCache = INK.map(() => new WeakMap())
+function inkFor(tier, hue) {
+  if (!hue) return INK[tier]
+  let ink = inkCache[tier].get(hue)
   if (ink) return ink
-  const hue = clusterInk(colorId)
   ink = INK[tier].map((channel, i) => channel + (hue[i] - channel) * CLUSTER_INK_MIX)
-  inkCache.set(key, ink)
+  inkCache[tier].set(hue, ink)
   return ink
 }
 // Behind the glyphs, a dark halo keeps text readable over star light and the
@@ -792,7 +794,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
     for (const node of graph.nodes.values()) {
       let entry = entries.get(`n:${node.id}`)
       if (!entry) {
-        entry = { id: node.id, kind: 'node', source: null, text: '', tier: PLAIN, cluster: 0, width: 0, span: 1, cell: null, alpha: 0, placed: false, quad: 0, used: 0 }
+        entry = { id: node.id, kind: 'node', source: null, text: '', tier: PLAIN, cluster: 0, hue: null, width: 0, span: 1, cell: null, alpha: 0, placed: false, quad: 0, used: 0 }
         entries.set(`n:${node.id}`, entry)
       }
       entry.seen = frame
@@ -863,6 +865,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       // Colour only: the casing and size already carry the tier, so the hue is
       // free to say which cluster this name belongs to.
       entry.cluster = node.cluster_color_id
+      entry.hue = node.cluster_color_id ? (node.blend ?? clusterInk(node.cluster_color_id)) : null
       // Cores and landmarks rank by size before nearness, so a core keeps its
       // label over a neighbour that happens to be closer.
       const rank = hovered ? 1e6 : landmark ? 1e3 * nodeSize : 0
@@ -884,7 +887,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       const key = `e:${edge.id}`
       let entry = entries.get(key)
       if (!entry) {
-        entry = { id: edge.id, kind: 'edge', source: null, text: '', tier: EDGE, cluster: 0, width: 0, span: 1, cell: null, alpha: 0, placed: false, quad: 0, used: 0 }
+        entry = { id: edge.id, kind: 'edge', source: null, text: '', tier: EDGE, cluster: 0, hue: null, width: 0, span: 1, cell: null, alpha: 0, placed: false, quad: 0, used: 0 }
         entries.set(key, entry)
       }
       entry.seen = frame
@@ -969,6 +972,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       // No cluster hue: an edge takes none (see `clustering.js`), and a name in
       // one cluster's colour on a line between two clusters would be a lie.
       entry.cluster = 0
+      entry.hue = null
       // Under every star's name, so a contested spot goes to the star.
       entry.priority = (hovered ? 1e6 : 0) + EDGE_PRIORITY * (baseRadius / depth) * (entry.placed ? HOLD_BONUS : 1)
       if (entry.alpha > 0) entry.used = frame
@@ -1085,7 +1089,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       // already, and the shader turns it about that centre.
       const centreX = edgeLabel ? layout.cx : layout.textX - PAD_X * entry.scale + quadWidth / 2
       const centreY = edgeLabel ? layout.cy : layout.textY - (baseline - ascent) * entry.scale + quadHeight / 2
-      const ink = entry.hovered ? HOVER_INK : inkFor(entry.tier, entry.cluster)
+      const ink = entry.hovered ? HOVER_INK : inkFor(entry.tier, entry.hue)
       const c = centres.array
       c[n * 3] = entry.ax
       c[n * 3 + 1] = entry.ay

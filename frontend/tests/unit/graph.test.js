@@ -240,3 +240,52 @@ describe('graph restore primitives (undo, V2.md §2.4.10)', () => {
     expect(g.contentRevision).not.toBe(t1)
   })
 })
+
+describe('blend (the faded cluster colour a Balance leaves)', () => {
+  const g = createGraph()
+  const a = g.addNode({ x: 0, y: 0, z: 0 })
+  const b = g.addNode({ x: 5, y: 0, z: 0 })
+  g.addEdge(a.id, b.id)
+  const startsUnblended = a.blend === null
+  it('a new node has no blend', () => expect(startsUnblended).toBe(true))
+
+  a.cluster_color_id = 1
+  a.blend = [0.1, 0.5, 0.9]
+  const payload = JSON.parse(JSON.stringify(g.toPayload()))
+  const g2 = createGraph()
+  g2.load(payload)
+  it('survives a save and reopen', () => expect(g2.getNode(a.id).blend).toEqual([0.1, 0.5, 0.9]))
+  it('an unblended node reopens with none', () => expect(g2.getNode(b.id).blend).toBeNull())
+
+  // Anything but three channels on 0..1 reads as none — including every file
+  // written before blends existed, which has no field at all.
+  const bad = [undefined, null, 'red', [0.1, 0.2], [0.1, 0.2, 0.3, 0.4], [0.1, 'x', 0.3], [0.1, 1.5, 0.3], [-0.1, 0.2, 0.3], [NaN, 0.2, 0.3]]
+  const readsAsNone = bad.map((blend) => {
+    const h = createGraph()
+    h.load({ nodes: [{ id: 'n1', x: 0, y: 0, z: 0, cluster_color_id: 2, blend }], edges: [] })
+    return h.getNode('n1').blend
+  })
+  it('a missing or damaged blend loads as none', () => expect(readsAsNone.every((v) => v === null)).toBe(true))
+  const kept = createGraph()
+  kept.load({ nodes: [{ id: 'n1', x: 0, y: 0, z: 0, cluster_color_id: 2 }], edges: [] })
+  it('loading never computes a blend, even for a clustered node', () => expect(kept.getNode('n1').blend).toBeNull())
+
+  // reblend writes it; recluster, the start of the next Balance, drops it.
+  const c = createGraph()
+  const ids = []
+  for (let i = 0; i < 6; i++) ids.push(c.addNode({ x: i * 10, y: 0, z: 0 }).id)
+  for (const [p, q] of [[0, 1], [1, 2], [0, 2], [3, 4], [4, 5], [3, 5], [2, 3]]) c.addEdge(ids[p], ids[q])
+  c.recluster()
+  const rev = c.revision
+  const moved = c.reblend()
+  const allBlended = ids.every((id) => Array.isArray(c.getNode(id).blend))
+  const bumped = c.revision > rev
+  const rev2 = c.revision
+  const again = c.reblend()
+  const secondIsNoop = again === 0 && c.revision === rev2
+  it('reblend fades every clustered node', () => expect(moved === 6 && allBlended).toBe(true))
+  it('and bumps the revision so tints ease', () => expect(bumped).toBe(true))
+  it('a second reblend over an unchanged map changes nothing', () => expect(secondIsNoop).toBe(true))
+  c.recluster()
+  it('the next recluster drops every blend', () => expect(ids.every((id) => c.getNode(id).blend === null)).toBe(true))
+})
