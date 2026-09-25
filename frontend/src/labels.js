@@ -156,8 +156,10 @@ function inkFor(tier, hue) {
 }
 // Behind the glyphs, a dark halo keeps text readable over star light and the
 // nebula. Not an outline: a wide, soft fall-off of the void's own colour, so
-// the text sits in the dark between the stars rather than on a sticker.
-const HALO_OPACITY = 0.62
+// the text sits in the dark between the stars rather than on a sticker. Was
+// 0.62 until the dust rivers: their tails swirl exactly where labels sit, next
+// to each star, and showed through the letters.
+const HALO_OPACITY = 0.85
 
 // --- The atlas -------------------------------------------------------------------
 // Every label is drawn once, with Canvas 2D, into a shared texture at FONT_PX

@@ -4,6 +4,8 @@ import { createScene } from './scene.js'
 import { createFlight } from './flight.js'
 import { createSkybox } from './skybox.js'
 import { createDust } from './dust.js'
+import { createDustRivers } from './dustRivers.js'
+import { createSupernova } from './supernova.js'
 import { createBloom } from './bloom.js'
 import { createGraph } from './graph.js'
 import { createGraphView } from './graphView.js'
@@ -42,6 +44,8 @@ camera.position.set(0, 0, 260)
 
 const graph = createGraph()
 const view = createGraphView(graph, scene, renderer)
+const rivers = createDustRivers(graph, scene, { radiusOf: view.radiusOf })
+const supernova = createSupernova(scene)
 const physics = createPhysics(graph, view)
 const files = createFiles({ graph, view, camera, physics })
 
@@ -49,7 +53,7 @@ const files = createFiles({ graph, view, camera, physics })
 const overview = createOverview({ camera, canvas, graph, view, controls: flight.controls })
 
 // Minimal, in-memory only: freezes the star-pulse clock read by the frame
-// loop below. No other visible motion in the scene is clock-driven.
+// loop below, and switches the dust rivers and the delete supernova off.
 let reducedMotion = false
 let frozenElapsed = 0
 const renderSettings = {
@@ -59,6 +63,8 @@ const renderSettings = {
   toggleReducedMotion() {
     reducedMotion = !reducedMotion
     if (reducedMotion) frozenElapsed = clock.elapsedTime
+    // Motion off means no dust rivers and no supernova, not frozen ones.
+    if (reducedMotion) supernova.clear()
   },
 }
 
@@ -73,6 +79,7 @@ const interaction = createInteraction({
   files,
   overview,
   renderSettings,
+  supernova,
   menu: createRadialMenu(document.getElementById('radial-menu')),
   editor: createEditor(document.getElementById('editor')),
   titleEdit: createTitleEdit(),
@@ -155,9 +162,19 @@ renderer.setAnimationLoop(() => {
   // nodes are this frame, not where they were last frame.
   physics.update()
   interaction.update()
-  // getDelta above has just advanced elapsedTime; reduced motion freezes only
-  // this reading, so the star pulse stops while everything else keeps timing.
-  view.update(reducedMotion ? frozenElapsed : clock.elapsedTime, camera)
+  // getDelta above has just advanced elapsedTime. Reduced motion freezes only
+  // the pulse's reading of it: the stars stop breathing, but sizes, tints and
+  // label fades still step (a frozen clock for all of it left new labels
+  // invisible and edits un-eased with motion off).
+  view.update(clock.elapsedTime, camera, reducedMotion ? frozenElapsed : clock.elapsedTime)
+  // After the view: the rivers read the stars' drawn radii. With motion off
+  // neither is drawn at all (deletes don't start a burst then, either).
+  if (reducedMotion) {
+    rivers.hide()
+  } else {
+    supernova.update(delta)
+    rivers.update(delta, supernova.shocks())
+  }
   bloom.render() // the whole frame, stars and bloom included
   updateTitle()
 })
@@ -181,6 +198,8 @@ if (import.meta.hot) {
     interaction.dispose()
     lock.dispose()
     view.dispose()
+    rivers.dispose()
+    supernova.dispose()
     bloom.dispose()
     skybox.dispose()
     dust.geometry.dispose()

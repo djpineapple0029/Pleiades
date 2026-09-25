@@ -818,13 +818,16 @@ export function createGraphView(graph, scene, renderer) {
   }
 
   /**
-   * Per-frame animation. `seconds` is any steadily increasing clock. Labels
-   * are laid out for `camera`, the one about to draw the frame; without one
-   * none are drawn.
+   * Per-frame animation. `seconds` is any steadily increasing clock; easing
+   * and label fades step by it. `pulseSeconds` drives only the star pulse,
+   * and defaults to `seconds` — reduced motion passes a frozen one, so the
+   * stars hold still while sizes, tints and labels still ease. Labels are laid
+   * out for `camera`, the one about to draw the frame; without one none are
+   * drawn.
    */
-  function update(seconds, camera) {
+  function update(seconds, camera, pulseSeconds = seconds) {
     // Wrapped on the CPU in double precision; see PULSE_WRAP.
-    starUniforms.pulseBeat.value = (seconds % PULSE_WRAP) / PULSE_PERIOD
+    starUniforms.pulseBeat.value = (pulseSeconds % PULSE_WRAP) / PULSE_PERIOD
 
     const dt = lastSeconds === null ? 0 : Math.min(Math.max(seconds - lastSeconds, 0), SIZE_EASE_MAX_STEP)
     lastSeconds = seconds

@@ -90,6 +90,20 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
       return amber
     }, png.toString('base64'))
   }
+  // Motion off first, through the map menu's More ring: the dust rivers glow
+  // warm by a star, pass the same amber test, and move between the two
+  // readings. With motion off they aren't drawn at all (and the star pulse
+  // holds still), so what changes in the band is the label alone.
+  await t(page, `look(0, ${UP})`); await settle(page)
+  const mapMenu = await pickMenu(page, -52, -30) // More…, up and to the left
+  expect.soft(mapMenu.armed, 'up-left on the map menu arms More…').toBe('More…')
+  expect.soft((await t(page, 'wedges()'))[0], 'More ring offers Motion first').toBe('Motion: on')
+  await t(page, 'look(52, -90)'); await settle(page) // from More… back across to the top
+  expect.soft(await t(page, 'armed()'), 'up arms Motion').toBe('Motion: on')
+  await t(page, 'rightUp()'); await settle(page)
+  await t(page, `look(0, ${-UP})`); await settle(page)
+  expect.soft(await t(page, 'hud()'), 'back on n1 after switching motion off').toBe('node n1 · 1 links')
+
   // Measured, not assumed zero: the warm-tinted neighbour's rays reach into
   // this band and pass the amber test too, so the name is what gets added.
   const amberBefore = await labelPixels()
