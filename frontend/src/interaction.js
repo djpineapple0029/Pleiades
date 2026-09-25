@@ -5,6 +5,7 @@ import { createHistory } from './history.js'
 import { createCommands } from './commands.js'
 import { rankNodes } from './search.js'
 import { FLY_DURATION } from './flyTo.js'
+import { createKeymap } from './keymap.js'
 
 const SPAWN_DISTANCE = 90 // world units ahead of the camera for a new node
 const DOUBLE_CLICK_MS = 320
@@ -81,7 +82,7 @@ function sameTarget(a, b) {
  * the password panel, and the panel is a modal surface — only this module knows
  * whether one is already up, and only this module can suspend flight for it.
  */
-export function createInteraction({ camera, controls, lock, flight, graph, view, physics, files, overview, renderSettings, supernova, menu, editor, titleEdit, sidebar, search, flyTo, hud, speedEl }) {
+export function createInteraction({ camera, controls, lock, flight, graph, view, physics, files, overview, renderSettings, supernova, menu, editor, titleEdit, sidebar, search, flyTo, hud, speedEl, keymap = createKeymap() }) {
   const raycaster = new THREE.Raycaster()
   const crosshair = new THREE.Vector2(0, 0) // dead centre of the viewport
   const forward = new THREE.Vector3()
@@ -159,7 +160,8 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
     if (overview.isActive) {
       // The overview hides the overlay, so the HUD is the only thing left
       // saying how to get out of it.
-      text = `overview · ${graph.nodes.size} nodes · ${graph.edges.size} edges · Tab to fly`
+      const back = keymap.label('overview')
+      text = `overview · ${graph.nodes.size} nodes · ${graph.edges.size} edges${back ? ` · ${back} to fly` : ''}`
     } else {
       // Unlocked there is no crosshair to describe, but the fallback still
       // says what's open, behind the overlay.
@@ -340,7 +342,7 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
     // Read before the delete: after it the node, its size and tint are gone.
     // With motion off the star just goes, with no burst at all.
     const node = graph.getNode(nodeId)
-    if (node && !renderSettings?.reducedMotion) {
+    if (node && !renderSettings?.reducedMotion && renderSettings?.supernova !== false) {
       supernova?.burst({ position: node, radius: view.radiusOf(nodeId), tint: view.tintOf(nodeId) })
     }
     commands.deleteNode(nodeId)
@@ -871,82 +873,72 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
     // listener at all; this is the guard for the frame either side of that.
     // The search field stops its own keys too; a flight takes no input at all.
     if (mode === 'editing' || mode === 'searching' || mode === 'flying') return
+    const is = (id) => keymap.is(event, id)
 
-    // Save and open first, and always with preventDefault, so the browser's own
-    // save-page and open-file dialogs never see the chord. `code`, not `key`:
-    // with a modifier held, `key` reports something else on several layouts.
-    if ((event.metaKey || event.ctrlKey) && !event.altKey && mode !== 'menu') {
-      if (event.code === 'KeyS') {
-        event.preventDefault()
-        if (!event.repeat) saveMap({ reprompt: event.shiftKey })
-        return
-      }
-      if (event.code === 'KeyO') {
-        event.preventDefault()
-        if (!event.repeat) openMap()
-        return
-      }
-      if (event.code === 'KeyE') {
-        event.preventDefault()
-        if (!event.repeat) exportMap()
-        return
-      }
-      // Only taken from the browser when there's a map to search: over the
-      // click-to-fly screen its own find bar is left alone.
-      if (event.code === 'KeyF' && canSearch()) {
-        event.preventDefault()
-        if (!event.repeat) openSearch()
-        return
-      }
-      // `key`, unlike the chords above: undo should follow the letter printed
-      // on the keyboard (Z sits elsewhere on AZERTY/QWERTZ). Ctrl+Y is the
-      // Windows/Linux redo; Cmd+Y is left alone, it opens Chrome's History.
-      const letter = event.key.toLowerCase()
-      if (letter === 'z' || (letter === 'y' && event.ctrlKey && !event.metaKey)) {
-        event.preventDefault()
-        if (!event.repeat) stepHistory(letter === 'y' || event.shiftKey ? 'redo' : 'undo')
-        return
+    // File chords and undo first, and always with preventDefault, so the
+    // browser's own save-page and open-file dialogs never see the chord.
+    if (mode !== 'menu') {
+      // Save-as before save: with the defaults Mod+Shift+S is the same key
+      // plus Shift, and exact Shift matching keeps them apart anyway.
+      for (const [id, run] of [
+        ['save_as', () => saveMap({ reprompt: true })],
+        ['save', () => saveMap({ reprompt: false })],
+        ['open', () => openMap()],
+        ['export', () => exportMap()],
+        ['undo', () => stepHistory('undo')],
+        ['redo', () => stepHistory('redo')],
+      ]) {
+        if (is(id)) {
+          event.preventDefault()
+          if (!event.repeat) run()
+          return
+        }
       }
     }
 
-    // The one mode switch that releases pointer lock, so it is also the one
-    // keypress that has to work while unlocked. `preventDefault` because Tab
-    // would otherwise walk the browser's focus ring off the canvas.
-    if (event.code === 'Tab' && !event.repeat && mode !== 'menu') {
-      event.preventDefault()
-      overview.toggle()
-      return
-    }
-
-    // Enter renames what's under the crosshair in place; Ctrl/Cmd+Enter opens
-    // its notes. Not Shift: Shift is "fly down", and holding it for the chord
-    // sinks the camera off the target. Unlocked, Enter belongs to `main.js`
-    // (it takes the lock back).
-    if (event.key === 'Enter' && !event.repeat && controls.isLocked && mode === 'idle' && hover) {
-      event.preventDefault()
-      if (!event.metaKey && !event.ctrlKey) editTitle(hover)
-      else if (hover.kind === 'node') {
-        const node = graph.getNode(hover.id)
-        if (node) editNotes(node)
-      }
-      return
-    }
-
-    // `key`, not `code`: / sits somewhere else on most non-US layouts.
-    if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && canSearch()) {
-      // Or the / itself lands in the field that's about to take focus.
+    // Only taken from the browser when there's a map to search: over the
+    // click-to-fly screen its own find bar (Ctrl/Cmd+F) is left alone.
+    if (is('search') && canSearch()) {
+      // Or a typed key (/) lands in the field that's about to take focus.
       event.preventDefault()
       if (!event.repeat) openSearch()
       return
     }
 
-    if (event.key === 'Backspace' && !event.repeat && controls.isLocked && mode === 'idle') {
+    // The one mode switch that releases pointer lock, so it is also the one
+    // keypress that has to work while unlocked. `preventDefault` because Tab
+    // would otherwise walk the browser's focus ring off the canvas.
+    if (is('overview') && !event.repeat && mode !== 'menu') {
+      event.preventDefault()
+      overview.toggle()
+      return
+    }
+
+    // Rename what's under the crosshair in place, or open its notes. Unlocked,
+    // Enter belongs to `main.js` (it takes the lock back).
+    if (!event.repeat && controls.isLocked && mode === 'idle' && hover) {
+      if (is('edit_notes')) {
+        event.preventDefault()
+        if (hover.kind === 'node') {
+          const node = graph.getNode(hover.id)
+          if (node) editNotes(node)
+        }
+        return
+      }
+      if (is('rename')) {
+        event.preventDefault()
+        editTitle(hover)
+        return
+      }
+    }
+
+    if (is('jump_back') && !event.repeat && controls.isLocked && mode === 'idle') {
       event.preventDefault()
       flyBack()
       return
     }
 
-    if (event.code === 'KeyN' && !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && (controls.isLocked || overview.isActive) && mode !== 'menu') {
+    if (is('notes_sidebar') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
       sidebar.toggle()
       sidebarKey = null
     }
@@ -959,7 +951,7 @@ export function createInteraction({ camera, controls, lock, flight, graph, view,
     // to, which is the only way to stop a layout that is going somewhere you
     // don't want. It works in the overview too, which is the natural place to
     // watch a layout settle from.
-    if (event.code === 'KeyB' && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
+    if (is('balance') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
       commands.toggleBalance()
     }
   }

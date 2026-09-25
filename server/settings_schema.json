@@ -1,0 +1,50 @@
+{
+  "$comment": "The one list of configurable things. server/config.py validates the TOML against it and fills defaults from it; frontend/src/keymap.js and settings.js import it for the same defaults. Chord syntax: optional modifiers Mod (Ctrl or Cmd), Ctrl, Cmd, Alt, Shift, then one key, joined by '+'. Contexts: 'flight' = pointer locked, 'free' = pointer released, 'overview' = Tab overview. Two actions may share a chord only if their contexts never overlap.",
+  "version": 1,
+  "keybinds": [
+    { "id": "move_forward", "group": "Flight", "label": "Fly forward", "default": ["W"], "contexts": ["flight"], "movement": true, "scope": ["app", "viewer"] },
+    { "id": "move_back", "group": "Flight", "label": "Fly backward", "default": ["S"], "contexts": ["flight"], "movement": true, "scope": ["app", "viewer"] },
+    { "id": "move_left", "group": "Flight", "label": "Strafe left", "default": ["A"], "contexts": ["flight"], "movement": true, "scope": ["app", "viewer"] },
+    { "id": "move_right", "group": "Flight", "label": "Strafe right", "default": ["D"], "contexts": ["flight"], "movement": true, "scope": ["app", "viewer"] },
+    { "id": "move_up", "group": "Flight", "label": "Fly up", "default": ["Space"], "contexts": ["flight"], "movement": true, "scope": ["app", "viewer"] },
+    { "id": "move_down", "group": "Flight", "label": "Fly down", "default": ["Shift"], "contexts": ["flight"], "movement": true, "scope": ["app", "viewer"] },
+
+    { "id": "resume", "group": "View", "label": "Take the pointer back and fly", "default": ["Enter"], "contexts": ["free"], "scope": ["app", "viewer"] },
+    { "id": "overview", "group": "View", "label": "Overview on/off", "default": ["Tab"], "contexts": ["flight", "free", "overview"], "required": true, "scope": ["app", "viewer"] },
+    { "id": "help", "group": "View", "label": "Show or hide the key list", "default": ["?"], "contexts": ["free"], "scope": ["app"] },
+    { "id": "search", "group": "View", "label": "Find a star by name", "default": ["/", "Mod+F"], "contexts": ["flight", "free", "overview"], "scope": ["app"] },
+    { "id": "jump_back", "group": "View", "label": "Fly back to before the last jump", "default": ["Backspace"], "contexts": ["flight"], "scope": ["app"] },
+    { "id": "notes_sidebar", "group": "View", "label": "Notes sidebar on/off", "default": ["N"], "contexts": ["flight", "overview"], "scope": ["app"] },
+
+    { "id": "rename", "group": "Edit", "label": "Rename the targeted star or link", "default": ["Enter"], "contexts": ["flight"], "scope": ["app"] },
+    { "id": "edit_notes", "group": "Edit", "label": "Edit the targeted star's notes", "default": ["Mod+Enter"], "contexts": ["flight"], "scope": ["app"] },
+    { "id": "balance", "group": "Edit", "label": "Balance the layout (again to stop)", "default": ["B"], "contexts": ["flight", "overview"], "scope": ["app"] },
+    { "id": "undo", "group": "Edit", "label": "Undo", "default": ["Mod+Z"], "contexts": ["flight", "free", "overview"], "printed": true, "scope": ["app"] },
+    { "id": "redo", "group": "Edit", "label": "Redo", "default": ["Mod+Shift+Z", "Ctrl+Y"], "contexts": ["flight", "free", "overview"], "printed": true, "scope": ["app"] },
+
+    { "id": "save", "group": "File", "label": "Save to a file", "default": ["Mod+S"], "contexts": ["flight", "free", "overview"], "scope": ["app"] },
+    { "id": "save_as", "group": "File", "label": "Save with a new name or password", "default": ["Mod+Shift+S"], "contexts": ["flight", "free", "overview"], "scope": ["app"] },
+    { "id": "open", "group": "File", "label": "Open a file", "default": ["Mod+O"], "contexts": ["flight", "free", "overview"], "scope": ["app"] },
+    { "id": "export", "group": "File", "label": "Export a view-only .html", "default": ["Mod+E"], "contexts": ["flight", "free", "overview"], "scope": ["app"] }
+  ],
+  "settings": [
+    { "section": "flight", "key": "mouse_sensitivity", "label": "Mouse sensitivity", "type": "number", "min": 0.1, "max": 5, "step": 0.05, "default": 1.0, "scope": "client", "help": "How far the view turns per mouse movement. 1 is the original feel." },
+    { "section": "flight", "key": "invert_y", "label": "Invert mouse Y", "type": "boolean", "default": false, "scope": "client", "help": "Mouse forward looks down, like a flight stick." },
+    { "section": "flight", "key": "move_speed", "label": "Base flight speed", "type": "number", "min": 10, "max": 1000, "step": 5, "default": 90, "scope": "client", "help": "World units per second at 1.00x, before the scroll wheel multiplier." },
+    { "section": "flight", "key": "max_speed_multiplier", "label": "Top scroll speed", "type": "number", "min": 1, "max": 50, "step": 0.5, "default": 10, "scope": "client", "help": "The highest multiplier the scroll wheel can reach." },
+
+    { "section": "visuals", "key": "reduced_motion", "label": "Start with reduced motion", "type": "boolean", "default": false, "scope": "client", "help": "Stars stop pulsing, no dust rivers or supernovas, and search jumps cut instead of flying. Still switchable from the More menu." },
+    { "section": "visuals", "key": "dust_rivers", "label": "Dust rivers", "type": "boolean", "default": true, "scope": "client", "help": "Dust that orbits stars and flows along links." },
+    { "section": "visuals", "key": "supernova", "label": "Supernova on delete", "type": "boolean", "default": true, "scope": "client", "help": "A flash and shockwave when a star is deleted." },
+    { "section": "visuals", "key": "bloom_strength", "label": "Bloom strength", "type": "number", "min": 0, "max": 1, "step": 0.05, "default": 0.3, "scope": "client", "help": "Share of star light spread out as glow." },
+    { "section": "visuals", "key": "label_range", "label": "Label distance", "type": "number", "min": 0.25, "max": 4, "step": 0.05, "default": 1.0, "scope": "client", "help": "Multiplies how far away star names appear. Higher shows more names at once." },
+
+    { "section": "server", "key": "max_upload_mb", "label": "Largest file Open accepts (MB)", "type": "integer", "min": 1, "max": 1024, "default": 64, "scope": "server", "help": "Uploads over this are refused before they're read." },
+
+    { "section": "admin", "key": "session_minutes", "label": "Admin session length (minutes)", "type": "integer", "min": 5, "max": 1440, "default": 60, "scope": "server", "help": "Sign-in lasts this long, or until the tab closes." },
+    { "section": "admin", "key": "lockout_attempts", "label": "Wrong passwords before lockout", "type": "integer", "min": 3, "max": 50, "default": 5, "scope": "server", "help": "Per client address." },
+    { "section": "admin", "key": "lockout_minutes", "label": "Lockout length (minutes)", "type": "integer", "min": 1, "max": 1440, "default": 15, "scope": "server", "help": "How long an address waits after too many wrong passwords." },
+    { "section": "admin", "key": "trusted_proxies", "label": "Reverse proxies in front", "type": "integer", "min": 0, "max": 5, "default": 0, "scope": "server", "help": "How many X-Forwarded-For hops to trust for the client address. 0 when browsers connect directly; 1 behind Caddy." },
+    { "section": "admin", "key": "allowed_networks", "label": "Networks allowed to reach /admin", "type": "networks", "default": ["0.0.0.0/0", "::/0"], "scope": "server", "help": "CIDR ranges, one per line. Anything else gets a 404. The default allows everyone (password only)." }
+  ]
+}

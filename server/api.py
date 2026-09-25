@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import io
 
-from flask import Blueprint, Response, jsonify, request, send_file
+from flask import Blueprint, Response, current_app, jsonify, request, send_file
 
 from .atlasfile import FormatError, PasswordError, decode_any, encode_v2
 
@@ -32,6 +32,12 @@ def no_store(response: Response) -> Response:
 @api.errorhandler(413)
 def too_large(_error: Exception) -> tuple[Response, int]:
     return fail("File is larger than this build will accept.", 413)
+
+
+@api.get("/config")
+def client_config() -> Response:
+    """Keybinds and client settings for every page load. Nothing secret."""
+    return jsonify(current_app.extensions["atlasmap_config"].client_values())
 
 
 def fail(message: str, status: int) -> tuple[Response, int]:

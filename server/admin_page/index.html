@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>AtlasMap Admin</title>
+    <!-- Relative on purpose: this page is also served under a path prefix (/pleiades/admin). -->
+    <link rel="stylesheet" href="admin/admin.css" />
+    <script type="module" src="admin/admin.js"></script>
+  </head>
+  <body>
+    <header class="top">
+      <h1>AtlasMap <span>admin</span></h1>
+      <button id="sign-out" type="button" class="quiet" hidden>Sign out</button>
+    </header>
+
+    <p id="insecure" class="banner warn" hidden>
+      This page came over plain http, so the password crosses the network unencrypted.
+      Use it from this machine (localhost) or over https where you can.
+    </p>
+
+    <main>
+      <section id="sign-in" class="card narrow" hidden>
+        <h2>Sign in</h2>
+        <form id="sign-in-form">
+          <label>Admin password
+            <input id="sign-in-password" type="password" autocomplete="current-password" required autofocus />
+          </label>
+          <button type="submit">Sign in</button>
+          <p class="error" id="sign-in-error" role="alert"></p>
+        </form>
+        <p class="note">
+          First run prints a generated password to the server's console (and to
+          <code>run.py</code>'s dashboard). Forgot it? Put a new one in
+          <code>password = "…"</code> under <code>[admin]</code> in the config file.
+        </p>
+      </section>
+
+      <div id="panel" hidden>
+        <nav class="tabs" role="tablist">
+          <button type="button" role="tab" data-tab="status" aria-selected="true">Status</button>
+          <button type="button" role="tab" data-tab="keys">Keybinds</button>
+          <button type="button" role="tab" data-tab="settings">Settings</button>
+          <button type="button" role="tab" data-tab="password">Password</button>
+        </nav>
+
+        <ul id="problems" class="banner warn" hidden></ul>
+        <p id="generated" class="banner warn" hidden>
+          The admin password is still the generated one from first run. Change it under Password.
+        </p>
+
+        <section data-view="status" class="view">
+          <div class="stats" id="stat-tiles"></div>
+          <div class="card">
+            <h2>Server</h2>
+            <dl id="server-info" class="facts"></dl>
+          </div>
+          <div class="card">
+            <h2>Top clients</h2>
+            <ul id="top-clients" class="plain"></ul>
+          </div>
+          <div class="card">
+            <h2>Recent requests</h2>
+            <div class="scroll">
+              <table class="recent">
+                <thead><tr><th>Time</th><th>Request</th><th>Status</th><th>Client</th></tr></thead>
+                <tbody id="recent"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section data-view="keys" class="view" hidden>
+          <p class="note">
+            Click <b>+ key</b> and press the keys. <kbd>Mod</kbd> means Ctrl, or ⌘ on a Mac.
+            Browsers keep some chords for themselves (Ctrl/⌘+W, T, N, digits…), and Esc always
+            releases the pointer, so those can't be bound. Changes reach a browser the next time it loads the app.
+          </p>
+          <div id="keybinds"></div>
+        </section>
+
+        <section data-view="settings" class="view" hidden>
+          <div id="settings"></div>
+        </section>
+
+        <section data-view="password" class="view" hidden>
+          <div class="card narrow">
+            <h2>Change the admin password</h2>
+            <form id="password-form">
+              <label>Current password
+                <input id="pw-current" type="password" autocomplete="current-password" required />
+              </label>
+              <label>New password
+                <input id="pw-new" type="password" autocomplete="new-password" minlength="8" required />
+              </label>
+              <label>New password again
+                <input id="pw-confirm" type="password" autocomplete="new-password" minlength="8" required />
+              </label>
+              <button type="submit">Change password</button>
+              <p class="error" id="pw-error" role="alert"></p>
+              <p class="ok" id="pw-ok" role="status"></p>
+            </form>
+            <p class="note">Every other signed-in tab is signed out when it changes.</p>
+          </div>
+        </section>
+
+        <div id="savebar" class="savebar" hidden>
+          <span id="save-state">Unsaved changes</span>
+          <button id="discard" type="button" class="quiet">Discard</button>
+          <button id="save" type="button">Save</button>
+        </div>
+      </div>
+    </main>
+
+    <p id="toast" class="toast" role="status" hidden></p>
+  </body>
+</html>

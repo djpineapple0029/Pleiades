@@ -29,6 +29,7 @@ const REVOKE_DELAY_MS = 1000
 const VIEWER_TEMPLATE = `${import.meta.env.BASE_URL}viewer-template.html`
 const PAYLOAD_MARK = '__ATLASMAP_PAYLOAD__'
 const TITLE_MARK = '__ATLASMAP_TITLE__'
+const SETTINGS_MARK = '__ATLASMAP_SETTINGS__'
 
 /** The `error` a failed endpoint reports, or something honest about the status. */
 async function errorFrom(response) {
@@ -55,7 +56,7 @@ function triggerDownload(blob, filename) {
 const escapeHtml = (text) =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-export function createFiles({ graph, view, camera, physics }) {
+export function createFiles({ graph, view, camera, physics, settings = null }) {
   let password = null
   let filename = DEFAULT_FILENAME
   // The graph.contentRevision token as of the last successful save or open
@@ -245,9 +246,18 @@ export function createFiles({ graph, view, camera, physics }) {
     // `<` is the only character that can end the JSON's script tag early;
     // escaped as `<` it is the same string to any JSON parser.
     const json = JSON.stringify(exportPayload()).replaceAll('<', '\\u003c')
+    // The server's keys and flight feel travel with the file, which opens with
+    // no server to ask. Spliced first, while the only copy of the marker is the
+    // template's own (a map or file name could contain the text). A template
+    // from before this marker lacks it, and the viewer uses defaults.
+    let html = template
+    if (settings) {
+      const copy = JSON.stringify(settings).replaceAll('<', '\\u003c')
+      html = html.replace(SETTINGS_MARK, () => copy)
+    }
     // Replacement *functions*, because both the JSON and the title can contain
     // `$&` and friends, which a string replacement would read as backreferences.
-    const html = template.replace(TITLE_MARK, () => escapeHtml(base)).replace(PAYLOAD_MARK, () => json)
+    html = html.replace(TITLE_MARK, () => escapeHtml(base)).replace(PAYLOAD_MARK, () => json)
 
     triggerDownload(new Blob([html], { type: 'text/html' }), name)
     return { ok: true, filename: name }

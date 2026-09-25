@@ -2,12 +2,18 @@ services:
   pleiades:
     build: .
     restart: unless-stopped
+    volumes:
+      # config/atlasmap.toml for the container: keybinds, settings, admin password hash.
+      - pleiades-config:/data
     networks:
       - caddy
     labels:
       caddy: ":80"
       caddy.handle_path: "/pleiades*"
       caddy.handle_path.0_reverse_proxy: "{{upstreams 5051}}"
+
+volumes:
+  pleiades-config:
 
 networks:
   caddy:

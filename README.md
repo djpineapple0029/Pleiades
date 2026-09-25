@@ -31,10 +31,38 @@ uv run python -m server        # http://127.0.0.1:5001
 `ATLASMAP_HOST` and `ATLASMAP_PORT` override the Flask bind address. Port 5000 is
 taken by AirPlay Receiver on macOS, hence 5001.
 
+## Admin panel and config file
+
+`http://<host>:<port>/admin` (e.g. `http://127.0.0.1:5001/admin`) edits the
+server's config: every keybind, flight feel (mouse sensitivity, invert Y, speed),
+visual effects (reduced motion, dust rivers, supernova, bloom, label distance),
+the upload limit, and admin access. It also shows a live status dashboard.
+
+- **The file** is `config/atlasmap.toml` (or `$ATLASMAP_CONFIG`), gitignored.
+  The first start writes it with every default and a comment on each line.
+  Hand edits apply within a second, with no restart, and saves from the panel
+  keep your comments. A value that doesn't validate falls back to its default
+  and is listed at the top of the panel.
+- **The password.** The first start generates one and prints it to the console
+  (and to `run.py`'s dashboard). Only a scrypt hash is stored. Change it under
+  Password in the panel with the current one. Forgot it? Type a new one into
+  `password = "…"` under `[admin]`; on the next read it becomes a hash.
+- **Who gets the changes.** Every browser gets them the next time it loads the
+  app. An exported `.html` keeps the keys and flight feel it was exported with.
+- **Security.** Wrong passwords lock an address out (5 tries, 15 minutes, both
+  configurable). `admin.allowed_networks` can restrict `/admin` to e.g. your LAN;
+  anyone else gets a 404. Over plain http the password crosses the network
+  unencrypted, and the panel says so; use it on localhost or behind https.
+- **Behind a proxy** (the container under Caddy): set
+  `admin.trusted_proxies = 1`, so lockouts and the allowlist see the real
+  client address, not Caddy's. The container seeds this in a new config.
+
 ## Controls
 
 Click the viewport to take pointer lock. Everything below happens while locked —
-the lock is never released for a menu or an edit.
+the lock is never released for a menu or an edit. These are the defaults; every
+key can be rebound at `/admin`, and the list on the click-to-fly screen always
+shows the keys actually in use.
 
 | | |
 |---|---|

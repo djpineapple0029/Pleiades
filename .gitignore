@@ -23,5 +23,8 @@ coverage/
 .env*
 artifacts/
 
+# The live server config: holds the admin password hash. Created on first run.
+config/
+
 # Local-only planning/context docs — not published in the repo.
 context/

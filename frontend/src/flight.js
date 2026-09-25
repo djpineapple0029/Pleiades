@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js'
 
+import { createKeymap } from './keymap.js'
+
 const MOVE_SPEED = 90 // world units per second at full throttle, before the scroll multiplier
 const DAMPING = 12 // velocity smoothing rate, 1/s — higher is snappier
 
@@ -14,25 +16,35 @@ const SPEED_SENSITIVITY = 0.00095
 const MIN_SPEED_MULT = 0.05
 const MAX_SPEED_MULT = 10
 
-// code -> [axis, sign]. Forward/right are camera-relative, up is world-relative
-// so there is always a stable vertical reference to climb and drop against.
-const KEY_AXES = {
-  KeyW: ['forward', 1],
-  KeyS: ['forward', -1],
-  KeyD: ['right', 1],
-  KeyA: ['right', -1],
-  Space: ['up', 1],
-  ShiftLeft: ['up', -1],
-  ShiftRight: ['up', -1],
-}
-
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 
 /**
  * Pointer-locked 6-degree-of-freedom flight. Call `update(dt)` once per frame.
+ *
+ * Options come from the server's config (`settings.js`); each defaults to the
+ * original feel. The move keys are the keymap's six move_* actions, matched by
+ * `event.code`: forward/right are camera-relative, up is world-relative so
+ * there is always a stable vertical reference to climb and drop against.
  */
-export function createFlight(camera, domElement) {
+export function createFlight(camera, domElement, options = {}) {
+  const {
+    keymap = createKeymap(),
+    mouse_sensitivity: mouseSensitivity = 1,
+    invert_y: invertY = false,
+    move_speed: moveSpeed = MOVE_SPEED,
+    max_speed_multiplier: maxSpeedMult = MAX_SPEED_MULT,
+  } = options
+  const keyAxes = keymap.movementAxes()
   const controls = new PointerLockControls(camera, domElement)
+  controls.pointerSpeed = mouseSensitivity
+
+  // PointerLockControls has no invert option. Its own listener is swapped for
+  // one that feeds it the same event with the vertical movement flipped.
+  const onLook = (event) => controls._onMouseMove({ movementX: event.movementX, movementY: -event.movementY })
+  if (invertY) {
+    domElement.ownerDocument.removeEventListener('mousemove', controls._onMouseMove)
+    domElement.ownerDocument.addEventListener('mousemove', onLook)
+  }
 
   // Suspended while the radial menu or editor owns the keyboard and mouse.
   let enabled = true
@@ -46,7 +58,11 @@ export function createFlight(camera, domElement) {
 
   function onKeyDown(event) {
     if (!enabled || !controls.isLocked || event.repeat) return
-    if (event.code in KEY_AXES) {
+    // A Ctrl/Cmd chord (save, undo…) is a command, not a move: otherwise
+    // Cmd+S flies backwards, and on macOS the S can stick, since keyup often
+    // isn't delivered for a key released while Cmd is held.
+    if (event.ctrlKey || event.metaKey) return
+    if (event.code in keyAxes) {
       held.add(event.code)
       event.preventDefault()
     }
@@ -68,7 +84,7 @@ export function createFlight(camera, domElement) {
     // virtually every case, but Firefox can report 1 (lines) for some devices.
     const delta = event.deltaMode === 1 ? event.deltaY * 18 : event.deltaY
     const factor = Math.exp(-delta * SPEED_SENSITIVITY)
-    speedMultiplier = THREE.MathUtils.clamp(speedMultiplier * factor, MIN_SPEED_MULT, MAX_SPEED_MULT)
+    speedMultiplier = THREE.MathUtils.clamp(speedMultiplier * factor, MIN_SPEED_MULT, maxSpeedMult)
   }
 
   // Keys held while focus or lock is lost never emit keyup — drop them all.
@@ -91,7 +107,7 @@ export function createFlight(camera, domElement) {
     let r = 0
     let u = 0
     for (const code of held) {
-      const [axis, sign] = KEY_AXES[code]
+      const [axis, sign] = keyAxes[code]
       if (axis === 'forward') f += sign
       else if (axis === 'right') r += sign
       else u += sign
@@ -108,7 +124,7 @@ export function createFlight(camera, domElement) {
         .addScaledVector(right, r)
         .addScaledVector(WORLD_UP, u)
         .normalize()
-        .multiplyScalar(MOVE_SPEED * speedMultiplier)
+        .multiplyScalar(moveSpeed * speedMultiplier)
     }
 
     // Frame-rate independent exponential approach to the target velocity.
@@ -127,6 +143,7 @@ export function createFlight(camera, domElement) {
     domElement.removeEventListener('wheel', onWheel)
     window.removeEventListener('blur', releaseAll)
     controls.removeEventListener('unlock', releaseAll)
+    domElement.ownerDocument.removeEventListener('mousemove', onLook)
     controls.dispose()
   }
 
