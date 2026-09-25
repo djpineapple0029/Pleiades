@@ -1,0 +1,35 @@
+# What `docker build` may see. The Dockerfile needs frontend/ (sources and
+# configs), server/ and docker_serve.py; everything below is local state,
+# test material or build output the image builds for itself.
+
+# Installed per platform inside the image. The host's copy holds macOS
+# binaries and would overwrite the image's Linux ones (Dockerfile line 5).
+**/node_modules
+
+# Built inside the image (frontend-build stage), not taken from the host.
+server/static
+frontend/.viewer-build
+
+# Tests and their output never ship.
+frontend/tests
+frontend/test-results
+frontend/playwright-report
+server/tests
+
+# Private or machine-local: the live admin config (password hash), maps,
+# planning notes, editor/tool state, caches.
+config
+artifacts
+context
+*.atlasmap
+.env*
+.git
+.github
+.idea
+.claude
+.venv
+.pytest_cache
+.ruff_cache
+**/__pycache__
+**/*.py[cod]
+**/.DS_Store
