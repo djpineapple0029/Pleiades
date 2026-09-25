@@ -19,7 +19,7 @@ const state = (page) => page.evaluate(() => {
   }
 })
 
-test('rename in place, notes sidebar, automatic relock', async ({ page }) => {
+test('rename in place, notes sidebar, automatic relock', async ({ page }, testInfo) => {
   const errors = collectConsoleErrors(page)
   await page.goto('/')
   await page.waitForTimeout(1500)
@@ -75,10 +75,12 @@ test('rename in place, notes sidebar, automatic relock', async ({ page }) => {
   s = await state(page)
   expect.soft(s.sidebar && !s.sidebarEditing, 'N opens the view').toBe(true)
   expect.soft(s.sidebarBody, 'notes saved with their newline').toBe('line one\nline two')
+  await page.screenshot({ path: testInfo.outputPath('notes_view.png') })
   await t(page, 'look(0, -300)'); await settle(page)
   s = await state(page)
-  expect.soft(s.sidebarBody, 'off the star: nothing targeted').toBe('aim at a star to read its notes')
+  expect.soft(s.sidebar, 'off the star: no panel at all').toBe(false)
   await t(page, 'look(0, 300)'); await settle(page)
+  expect.soft((await state(page)).sidebar, 'back on the star: panel returns').toBe(true)
 
   // --- Esc in the notes editor: cancel, and the lock still comes back ---
   await page.keyboard.press('ControlOrMeta+Enter'); await settle(page, 200)

@@ -338,7 +338,8 @@ kbd {
   z-index: 2;
   top: 14px;
   right: 16px;
-  bottom: 42px; /* clear of #speed */
+  /* View mode hugs its text; edit mode (below) runs down to #speed. */
+  max-height: calc(100vh - 56px);
   width: min(320px, calc(100vw - 32px));
   display: flex;
   flex-direction: column;
@@ -351,13 +352,21 @@ kbd {
 
 #notes-sidebar.notes-sidebar--editing {
   z-index: 3;
+  bottom: 42px; /* clear of #speed */
   background: rgba(9, 11, 17, 0.96);
   pointer-events: auto;
 }
 
+/* The star's name, set apart from the notes under a rule so it can't be
+   mistaken for their first line. */
 .notes-title {
-  margin: 0 0 10px;
-  color: var(--ink);
+  flex: none;
+  margin: 0 0 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #2a3140;
+  color: #e6eefa;
+  font-size: 14px;
+  font-weight: 600;
   letter-spacing: 0.08em;
   overflow-wrap: anywhere;
 }

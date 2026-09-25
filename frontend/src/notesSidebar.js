@@ -21,6 +21,7 @@ function writeStored(open) {
  *
  * - **View**, toggled with N: read-only, never takes the mouse, and shows the
  *   notes of whatever star is under the crosshair (the caller decides which).
+ *   With no star targeted there is no panel at all, not an empty one.
  * - **Edit**, from Ctrl/Cmd+Enter: a real textarea with a real cursor — the
  *   caller releases pointer lock first. Enter is a newline here, since notes
  *   are prose; the Save button commits (Ctrl/Cmd+Enter does too, for the
@@ -34,25 +35,23 @@ export function createNotesSidebar(aside) {
   aside.append(heading, body)
 
   let visible = readStored()
+  let hasTarget = false // a star was under the crosshair at the last `show`
   let resolve = null
-  aside.hidden = !visible
+  aside.hidden = true
 
   function setVisible(value) {
     visible = value
     writeStored(value)
-    if (!resolve) aside.hidden = !value
+    if (!resolve) aside.hidden = !visible || !hasTarget
   }
 
   /** View mode: `name` and `notes` of the targeted star, or null for none. */
   function show(target) {
     if (resolve) return
+    hasTarget = Boolean(target)
+    aside.hidden = !visible || !hasTarget
+    if (!target) return
     body.classList.remove('notes-body--empty')
-    if (!target) {
-      heading.textContent = 'notes'
-      body.textContent = 'aim at a star to read its notes'
-      body.classList.add('notes-body--empty')
-      return
-    }
     heading.textContent = target.name
     if (target.notes) {
       body.textContent = target.notes
@@ -68,7 +67,7 @@ export function createNotesSidebar(aside) {
     resolve = null
     aside.classList.remove('notes-sidebar--editing')
     body.replaceChildren()
-    aside.hidden = !visible
+    aside.hidden = !visible || !hasTarget
     done(value)
   }
 
