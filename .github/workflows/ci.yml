@@ -62,7 +62,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: node scripts/check-build.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: static
           path: server/static/
@@ -80,7 +80,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: e2e-traces
@@ -106,7 +106,7 @@ jobs:
       - run: xvfb-run -a npm run test:e2e:headed
       - run: xvfb-run -a npm run test:e2e:prod
         if: ${{ !cancelled() }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: e2e-headed-traces
