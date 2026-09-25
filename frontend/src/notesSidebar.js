@@ -9,7 +9,7 @@
  *   are prose; the Save button commits (Ctrl/Cmd+Enter does too, for the
  *   keyboard-only), Esc cancels.
  */
-export function createNotesSidebar(aside) {
+export function createNotesSidebar(aside, { writeKey = 'Ctrl/⌘+Enter' } = {}) {
   const heading = document.createElement('p')
   heading.className = 'notes-title'
   const body = document.createElement('div')
@@ -37,7 +37,7 @@ export function createNotesSidebar(aside) {
     if (target.notes) {
       body.textContent = target.notes
     } else {
-      body.textContent = 'no notes · Ctrl/⌘+Enter to write'
+      body.textContent = writeKey ? `no notes · ${writeKey} to write` : 'no notes'
       body.classList.add('notes-body--empty')
     }
   }

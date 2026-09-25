@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createStatus } from './status.js'
+import { createKeymap } from './keymap.js'
 
 /**
  * The read-only half of `interaction.js`, for the exported viewer.
@@ -28,7 +29,7 @@ function sameTarget(a, b) {
   return Boolean(a && b) && a.kind === b.kind && a.id === b.id
 }
 
-export function createViewerInteraction({ camera, controls, flight, graph, view, overview, hud, speedEl }) {
+export function createViewerInteraction({ camera, controls, flight, graph, view, overview, hud, speedEl, keymap = createKeymap() }) {
   const raycaster = new THREE.Raycaster()
   const crosshair = new THREE.Vector2(0, 0) // dead centre of the viewport
   const status = createStatus(hud)
@@ -58,7 +59,10 @@ export function createViewerInteraction({ camera, controls, flight, graph, view,
     const counts = `${graph.nodes.size} nodes · ${graph.edges.size} edges`
     // The overview hides the overlay, so the HUD is the only thing left
     // saying how to get out of it.
-    if (overview.isActive) return `overview · ${counts} · Tab to fly`
+    if (overview.isActive) {
+      const back = keymap.label('overview')
+      return `overview · ${counts}${back ? ` · ${back} to fly` : ''}`
+    }
     return (controls.isLocked && describe(hover)) || counts
   }
 
@@ -95,7 +99,7 @@ export function createViewerInteraction({ camera, controls, flight, graph, view,
     // `preventDefault` because Tab would otherwise walk the browser's focus
     // ring off the canvas. This has to work while unlocked, since it is also
     // the way back out of the overview.
-    if (event.code === 'Tab' && !event.repeat) {
+    if (keymap.is(event, 'overview') && !event.repeat) {
       event.preventDefault()
       overview.toggle()
     }

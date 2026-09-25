@@ -26,8 +26,16 @@ const REVEAL_FADE = 0.25
 const NEAR_CLEAR = 1.5
 const NEAR_FULL = 3
 
+// The admin's "label distance" setting: scales both reveal ranges. Module
+// state, set once at startup before any label is drawn.
+let rangeScale = 1
+
+export function setRevealScale(scale) {
+  rangeScale = Number.isFinite(scale) && scale > 0 ? scale : 1
+}
+
 export function revealRange(size) {
-  return size >= ALWAYS_ON_SIZE ? Infinity : REVEAL_BASE * size ** REVEAL_GROWTH
+  return size >= ALWAYS_ON_SIZE ? Infinity : rangeScale * REVEAL_BASE * size ** REVEAL_GROWTH
 }
 
 // --- Which connection names show ---------------------------------------------
@@ -42,7 +50,7 @@ const EDGE_REVEAL_BASE = 140
 const EDGE_REVEAL_GROWTH = 2
 
 export function edgeRevealRange(size) {
-  return EDGE_REVEAL_BASE * size ** EDGE_REVEAL_GROWTH
+  return rangeScale * EDGE_REVEAL_BASE * size ** EDGE_REVEAL_GROWTH
 }
 
 // Room the name needs along the line. `edges.js` fades an edge out within

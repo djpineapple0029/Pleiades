@@ -7,9 +7,13 @@ reach it, then draws a TUI with the URLs to connect to and a running tally of
 requests. The screen does not refresh on its own — press Enter to redraw it,
 or type q then Enter (or Ctrl+C) to stop the server and exit.
 
+The admin panel is at /admin on the same port. On the very first run the
+dashboard shows the generated admin password; change it in the panel.
+
 Environment:
-    ATLASMAP_HOST   bind address (default 0.0.0.0 — all interfaces)
-    ATLASMAP_PORT   bind port (default 5001; 5000 is AirPlay on macOS)
+    ATLASMAP_HOST     bind address (default 0.0.0.0 — all interfaces)
+    ATLASMAP_PORT     bind port (default 5051; 5000 is AirPlay on macOS)
+    ATLASMAP_CONFIG   config file (default config/atlasmap.toml)
 """
 
 from __future__ import annotations
@@ -21,7 +25,6 @@ import sys
 import threading
 import time
 import urllib.request
-from collections import Counter, deque
 from datetime import timedelta
 
 from werkzeug.serving import make_server
@@ -40,72 +43,6 @@ GREEN = "\x1b[32m"
 YELLOW = "\x1b[33m"
 RED = "\x1b[31m"
 RESET = "\x1b[0m"
-
-
-class Stats:
-    """Request tallies, updated from Flask hooks under a lock."""
-
-    def __init__(self) -> None:
-        self.lock = threading.Lock()
-        self.total = 0
-        self.in_flight = 0
-        self.status = Counter()
-        self.bytes_sent = 0
-        self.clients: Counter[str] = Counter()
-        self.recent: deque[str] = deque(maxlen=8)
-        self.started = time.monotonic()
-
-    def begin(self) -> None:
-        with self.lock:
-            self.in_flight += 1
-
-    def finish(self, method: str, path: str, code: int, size: int, client: str) -> None:
-        with self.lock:
-            self.in_flight = max(0, self.in_flight - 1)
-            self.total += 1
-            self.status[code // 100] += 1
-            self.bytes_sent += size
-            self.clients[client] += 1
-            stamp = time.strftime("%H:%M:%S")
-            self.recent.appendleft(f"{stamp}  {method:4} {path[:34]:34} {code}  {client}")
-
-    def snapshot(self) -> dict:
-        with self.lock:
-            return {
-                "total": self.total,
-                "in_flight": self.in_flight,
-                "status": dict(self.status),
-                "bytes_sent": self.bytes_sent,
-                "unique_clients": len(self.clients),
-                "top_clients": self.clients.most_common(3),
-                "recent": list(self.recent),
-                "uptime": time.monotonic() - self.started,
-            }
-
-
-def instrument(app, stats: Stats):
-    @app.before_request
-    def _before():  # noqa: ANN202
-        stats.begin()
-
-    @app.after_request
-    def _after(response):  # noqa: ANN001, ANN202
-        from flask import request
-
-        try:
-            size = response.calculate_content_length() or 0
-        except Exception:
-            size = 0
-        stats.finish(
-            request.method,
-            request.path,
-            response.status_code,
-            size,
-            request.remote_addr or "?",
-        )
-        return response
-
-    return app
 
 
 def lan_ip() -> str:
@@ -138,7 +75,7 @@ def human_bytes(n: int) -> str:
     return f"{n:.1f} TB"
 
 
-def render(stats: dict, addrs: dict) -> str:
+def render(stats: dict, addrs: dict, first_password: str | None) -> str:
     up = str(timedelta(seconds=int(stats["uptime"])))
     st = stats["status"]
 
@@ -158,6 +95,11 @@ def render(stats: dict, addrs: dict) -> str:
         lines.append(f"    internet         {DIM}offline / unknown{RESET}")
     lines.append("")
     lines.append(f"  {BOLD}Server{RESET}   bind {HOST}:{PORT}   pid {os.getpid()}   up {up}")
+    lines.append(f"  {BOLD}Admin{RESET}    {GREEN}http://127.0.0.1:{PORT}/admin{RESET}")
+    if first_password:
+        lines.append(
+            f"           {YELLOW}first-run password: {first_password}{RESET} {DIM}(change it in the panel){RESET}"
+        )
     lines.append("")
     lines.append(f"  {BOLD}Requests{RESET}")
     lines.append(
@@ -165,8 +107,8 @@ def render(stats: dict, addrs: dict) -> str:
         f"     data {human_bytes(stats['bytes_sent'])}"
     )
     lines.append(
-        f"    {GREEN}2xx {st.get(2, 0):>5}{RESET}   {CYAN}3xx {st.get(3, 0):>5}{RESET}   "
-        f"{YELLOW}4xx {st.get(4, 0):>5}{RESET}   {RED}5xx {st.get(5, 0):>5}{RESET}"
+        f"    {GREEN}2xx {st.get("2xx", 0):>5}{RESET}   {CYAN}3xx {st.get("3xx", 0):>5}{RESET}   "
+        f"{YELLOW}4xx {st.get("4xx", 0):>5}{RESET}   {RED}5xx {st.get("5xx", 0):>5}{RESET}"
     )
     lines.append(
         f"    unique clients {stats['unique_clients']:>3}"
@@ -179,7 +121,9 @@ def render(stats: dict, addrs: dict) -> str:
     lines.append("")
     lines.append(f"  {BOLD}Recent{RESET}")
     if stats["recent"]:
-        for row in stats["recent"]:
+        for r in stats["recent"][:8]:
+            stamp = time.strftime("%H:%M:%S", time.localtime(r["time"]))
+            row = f"{stamp}  {r['method']:4} {r['path'][:34]:34} {r['status']}  {r['client']}"
             lines.append(f"    {DIM}{row}{RESET}")
     else:
         lines.append(f"    {DIM}waiting for the first request…{RESET}")
@@ -192,8 +136,9 @@ def main() -> int:
     # Werkzeug's per-request log lines would scribble over the dashboard.
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
-    stats = Stats()
-    app = instrument(create_app(), stats)
+    app = create_app()
+    stats = app.extensions["atlasmap_stats"]
+    config = app.extensions["atlasmap_config"]
 
     try:
         server = make_server(HOST, PORT, app, threaded=True)
@@ -210,7 +155,7 @@ def main() -> int:
     out = sys.stdout
     try:
         while True:
-            out.write(render(stats.snapshot(), addrs))
+            out.write(render(stats.snapshot(), addrs, config.initial_password))
             out.flush()
             # Block here until the user acts — the screen never moves on its own.
             line = sys.stdin.readline()

@@ -23,7 +23,9 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'npx vite --port 5180 --strictPort',
+    // Defaults, whatever a dev backend on :5001 has in its config: the specs
+    // press the default keys (see src/settings.js).
+    command: 'VITE_ATLASMAP_SETTINGS=defaults npx vite --port 5180 --strictPort',
     url: 'http://localhost:5180',
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,

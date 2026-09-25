@@ -17,7 +17,10 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'npm run build && (cd .. && uv run python -m server)',
+    // A fresh default config in the gitignored artifacts/, never the real
+    // config/atlasmap.toml: the specs press the default keys.
+    command:
+      'npm run build && (cd .. && rm -f artifacts/e2e-prod.toml && ATLASMAP_CONFIG=artifacts/e2e-prod.toml uv run python -m server)',
     url: 'http://127.0.0.1:5001',
     reuseExistingServer: false,
     timeout: 60_000,

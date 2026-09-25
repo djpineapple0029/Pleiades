@@ -24,6 +24,10 @@ import { createGraph } from './graph.js'
 import { createGraphView } from './graphView.js'
 import { createOverview } from './overview.js'
 import { createViewerInteraction } from './viewerInteraction.js'
+import { readEmbeddedSettings } from './settings.js'
+import { createKeymap } from './keymap.js'
+import { VIEWER_ROWS, renderKeyList } from './keysHelp.js'
+import { setRevealScale } from './labels.js'
 
 const MAX_FRAME_DELTA = 0.1 // seconds — clamps the jump after a backgrounded tab
 
@@ -54,13 +58,19 @@ function readPayload() {
   }
 }
 
+// The exporting server's keys and flight feel, spliced in at export time.
+const settings = readEmbeddedSettings()
+const keymap = createKeymap(settings.keybinds)
+setRevealScale(settings.visuals.label_range)
+renderKeyList(overlay.querySelector('.keys'), keymap, VIEWER_ROWS)
+
 const { renderer, scene, camera } = createScene(canvas)
 const skybox = createSkybox(renderer)
 scene.add(skybox.object)
 scene.add(createDust())
-const bloom = createBloom(renderer, scene, camera)
+const bloom = createBloom(renderer, scene, camera, { strength: settings.visuals.bloom_strength })
 
-const flight = createFlight(camera, canvas)
+const flight = createFlight(camera, canvas, { keymap, ...settings.flight })
 camera.position.set(0, 0, 260)
 
 const graph = createGraph()
@@ -77,6 +87,7 @@ const interaction = createViewerInteraction({
   overview,
   hud,
   speedEl: speed,
+  keymap,
 })
 
 const payload = readPayload()
@@ -132,7 +143,7 @@ function requestLock() {
 
 canvas.addEventListener('click', requestLock)
 window.addEventListener('keydown', (event) => {
-  if (event.code === 'Enter') requestLock()
+  if (keymap.is(event, 'resume')) requestLock()
 })
 
 // Chrome refuses re-lock for ~1.25s after an Esc release; say so instead of
@@ -153,6 +164,7 @@ renderer.setAnimationLoop(() => {
   overview.update(delta)
   interaction.update()
   view.update(clock.elapsedTime, camera) // getDelta above has just advanced it
-  rivers.update(delta)
+  if (settings.visuals.dust_rivers) rivers.update(delta)
+  else rivers.hide()
   bloom.render() // the whole frame, stars and bloom included
 })

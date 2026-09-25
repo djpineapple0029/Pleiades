@@ -20,6 +20,10 @@ import { createTitleEdit } from './titleEdit.js'
 import { createNotesSidebar } from './notesSidebar.js'
 import { createSearchPanel } from './searchPanel.js'
 import { createFlyTo } from './flyTo.js'
+import { fetchSettings } from './settings.js'
+import { createKeymap } from './keymap.js'
+import { APP_ROWS, renderKeyList, renderResumePill } from './keysHelp.js'
+import { setRevealScale } from './labels.js'
 
 const MAX_FRAME_DELTA = 0.1 // seconds — clamps the jump after a backgrounded tab
 
@@ -31,14 +35,23 @@ const resumePill = document.getElementById('resume-pill')
 const hud = document.getElementById('hud')
 const speed = document.getElementById('speed')
 
+// Keybinds and settings from the server's config (/admin). Defaults if the
+// server can't be reached, so a failure here never stops the app starting.
+const settings = await fetchSettings(`${import.meta.env.BASE_URL}api/config`)
+const keymap = createKeymap(settings.keybinds)
+const { visuals } = settings
+setRevealScale(visuals.label_range)
+renderKeyList(overlay.querySelector('.keys'), keymap, APP_ROWS)
+renderResumePill(resumePill, keymap)
+
 const { renderer, scene, camera, dispose: disposeScene } = createScene(canvas)
 const skybox = createSkybox(renderer)
 scene.add(skybox.object)
 const dust = createDust()
 scene.add(dust)
-const bloom = createBloom(renderer, scene, camera)
+const bloom = createBloom(renderer, scene, camera, { strength: visuals.bloom_strength })
 
-const flight = createFlight(camera, canvas)
+const flight = createFlight(camera, canvas, { keymap, ...settings.flight })
 // Before anything else listens for `unlock`: the listeners below read which
 // kind of unlock it was.
 const lock = createPointerLock(flight.controls)
@@ -49,7 +62,7 @@ const view = createGraphView(graph, scene, renderer)
 const rivers = createDustRivers(graph, scene, { radiusOf: view.radiusOf })
 const supernova = createSupernova(scene)
 const physics = createPhysics(graph, view)
-const files = createFiles({ graph, view, camera, physics })
+const files = createFiles({ graph, view, camera, physics, settings })
 
 // Drives the same camera as flight does — the bloom pipeline captured that one.
 const overview = createOverview({ camera, canvas, graph, view, controls: flight.controls })
@@ -58,11 +71,16 @@ const flyTo = createFlyTo(camera)
 
 // Minimal, in-memory only: freezes the star-pulse clock read by the frame
 // loop below, and switches the dust rivers and the delete supernova off.
-let reducedMotion = false
+// The config sets where it starts; the More menu still flips it.
+let reducedMotion = visuals.reduced_motion
 let frozenElapsed = 0
 const renderSettings = {
   get reducedMotion() {
     return reducedMotion
+  },
+  /** The config's "supernova on delete"; reduced motion also stops it. */
+  get supernova() {
+    return visuals.supernova
   },
   toggleReducedMotion() {
     reducedMotion = !reducedMotion
@@ -87,11 +105,12 @@ const interaction = createInteraction({
   menu: createRadialMenu(document.getElementById('radial-menu')),
   editor: createEditor(document.getElementById('editor')),
   titleEdit: createTitleEdit(),
-  sidebar: createNotesSidebar(document.getElementById('notes-sidebar')),
+  sidebar: createNotesSidebar(document.getElementById('notes-sidebar'), { writeKey: keymap.label('edit_notes') }),
   search: createSearchPanel(document.getElementById('search')),
   flyTo,
   hud,
   speedEl: speed,
+  keymap,
 })
 
 flight.controls.addEventListener('lock', () => {
@@ -126,9 +145,9 @@ function requestLock() {
 
 canvas.addEventListener('click', requestLock)
 window.addEventListener('keydown', (event) => {
-  if (event.code === 'Enter') requestLock()
+  if (keymap.is(event, 'resume')) requestLock()
   // `?` swaps the small resume hint for the full key list and back.
-  if (event.key === '?' && !flight.controls.isLocked && !interaction.isModal && !overview.isActive) {
+  if (keymap.is(event, 'help') && !flight.controls.isLocked && !interaction.isModal && !overview.isActive) {
     const showKeys = overlay.hidden
     overlay.hidden = !showKeys
     resumePill.hidden = showKeys
@@ -178,8 +197,9 @@ renderer.setAnimationLoop(() => {
   view.update(clock.elapsedTime, camera, reducedMotion ? frozenElapsed : clock.elapsedTime)
   // After the view: the rivers read the stars' drawn radii. With motion off
   // neither is drawn at all (deletes don't start a burst then, either).
-  if (reducedMotion) {
+  if (reducedMotion || !visuals.dust_rivers) {
     rivers.hide()
+    if (!reducedMotion) supernova.update(delta)
   } else {
     supernova.update(delta)
     rivers.setDim(view.mapDim) // a search dims the rivers with the edges
