@@ -1,0 +1,227 @@
+{
+  "nodes": [
+    {
+      "id": "n1",
+      "label": "topic 1",
+      "notes": "",
+      "links": [],
+      "x": -104.81414916324346,
+      "y": 17.691690118380734,
+      "z": -52.01793338076831,
+      "cluster_color_id": 0,
+      "is_core": true
+    },
+    {
+      "id": "n2",
+      "label": "topic 2",
+      "notes": "",
+      "links": [],
+      "x": 41.5680154384778,
+      "y": 50.288121643221615,
+      "z": -173.78845630407477,
+      "cluster_color_id": 0,
+      "is_core": false
+    },
+    {
+      "id": "n3",
+      "label": "topic 3",
+      "notes": "",
+      "links": [],
+      "x": -194.73280337805033,
+      "y": 134.98763283858398,
+      "z": -96.25839426879695,
+      "cluster_color_id": 0,
+      "is_core": false
+    },
+    {
+      "id": "n4",
+      "label": "topic 4",
+      "notes": "",
+      "links": [],
+      "x": -106.26761558132145,
+      "y": 198.25793420418512,
+      "z": -11.89459699102082,
+      "cluster_color_id": 0,
+      "is_core": false
+    },
+    {
+      "id": "n5",
+      "label": "topic 5",
+      "notes": "",
+      "links": [],
+      "x": 134.58458050975548,
+      "y": -9.458716520266023,
+      "z": 55.62725621766478,
+      "cluster_color_id": 0,
+      "is_core": false
+    },
+    {
+      "id": "n6",
+      "label": "topic 6",
+      "notes": "",
+      "links": [],
+      "x": -139.75343039059044,
+      "y": 53.944263314075386,
+      "z": 147.2181228573187,
+      "cluster_color_id": 0,
+      "is_core": false
+    },
+    {
+      "id": "n7",
+      "label": "topic 7",
+      "notes": "",
+      "links": [],
+      "x": 9.272484153320534,
+      "y": 96.5007424805961,
+      "z": 68.56459014783701,
+      "cluster_color_id": 0,
+      "is_core": false
+    },
+    {
+      "id": "n8",
+      "label": "topic 8",
+      "notes": "",
+      "links": [],
+      "x": -174.38742470920107,
+      "y": 103.29209851472694,
+      "z": 36.439833172527045,
+      "cluster_color_id": 0,
+      "is_core": false
+    },
+    {
+      "id": "n9",
+      "label": "topic 9",
+      "notes": "",
+      "links": [],
+      "x": -79.49293619371507,
+      "y": -187.5952994121,
+      "z": 146.21089479157826,
+      "cluster_color_id": 0,
+      "is_core": false
+    },
+    {
+      "id": "n10",
+      "label": "topic 10",
+      "notes": "",
+      "links": [],
+      "x": -10.900364533813274,
+      "y": 87.52956962632123,
+      "z": 151.52512010219266,
+      "cluster_color_id": 0,
+      "is_core": false
+    },
+    {
+      "id": "n11",
+      "label": "topic 11",
+      "notes": "",
+      "links": [],
+      "x": 85.65179344448103,
+      "y": 168.43946703354982,
+      "z": -42.01463839970242,
+      "cluster_color_id": 0,
+      "is_core": false
+    },
+    {
+      "id": "n12",
+      "label": "topic 12",
+      "notes": "",
+      "links": [],
+      "x": 120.3635083940913,
+      "y": -22.151577579695754,
+      "z": 174.23468868180845,
+      "cluster_color_id": 0,
+      "is_core": false
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "n2",
+      "to": "n1",
+      "directed": false,
+      "label": ""
+    },
+    {
+      "id": "e2",
+      "from": "n3",
+      "to": "n1",
+      "directed": false,
+      "label": ""
+    },
+    {
+      "id": "e3",
+      "from": "n4",
+      "to": "n2",
+      "directed": false,
+      "label": ""
+    },
+    {
+      "id": "e4",
+      "from": "n5",
+      "to": "n2",
+      "directed": false,
+      "label": ""
+    },
+    {
+      "id": "e5",
+      "from": "n6",
+      "to": "n3",
+      "directed": false,
+      "label": ""
+    },
+    {
+      "id": "e6",
+      "from": "n7",
+      "to": "n3",
+      "directed": false,
+      "label": ""
+    },
+    {
+      "id": "e7",
+      "from": "n8",
+      "to": "n4",
+      "directed": false,
+      "label": ""
+    },
+    {
+      "id": "e8",
+      "from": "n9",
+      "to": "n4",
+      "directed": false,
+      "label": ""
+    },
+    {
+      "id": "e9",
+      "from": "n10",
+      "to": "n5",
+      "directed": false,
+      "label": ""
+    },
+    {
+      "id": "e10",
+      "from": "n11",
+      "to": "n5",
+      "directed": false,
+      "label": ""
+    },
+    {
+      "id": "e11",
+      "from": "n12",
+      "to": "n6",
+      "directed": false,
+      "label": ""
+    }
+  ],
+  "camera": {
+    "position": [
+      0,
+      0,
+      500
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ]
+  }
+}
