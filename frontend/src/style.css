@@ -407,3 +407,93 @@ kbd {
   color: var(--ink-dim);
   white-space: normal;
 }
+
+/* The / search, top centre. Above #overlay so it stays usable in the overview
+   (where the cursor is free and a row can be clicked); under lock the mouse
+   never reaches it. */
+#search {
+  position: fixed;
+  z-index: 3;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(440px, calc(100vw - 32px));
+  padding: 8px;
+  border: 1px solid #2a3140;
+  border-radius: 4px;
+  background: rgba(9, 11, 17, 0.92);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+.search-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #6fc7ff;
+  border-radius: 3px;
+  background: #11141c;
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: var(--ink-dim);
+}
+
+.search-results {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.search-results:not(:empty) {
+  margin-top: 6px;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  color: #9aa7ba;
+  cursor: pointer;
+}
+
+.search-row--selected {
+  background: rgba(45, 92, 138, 0.55);
+  color: var(--ink);
+}
+
+.search-swatch {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.search-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The matched text: amber, like the targeted star's label. */
+.search-name mark {
+  background: none;
+  color: #ffbe6b;
+}
+
+.search-meta {
+  flex: none;
+  color: var(--ink-dim);
+}
+
+.search-foot {
+  margin: 6px 8px 2px;
+  color: var(--ink-dim);
+}
