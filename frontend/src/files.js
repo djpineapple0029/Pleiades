@@ -26,7 +26,7 @@ const REVOKE_DELAY_MS = 1000
 // The built read-only viewer, with two holes in it. Written by
 // `frontend/scripts/build-viewer.mjs`; served by Flask from server/static, and
 // proxied through in dev so Ctrl+E works there too.
-const VIEWER_TEMPLATE = '/viewer-template.html'
+const VIEWER_TEMPLATE = `${import.meta.env.BASE_URL}viewer-template.html`
 const PAYLOAD_MARK = '__ATLASMAP_PAYLOAD__'
 const TITLE_MARK = '__ATLASMAP_TITLE__'
 
@@ -121,7 +121,7 @@ export function createFiles({ graph, view, camera, physics }) {
       }
     }
     try {
-      const response = await fetch('/api/save', {
+      const response = await fetch(`${import.meta.env.BASE_URL}api/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: password ?? '', filename, payload: toPayload() }),
@@ -185,7 +185,7 @@ export function createFiles({ graph, view, camera, physics }) {
 
     let response
     try {
-      response = await fetch('/api/open', { method: 'POST', body: form })
+      response = await fetch(`${import.meta.env.BASE_URL}api/open`, { method: 'POST', body: form })
     } catch (error) {
       return { ok: false, error: error.message || 'could not reach the server' }
     }
