@@ -107,6 +107,25 @@ describe('crashGuard.js', () => {
     remove()
   })
 
+  it("ignores a cross-origin 'Script error.' that carries nothing", () => {
+    const guard = createCrashGuard(fakeOverlay())
+    const report = vi.fn()
+    const target = new EventTarget()
+    const remove = guard.installGlobalHandlers(report, target)
+    const opaque = new Event('error')
+    opaque.message = 'Script error.'
+    const quiet = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    target.dispatchEvent(opaque)
+    quiet.mockRestore()
+    expect(report).not.toHaveBeenCalled()
+    // A message-only error of our own still gets through.
+    const own = new Event('error')
+    own.message = 'Uncaught TypeError: x is undefined'
+    target.dispatchEvent(own)
+    expect(report).toHaveBeenCalledWith('Uncaught TypeError: x is undefined')
+    remove()
+  })
+
   it('errorText caps long messages and survives non-errors', () => {
     expect(errorText(new Error('x'.repeat(500))).length).toBe(160)
     expect(errorText('plain string')).toBe('plain string')

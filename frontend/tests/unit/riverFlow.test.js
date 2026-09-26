@@ -226,6 +226,37 @@ describe('riverFlow', () => {
     expect(checked).toBeGreaterThan(20)
   })
 
+  it('a grain respawned by a grown map starts with no tail', () => {
+    // Two chains 900 apart. Deleting the far one shrinks the dust budget, so
+    // the grains past it retire and sit dead; adding stars back regrows it and
+    // respawns them. Their tails must start fresh, not reach back to wherever
+    // they were before (a streak across the map).
+    const { graph, flow } = setup(chain)
+    const far = []
+    for (let i = 0; i < 4; i++) far.push(graph.addNode({ x: i * 120, y: -900, z: 0 }).id)
+    for (let i = 0; i < 3; i++) graph.addEdge(far[i], far[i + 1])
+    run(flow, 10)
+    for (const id of far) graph.removeNode(id)
+    run(flow, 5)
+    for (let i = 0; i < 4; i++) graph.addNode({ x: i * 120, y: 900, z: 300 })
+    run(flow, 0.5)
+    const out = new Float32Array(16 * 3)
+    let checked = 0
+    for (let g = 0; g < flow.count; g++) {
+      if (flow.light[g] === 0) continue
+      const n = flow.trailOf(g, out)
+      let [px, py, pz] = flow.positions.subarray(g * 3, g * 3 + 3)
+      for (let i = 0; i < n; i++) {
+        const [qx, qy, qz] = out.subarray(i * 3, i * 3 + 3)
+        // A grain covers a few units per sample, never hundreds.
+        expect(Math.hypot(qx - px, qy - py, qz - pz)).toBeLessThan(100)
+        ;[px, py, pz] = [qx, qy, qz]
+        checked++
+      }
+    }
+    expect(checked).toBeGreaterThan(20)
+  })
+
   it('is the same every run for the same seed', () => {
     const a = setup(chain).flow
     const b = setup(chain).flow

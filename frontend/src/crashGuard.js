@@ -82,6 +82,14 @@ export function createCrashGuard({ overlay, prompt, keys, notice, exitPointerLoc
    */
   function installGlobalHandlers(report, target = window) {
     const onError = (event) => {
+      // "Script error." with no error object is the browser's opaque stand-in
+      // for a throw from another origin's script, most often an extension
+      // injected into the page. Ours are all same-origin, so it was never the
+      // map's, and it says nothing the user could act on.
+      if (!event.error && /^Script error\.?$/.test(event.message ?? '')) {
+        console.warn('Ignored a cross-origin script error (a browser extension?)')
+        return
+      }
       if (!fatal) report(errorText(event.error ?? event.message))
     }
     const onRejection = (event) => {
