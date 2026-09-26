@@ -24,5 +24,9 @@ ENV PORT=5051
 # X-Forwarded-For hop; this seeds admin.trusted_proxies in a new config only.
 ENV ATLASMAP_CONFIG=/data/atlasmap.toml
 ENV ATLASMAP_TRUSTED_PROXIES=1
+# Accounts (off until switched on in /admin): the session cookie's Path, so it
+# only goes to this app and not to everything else Caddy serves on the host.
+# The database lands next to the config, at /data/atlasmap.db.
+ENV ATLASMAP_BASE=/pleiades/
 VOLUME /data
 CMD ["python", "docker_serve.py"]

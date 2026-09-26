@@ -25,6 +25,10 @@ artifacts/
 
 # The live server config: holds the admin password hash. Created on first run.
 config/
+# The accounts database (next to the config by default): users and their maps.
+*.db
+*.db-wal
+*.db-shm
 
 # Local-only planning/context docs — not published in the repo.
 context/

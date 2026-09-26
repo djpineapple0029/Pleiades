@@ -1,18 +1,23 @@
 """Flask app for AtlasMap: serves the built frontend, the file crypto endpoints,
-the public keybinds/settings (`/api/config`) and the admin panel (`/admin`).
+the public keybinds/settings (`/api/config`), the admin panel (`/admin`) and,
+when switched on, accounts with server-side maps (`/api/auth`, `/api/maps`).
 
 No graph logic lives here — the frontend owns the graph entirely.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from flask import Flask, Response, send_from_directory
 
+from .accounts import accounts
 from .admin import Guard, admin, client_ip
 from .api import api
 from .config import ConfigStore
+from .db import FILENAME, Database
+from .maps import maps
 from .stats import Stats, instrument
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -21,11 +26,18 @@ BUILD_MISSING = "Frontend build missing at server/static/. Run:\n  cd frontend &
 
 
 def create_app(config_path: Path | str | None = None) -> Flask:
-    """`config_path` defaults to `$ATLASMAP_CONFIG`, then `config/atlasmap.toml`."""
+    """`config_path` defaults to `$ATLASMAP_CONFIG`, then `config/atlasmap.toml`.
+
+    The accounts database sits in `$ATLASMAP_DATA`, else next to the config
+    file. It's only created once an accounts request needs it.
+    """
     app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="")
     config = ConfigStore(config_path)
     app.extensions["atlasmap_config"] = config
     app.extensions["atlasmap_admin_guard"] = Guard()
+    app.extensions["atlasmap_account_guard"] = Guard()
+    data_dir = Path(os.environ.get("ATLASMAP_DATA") or config.path.parent)
+    app.extensions["atlasmap_db"] = Database(data_dir / FILENAME)
     app.extensions["atlasmap_stats"] = stats = Stats()
     instrument(app, stats, client_ip)
 
@@ -37,6 +49,8 @@ def create_app(config_path: Path | str | None = None) -> Flask:
 
     app.register_blueprint(api)
     app.register_blueprint(admin)
+    app.register_blueprint(accounts)
+    app.register_blueprint(maps)
 
     @app.get("/")
     def index() -> Response:

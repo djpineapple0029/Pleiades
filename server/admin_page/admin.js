@@ -13,7 +13,14 @@ const SECTION_TITLES = {
   flight: 'Flight & feel',
   visuals: 'Visual effects',
   server: 'Server',
+  accounts: 'Accounts',
   admin: 'Admin access',
+}
+const SECTION_NOTES = {
+  server: 'Applies to the next request, no restart needed.',
+  accounts:
+    'Applies to the next request. Maps kept here are readable by whoever runs the server; local files with a password stay private.',
+  admin: 'Applies to this panel at once. The allowed networks must include your own address.',
 }
 // Mirrors server/config.py: named keys by `event.key`, symbols by the character.
 const NAMED = [
@@ -438,16 +445,8 @@ function renderSettings() {
     const card = document.createElement('div')
     card.className = 'card'
     card.append(Object.assign(document.createElement('h2'), { textContent: SECTION_TITLES[section] || section }))
-    if (section === 'server' || section === 'admin') {
-      card.append(
-        Object.assign(document.createElement('p'), {
-          className: 'note',
-          textContent:
-            section === 'admin'
-              ? 'Applies to this panel at once. The allowed networks must include your own address.'
-              : 'Applies to the next request, no restart needed.',
-        }),
-      )
+    if (section in SECTION_NOTES) {
+      card.append(Object.assign(document.createElement('p'), { className: 'note', textContent: SECTION_NOTES[section] }))
     }
     for (const spec of schema.settings.filter((s) => s.section === section)) card.append(settingRow(spec))
     return card

@@ -22,6 +22,9 @@ config
 artifacts
 context
 *.atlasmap
+*.db
+*.db-wal
+*.db-shm
 .env*
 .git
 .github

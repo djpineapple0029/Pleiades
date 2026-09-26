@@ -48,8 +48,13 @@
 
     { "section": "server", "key": "max_upload_mb", "label": "Largest file Open accepts (MB)", "type": "integer", "min": 1, "max": 1024, "default": 64, "scope": "server", "help": "Uploads over this are refused before they're read." },
 
+    { "section": "accounts", "key": "enabled", "label": "Accounts", "type": "boolean", "default": false, "scope": "server", "help": "Lets people sign up and keep their maps on this server. Only works over HTTPS, or with a TLS proxy counted in Reverse proxies in front." },
+    { "section": "accounts", "key": "signup_open", "label": "Open sign-up", "type": "boolean", "default": false, "scope": "server", "help": "Anyone who can reach the server may create an account while this is on." },
+    { "section": "accounts", "key": "max_maps_per_user", "label": "Maps per account", "type": "integer", "min": 1, "max": 10000, "default": 100, "scope": "server", "help": "Creating or duplicating a map past this is refused." },
+    { "section": "accounts", "key": "min_password_length", "label": "Shortest account password", "type": "integer", "min": 8, "max": 128, "default": 10, "scope": "server", "help": "Applies to new passwords only." },
+
     { "section": "admin", "key": "session_minutes", "label": "Admin session length (minutes)", "type": "integer", "min": 5, "max": 1440, "default": 60, "scope": "server", "help": "Sign-in lasts this long, or until the tab closes." },
-    { "section": "admin", "key": "lockout_attempts", "label": "Wrong passwords before lockout", "type": "integer", "min": 3, "max": 50, "default": 5, "scope": "server", "help": "Per client address." },
+    { "section": "admin", "key": "lockout_attempts", "label": "Wrong passwords before lockout", "type": "integer", "min": 3, "max": 50, "default": 5, "scope": "server", "help": "Per client address, and per username for account sign-in." },
     { "section": "admin", "key": "lockout_minutes", "label": "Lockout length (minutes)", "type": "integer", "min": 1, "max": 1440, "default": 15, "scope": "server", "help": "How long an address waits after too many wrong passwords." },
     { "section": "admin", "key": "trusted_proxies", "label": "Reverse proxies in front", "type": "integer", "min": 0, "max": 5, "default": 0, "scope": "server", "help": "How many X-Forwarded-For hops to trust for the client address. 0 when browsers connect directly; 1 behind Caddy." },
     { "section": "admin", "key": "allowed_networks", "label": "Networks allowed to reach /admin", "type": "networks", "default": ["0.0.0.0/0", "::/0"], "scope": "server", "help": "CIDR ranges, one per line. Anything else gets a 404. The default allows everyone (password only)." }
