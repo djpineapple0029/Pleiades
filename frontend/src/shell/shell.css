@@ -1,0 +1,324 @@
+/* The account shell: the app's palette and type (../style.css, and the admin
+   panel's admin.css), dark only like both. */
+:root {
+  color-scheme: dark;
+  --ink: #c8d2e0;
+  --ink-dim: #6b7789;
+  --void: #05060a;
+  --panel: #0b0e15;
+  --field: #11141c;
+  --line: #2a3140;
+  --row: #1a1f2b;
+  --accent: #8fd6ff;
+  --accent-deep: #2d5c8a;
+  --amber: #d99a6c;
+  --bad: #ff8a80;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: radial-gradient(ellipse at 50% -10%, rgba(45, 92, 138, 0.18), transparent 60%), var(--void);
+  color: var(--ink);
+  font:
+    13px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.top,
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 24px;
+  padding-bottom: 16px;
+}
+
+main {
+  padding-bottom: 96px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+h2 span {
+  letter-spacing: normal;
+}
+
+a {
+  color: var(--accent);
+}
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink-dim);
+}
+
+.card {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.narrow {
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#signed-out,
+#off {
+  margin-top: 32px;
+}
+
+.note,
+.aside {
+  color: var(--ink-dim);
+}
+
+.note {
+  margin: 12px 0 0;
+}
+
+.aside {
+  margin: 0;
+  text-align: center;
+}
+
+.banner {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid #6a4a2e;
+  border-radius: 8px;
+  background: #1c140c;
+  color: #f0c49c;
+}
+
+label {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 12px;
+  color: var(--ink-dim);
+}
+
+label small {
+  font-size: 11px;
+}
+
+input,
+button,
+.button {
+  font: inherit;
+  color: var(--ink);
+}
+
+input[type='text'],
+input[type='password'] {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--field);
+}
+
+input:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button,
+.button {
+  display: inline-block;
+  padding: 7px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent-deep);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+button:hover,
+.button:hover {
+  background: #356b9f;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.quiet {
+  border-color: var(--line);
+  background: transparent;
+}
+
+button.quiet:hover {
+  border-color: var(--ink-dim);
+}
+
+button.danger {
+  border-color: var(--bad);
+  background: #3a1715;
+}
+
+button.danger:hover {
+  background: #52201d;
+}
+
+button.small {
+  padding: 3px 9px;
+  font-size: 12px;
+}
+
+.error {
+  margin: 8px 0 0;
+  color: var(--bad);
+}
+
+.error:empty {
+  display: none;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: -4px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tabs button {
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--ink-dim);
+}
+
+.tabs button[aria-selected='true'] {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+}
+
+.list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 8px;
+}
+
+.inline-form {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.list-head .inline-form {
+  flex: 1 1 260px;
+  max-width: 360px;
+}
+
+.maps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.map {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--row);
+}
+
+.map:first-child {
+  border-top: none;
+}
+
+.map .info {
+  display: grid;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.map .name {
+  overflow: hidden;
+  font-size: 14px;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map .name:hover {
+  text-decoration: underline;
+}
+
+.map .meta {
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+
+.map .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.map .confirm {
+  color: var(--amber);
+}
+
+.map .error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.map .rename {
+  width: 100%;
+}

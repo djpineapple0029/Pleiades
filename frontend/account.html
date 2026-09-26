@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>AtlasMap</title>
+  </head>
+  <body>
+    <header class="top">
+      <h1>AtlasMap</h1>
+      <div class="who" id="who" hidden>
+        <span id="who-name"></span>
+        <button id="sign-out" type="button" class="quiet">Sign out</button>
+      </div>
+    </header>
+
+    <main>
+      <p id="notice" class="banner" role="status" hidden></p>
+      <p id="loading" class="note">Loading…</p>
+
+      <section id="off" class="card narrow" hidden>
+        <h2>No accounts here</h2>
+        <p>Accounts aren't switched on for this server. Maps are saved as files on your computer.</p>
+        <p><a class="button" id="off-open" href="./">Open AtlasMap</a></p>
+      </section>
+
+      <section id="signed-out" class="narrow" hidden>
+        <div class="card">
+          <nav class="tabs" role="tablist">
+            <button type="button" role="tab" id="tab-sign-in" aria-selected="true">Sign in</button>
+            <button type="button" role="tab" id="tab-sign-up" aria-selected="false">Create account</button>
+          </nav>
+
+          <form id="sign-in-form" novalidate>
+            <label
+              >Username
+              <input
+                id="sign-in-username"
+                type="text"
+                autocomplete="username"
+                autocapitalize="none"
+                spellcheck="false"
+                required
+              />
+            </label>
+            <label
+              >Password
+              <input id="sign-in-password" type="password" autocomplete="current-password" required />
+            </label>
+            <button type="submit">Sign in</button>
+            <p class="error" id="sign-in-error" role="alert"></p>
+            <p class="note">Forgot your password? Ask whoever runs this server to reset it.</p>
+          </form>
+
+          <form id="sign-up-form" novalidate hidden>
+            <label
+              >Username
+              <input
+                id="sign-up-username"
+                type="text"
+                autocomplete="username"
+                autocapitalize="none"
+                spellcheck="false"
+                minlength="3"
+                maxlength="32"
+                required
+              />
+              <small>3–32 characters: letters, digits, _ . and -</small>
+            </label>
+            <label
+              >Password
+              <input id="sign-up-password" type="password" autocomplete="new-password" required />
+              <small id="sign-up-min"></small>
+            </label>
+            <label
+              >Confirm password
+              <input id="sign-up-confirm" type="password" autocomplete="new-password" required />
+            </label>
+            <button type="submit">Create account</button>
+            <p class="error" id="sign-up-error" role="alert"></p>
+            <p class="note">
+              Maps kept here are stored on this server, and whoever runs it can read them. For a private map,
+              use AtlasMap without an account and save it as a file with a password.
+            </p>
+          </form>
+        </div>
+        <p class="aside"><a id="local-link" href="./?local">Use AtlasMap without an account →</a></p>
+      </section>
+
+      <section id="signed-in" hidden>
+        <div class="card">
+          <div class="list-head">
+            <h2>My maps <span id="map-count"></span></h2>
+            <form id="new-map-form" class="inline-form">
+              <input
+                id="new-map-name"
+                type="text"
+                placeholder="New map name"
+                maxlength="120"
+                aria-label="New map name"
+              />
+              <button type="submit">New map</button>
+            </form>
+          </div>
+          <p class="error" id="list-error" role="alert"></p>
+          <ul id="maps" class="maps"></ul>
+          <p id="empty" class="note" hidden>No maps yet. Give one a name above to start.</p>
+        </div>
+        <p class="aside">
+          <a id="local-link-in" href="./?local">Open a file from your computer instead →</a>
+        </p>
+      </section>
+    </main>
+
+    <script type="module" src="/src/shell/main.js"></script>
+  </body>
+</html>

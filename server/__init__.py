@@ -10,9 +10,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from flask import Flask, Response, send_from_directory
+from flask import Flask, Response, redirect, send_from_directory
 
-from .accounts import accounts
+from .accounts import account_shell_url, accounts
 from .admin import Guard, admin, client_ip
 from .api import api
 from .config import ConfigStore
@@ -56,6 +56,12 @@ def create_app(config_path: Path | str | None = None) -> Flask:
     def index() -> Response:
         if not (STATIC_DIR / "index.html").is_file():
             return Response(BUILD_MISSING, status=503, mimetype="text/plain")
+        shell = account_shell_url()
+        if shell:
+            # Not permanent: switching accounts off must bring `/` straight back.
+            response = redirect(shell, code=302)
+            response.headers["Cache-Control"] = "no-store"
+            return response
         return send_from_directory(STATIC_DIR, "index.html")
 
     return app

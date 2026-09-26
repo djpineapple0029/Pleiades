@@ -94,6 +94,14 @@ def available() -> bool:
     return bool(store().get("accounts", "enabled")) and secure_enough()
 
 
+def account_shell_url() -> str | None:
+    """Where plain `/` should go instead of the app: the account shell, when accounts
+    are on here. `?map=<id>` (a server map) and `?local` (no account) are the app."""
+    if "map" in request.args or "local" in request.args or not available():
+        return None
+    return f"{cookie_path()}account.html"
+
+
 def gate() -> tuple[Response, int] | None:
     """before_request for every accounts route: off → 404; state changes need the CSRF header."""
     if request.endpoint == "accounts.me":
@@ -224,6 +232,7 @@ def me() -> Response:
     return jsonify(
         enabled=True,
         signup_open=bool(store().get("accounts", "signup_open")),
+        min_password_length=store().get("accounts", "min_password_length"),
         user=(
             {"username": user["username"], "must_change_password": bool(user["must_change_password"])} if user else None
         ),

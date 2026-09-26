@@ -27,6 +27,8 @@ import { APP_ROWS, renderKeyList, renderResumePill } from './keysHelp.js'
 import { setRevealScale, setLabelTarget } from './labels.js'
 import { CONTEXT_LOST, NO_WEBGL, createCrashGuard, errorText } from './crashGuard.js'
 import { watchContextLoss } from './contextLoss.js'
+import { accountUrl, accountsEnabled } from './api.js'
+import { TICK_MS, createServerMap, loadServerMap } from './serverMap.js'
 
 const MAX_FRAME_DELTA = 0.1 // seconds — clamps the jump after a backgrounded tab
 const STATUS_TICK_MS = 250 // the HUD's own clock once the frame loop has stopped
@@ -46,9 +48,38 @@ const guard = createCrashGuard({
   exitPointerLock: () => document.exitPointerLock?.(),
 })
 
+// Stops this module here for good: the page is navigating away, or a notice
+// already says why nothing more can happen.
+const halt = () => new Promise(() => {})
+
+// `?map=<id>` opens a map from the account's list; `?local` is the classic app
+// on a server with accounts. Plain `/` on such a server belongs to the account
+// shell. The e2e harness pins defaults and never has accounts.
+const params = new URLSearchParams(location.search)
+const mapId = params.get('map')
+const askAboutAccounts =
+  !mapId && !params.has('local') && import.meta.env.VITE_ATLASMAP_SETTINGS !== 'defaults'
+
 // Keybinds and settings from the server's config (/admin). Defaults if the
 // server can't be reached, so a failure here never stops the app starting.
-const settings = await fetchSettings(`${import.meta.env.BASE_URL}api/config`)
+const [settings, toAccountShell, opened] = await Promise.all([
+  fetchSettings(`${import.meta.env.BASE_URL}api/config`),
+  askAboutAccounts ? accountsEnabled() : false,
+  mapId ? loadServerMap(mapId) : null,
+])
+if (toAccountShell) {
+  location.replace(accountUrl())
+  await halt()
+}
+if (opened && !opened.ok) {
+  // Signed out: the shell signs in. Gone (or accounts off): the shell says so.
+  if (opened.status === 401 || opened.status === 404) {
+    location.replace(accountUrl(opened.status === 404 ? 'missing' : ''))
+    await halt()
+  }
+  guard.showFatal(`This map could not be opened: ${opened.error}. Reload to try again.`)
+  await halt()
+}
 const keymap = createKeymap(settings.keybinds)
 const { visuals } = settings
 setRevealScale(visuals.label_range)
@@ -102,6 +133,23 @@ const physics = createPhysics(graph, view, {
   },
 })
 const files = createFiles({ graph, view, camera, physics, settings })
+
+// A map from the account's list: swapped in before anything can edit, then
+// saved back by `serverMap` from here on.
+let serverMap = null
+if (opened) {
+  try {
+    files.applyPayload(opened.map.payload)
+  } catch (error) {
+    guard.showFatal(`This map could not be opened: ${errorText(error)}.`)
+    await halt()
+  }
+  files.setFilename(opened.map.name)
+  serverMap = createServerMap({ map: opened.map, graph, physics, toPayload: files.toPayload })
+}
+// Set once the user has chosen to go back to the list, so leaving doesn't
+// also ask "leave site?" about the save they already decided on.
+let leaving = false
 
 // Drives the same camera as flight does — the bloom pipeline captured that one.
 const overview = createOverview({ camera, canvas, graph, view, controls: flight.controls })
@@ -165,7 +213,23 @@ const interaction = createInteraction({
   hud,
   speedEl: speed,
   keymap,
+  serverMap,
+  leaveToMaps: () => {
+    leaving = true
+    location.assign(accountUrl())
+  },
 })
+
+// Autosave runs on its own timer, not the frame loop, so it outlives a
+// rendering crash. Going out of sight or away flushes what's pending.
+const autosaveTimer = serverMap ? setInterval(serverMap.tick, TICK_MS) : null
+const flushServerMap = () => serverMap?.flush()
+const onVisibility = () => {
+  if (document.visibilityState === 'hidden') flushServerMap()
+}
+document.addEventListener('visibilitychange', onVisibility)
+window.addEventListener('pagehide', flushServerMap)
+const hasUnsaved = () => (serverMap ? serverMap.hasUnsaved : files.isDirty)
 
 flight.controls.addEventListener('lock', () => {
   overlay.hidden = true
@@ -230,7 +294,7 @@ document.addEventListener('pointerlockerror', () => {
 // title is owned here, not in interaction.js or viewerInteraction.js.
 let lastTitle = null
 function updateTitle() {
-  const title = `${files.isDirty ? '• ' : ''}${files.filename} — AtlasMap`
+  const title = `${hasUnsaved() ? '• ' : ''}${serverMap ? serverMap.name : files.filename} — AtlasMap`
   if (title === lastTitle) return
   lastTitle = title
   document.title = title
@@ -312,7 +376,7 @@ function frame() {
 // gets. Browsers ignore any custom text here and show their own wording.
 if (!import.meta.hot) {
   window.addEventListener('beforeunload', (event) => {
-    if (!files.isDirty) return
+    if (leaving || !hasUnsaved()) return
     event.preventDefault()
     event.returnValue = ''
   })
@@ -322,6 +386,9 @@ if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     renderer.setAnimationLoop(null)
     clearInterval(statusTimer)
+    clearInterval(autosaveTimer)
+    document.removeEventListener('visibilitychange', onVisibility)
+    window.removeEventListener('pagehide', flushServerMap)
     removeGlobalHandlers()
     stopWatchingContext()
     physics.stop()

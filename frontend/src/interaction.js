@@ -67,10 +67,22 @@ const MAP_MENU = [
   { key: 'more', label: 'More…' },
 ]
 
-// Overview up, Back down. Looks are not here on purpose: they change only
-// from their own key (V), so the right-button menus stay about the map.
-const MORE_MENU = [
+// A map kept on the server saves itself, so New and Open give way to the way
+// back to the map list; saving a copy as a file moves to the More ring.
+const SERVER_MAP_MENU = [
+  { key: 'maps', label: 'My maps' },
+  { key: 'save', label: 'Save' },
+  { key: 'export', label: 'Export' },
+  { key: 'balance', label: 'Balance' },
+  { key: 'more', label: 'More…' },
+]
+
+// Overview up, Back down (a server map's "Save to file" pushes them to thirds).
+// Looks are not here on purpose: they change only from their own key (V), so
+// the right-button menus stay about the map.
+const MORE_MENU = (serverMap) => [
   { key: 'overview', label: 'Overview' },
+  ...(serverMap ? [{ key: 'save-file', label: 'Save to file' }] : []),
   { key: 'back', label: 'Back' },
 ]
 
@@ -122,6 +134,10 @@ function sameTarget(a, b) {
  * Saving and opening live here too rather than in `files.js`, because both need
  * the password panel, and the panel is a modal surface — only this module knows
  * whether one is already up, and only this module can suspend flight for it.
+ *
+ * With a `serverMap` (a map opened from the account's list), Save sends it to
+ * the server at once instead of downloading a file, the HUD shows where its
+ * autosave stands, and the map menu leads back to the list (`leaveToMaps`).
  */
 export function createInteraction({
   camera,
@@ -144,6 +160,8 @@ export function createInteraction({
   hud,
   speedEl,
   keymap = createKeymap(),
+  serverMap = null,
+  leaveToMaps = () => {},
 }) {
   const raycaster = new THREE.Raycaster()
   const crosshair = new THREE.Vector2(0, 0) // dead centre of the viewport
@@ -241,6 +259,8 @@ export function createInteraction({
         text = described
       } else if (focused) {
         text = focused
+      } else if (serverMap) {
+        text = `${serverMap.name} · ${serverMap.statusText} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`
       } else {
         const dirty = files.isDirty ? ' · unsaved' : ''
         text = `${files.filename}${dirty} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`
@@ -579,6 +599,8 @@ export function createInteraction({
    * counts) and this is a single keystroke, until `Shift` asks again.
    */
   async function saveMap({ reprompt }) {
+    // A server map's Save goes to the server; Save As is still a file.
+    if (serverMap && !reprompt) return saveToServer()
     if (busy) {
       status.info('a file operation is still in progress')
       return { ok: false }
@@ -599,7 +621,7 @@ export function createInteraction({
     try {
       while (!files.hasCredentials || reprompt) {
         const values = await prompt(
-          files.hasCredentials ? 'save as' : 'save map',
+          serverMap ? 'save a copy to a file' : files.hasCredentials ? 'save as' : 'save map',
           [
             { key: 'filename', label: 'File name', value: name },
             { key: 'password', label: 'Password (optional)', type: 'password' },
@@ -638,6 +660,58 @@ export function createInteraction({
     }
   }
 
+  /** Ctrl/Cmd+S on a server map: no panel, and no waiting for the autosave. */
+  async function saveToServer() {
+    status.busy('saving')
+    const result = await serverMap.saveNow()
+    if (result.ok) status.success(result.unchanged ? 'already saved' : 'saved')
+    else status.error(`save failed: ${result.error}`)
+    return result
+  }
+
+  /**
+   * The map menu's "My maps": saves first, and only leaves unsaved work
+   * behind if the user says so after the save has failed.
+   */
+  async function backToMaps() {
+    if (busy) {
+      status.info('a file operation is still in progress')
+      return
+    }
+    busy = true
+    try {
+      if (serverMap.hasUnsaved) {
+        status.busy('saving')
+        const result = await serverMap.saveNow()
+        status.done()
+        if (!result.ok && !(await confirmLeave(result.error))) {
+          status.error(`not saved: ${result.error}`)
+          return
+        }
+      }
+      leaveToMaps()
+    } finally {
+      busy = false
+    }
+  }
+
+  /** Resolves true only if the user chooses to leave a map that isn't saved. */
+  async function confirmLeave(reason) {
+    await lock.release('panel')
+    try {
+      mode = 'editing'
+      beginModal()
+      const choice = await editor.confirm(`${serverMap.name} is not saved`, `${reason}.`, [
+        { key: 'l', label: 'L: leave anyway' },
+      ])
+      endModal()
+      return choice === 'l'
+    } finally {
+      if (mode === 'editing') endModal()
+      lock.resume()
+    }
+  }
+
   /**
    * `Ctrl/Cmd+O`. Pointer lock goes first and stays gone: the file dialog is a
    * native window, so the browser would drop the lock to show it anyway, and
@@ -646,6 +720,10 @@ export function createInteraction({
    * settles, however it ends.
    */
   async function openMap() {
+    if (serverMap) {
+      status.info('this map saves to your account; open files in the app without an account')
+      return
+    }
     if (busy) {
       status.info('a file operation is still in progress')
       return
@@ -947,7 +1025,8 @@ export function createInteraction({
     menuTarget = ring === 'top' ? MAP_TARGET : MAP_TARGET_MORE
     mode = 'menu'
     beginModal() // idempotent if already modal from the ring we're leaving — do not guard it
-    menu.open(ring === 'top' ? MAP_MENU : MORE_MENU)
+    const top = serverMap ? SERVER_MAP_MENU : MAP_MENU
+    menu.open(ring === 'top' ? top : MORE_MENU(Boolean(serverMap)))
   }
 
   /**
@@ -994,7 +1073,8 @@ export function createInteraction({
     if (target.kind === 'map') {
       if (target.ring === 'top') {
         if (key === 'more') return openMapMenu('more')
-        if (key === 'new') newMap()
+        if (key === 'maps') backToMaps()
+        else if (key === 'new') newMap()
         else if (key === 'open') openMap()
         else if (key === 'save') saveMap({ reprompt: false })
         else if (key === 'export') exportMap()
@@ -1003,6 +1083,7 @@ export function createInteraction({
       }
       if (key === 'back') return openMapMenu('top')
       if (key === 'overview') overview.toggle()
+      else if (key === 'save-file') saveMap({ reprompt: true })
       return
     }
 

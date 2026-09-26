@@ -1,4 +1,4 @@
-// Post-build sanity check for CI (V2.md §2.7.5): both entry points exist and
+// Post-build sanity check for CI (V2.md §2.7.5): every entry point exists and
 // nothing has ballooned. Budgets sit ~25% above the sizes on 2026-09-25
 // (app JS 800 kB, viewer template 693 kB); raise them on purpose, not by drift.
 // The viewer module-graph guard belongs to §2.4.6 and isn't built yet.
@@ -12,6 +12,10 @@ const BUDGETS = [
   { label: 'viewer-template.html', match: /^viewer-template\.html$/, dir: '', max: 875 * KB },
   { label: 'app JS', match: /^index-.*\.js$/, dir: 'assets', max: 1000 * KB },
   { label: 'app CSS', match: /^index-.*\.css$/, dir: 'assets', max: 16 * KB },
+  // The account shell must stay small: no three, no scene code.
+  { label: 'account.html', match: /^account\.html$/, dir: '', max: 8 * KB },
+  { label: 'account JS', match: /^account-.*\.js$/, dir: 'assets', max: 24 * KB },
+  { label: 'account CSS', match: /^account-.*\.css$/, dir: 'assets', max: 8 * KB },
 ]
 
 let failed = false

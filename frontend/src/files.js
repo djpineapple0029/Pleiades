@@ -297,6 +297,12 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
       const trimmed = (nextFilename ?? '').trim()
       filename = !trimmed ? DEFAULT_FILENAME : trimmed.endsWith(SUFFIX) ? trimmed : `${trimmed}${SUFFIX}`
     },
+    /** The name "Save to file" offers first, without setting a password — a
+     *  server map's own name, so its first save to a file still asks for one. */
+    setFilename(nextFilename) {
+      const trimmed = (nextFilename ?? '').trim().replace(/[\\/:*?"<>|]/g, '')
+      filename = !trimmed ? DEFAULT_FILENAME : trimmed.endsWith(SUFFIX) ? trimmed : `${trimmed}${SUFFIX}`
+    },
     /** Forgets password, filename and the last file's passed-through fields —
      *  used when New map starts a fresh document. */
     clearCredentials() {

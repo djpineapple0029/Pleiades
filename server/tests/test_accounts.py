@@ -256,3 +256,41 @@ def test_sessions_survive_a_restart(accounts_app, signup):
     restarted = create_app().test_client()
     restarted.set_cookie(COOKIE, token)
     assert whoami(restarted) == "alice"
+
+
+# --- Landing ------------------------------------------------------------------
+
+
+@pytest.fixture
+def built(tmp_path, monkeypatch):
+    """A stand-in frontend build, so `/` has an index.html to serve."""
+    import server
+
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text("<p>app</p>")
+    monkeypatch.setattr(server, "STATIC_DIR", static)
+    return static
+
+
+def test_root_goes_to_the_account_shell_when_accounts_are_on(client, built, monkeypatch):
+    response = client.get("/")
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/account.html"
+    assert response.headers["Cache-Control"] == "no-store"
+    monkeypatch.setenv("ATLASMAP_BASE", "/pleiades/")
+    assert client.get("/").headers["Location"] == "/pleiades/account.html"
+    # A server map, and the app without an account, are the app itself.
+    assert client.get("/?map=abcdefghijklmnop").data == b"<p>app</p>"
+    assert client.get("/?local").data == b"<p>app</p>"
+
+
+def test_root_is_the_app_when_accounts_are_off_or_insecure(accounts_app, built):
+    client = accounts_app.test_client()
+    assert client.get("/", environ_base={"REMOTE_ADDR": "192.168.1.20"}).data == b"<p>app</p>"
+    set_values(accounts_app, "accounts", enabled=False)
+    assert client.get("/").data == b"<p>app</p>"
+
+
+def test_me_reports_the_password_minimum(client):
+    assert client.get("/api/auth/me").json["min_password_length"] == 10
