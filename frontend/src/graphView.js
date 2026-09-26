@@ -951,6 +951,8 @@ export function createGraphView(graph, scene, renderer) {
     /** A node's drawn tint, linear RGB, as the shader has it. Null if not drawn. */
     tintOf: (id) => shownTint.get(id)?.slice() ?? null,
     labelsShown: labels.shown,
+    /** After a context loss: redraw every label into a fresh atlas. */
+    invalidateLabels: labels.invalidateAtlas,
     /** How lit the map's edges are right now (1, or easing toward DIM_EDGES
      *  under a search), for anything else drawn over the map to follow. */
     get mapDim() {

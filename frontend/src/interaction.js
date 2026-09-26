@@ -1023,6 +1023,11 @@ export function createInteraction({
   return {
     update,
     dispose,
+    /** An error from outside the frame loop, sticky on the HUD. */
+    reportError: (text) => status.error(`error: ${text}`),
+    /** The HUD's messages alone, for when the frame loop has stopped and a
+     *  save from the crash notice still has to say how it went. */
+    tickStatus: () => status.tick(),
     /** True while a panel owns the keyboard, or a file is being decrypted and
      *  swapped in — nothing should steal focus back, or re-lock and edit the
      *  graph that's about to be replaced. */

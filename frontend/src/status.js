@@ -2,8 +2,9 @@
  * The HUD's message channel, layered over a caller-supplied persistent state
  * line (mode/hover/counts/balance progress) rather than replacing it. Shared
  * verbatim between `interaction.js` and `viewerInteraction.js`, so the two
- * HUDs can never drift apart — the viewer simply never calls anything but
- * `setState`/`tick`, since it has no file flows to report on.
+ * HUDs can never drift apart — the viewer calls nothing but `setState`/`tick`
+ * and, for an error thrown outside the frame loop, `error`: it has no file
+ * flows to report on.
  */
 
 const INFO_MS = 2500
