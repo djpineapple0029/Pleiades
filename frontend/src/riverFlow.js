@@ -371,6 +371,9 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
 
   function spawn(g) {
     dying[g] = 0
+    // No tail from before: a grain respawned by `rebuild` (a map that grew
+    // back after shrinking) would otherwise draw one to where it last died.
+    trailValid[g] = 0
     push[g * 3] = push[g * 3 + 1] = push[g * 3 + 2] = 0
     if (g >= budget || nodeIds.length === 0) {
       phase[g] = DEAD
@@ -571,12 +574,10 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
       if (starsMoved && dying[g] !== 2) carryTrail(g)
       const o = g * 3
 
-      let respawned = false
       if (dying[g]) {
         fade[g] -= dt / FADE_OUT
         if (fade[g] <= 0) {
           spawn(g)
-          respawned = true
           if (phase[g] === DEAD) continue
         }
       } else {
@@ -726,7 +727,6 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
       const nx = x + push[o]
       const ny = y + push[o + 1]
       const nz = z + push[o + 2]
-      if (respawned) trailValid[g] = 0
       positions[o] = nx
       positions[o + 1] = ny
       positions[o + 2] = nz
