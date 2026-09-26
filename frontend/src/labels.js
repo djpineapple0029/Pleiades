@@ -373,12 +373,30 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
   Promise.all(WEIGHT.map((weight) => document.fonts.load(`${weight} ${FONT_PX}px Jost`)))
     .then(() => {
       readMetrics()
-      for (const entry of entries.values()) {
-        release(entry)
-        entry.source = null // forces setText, and with it a fresh measure
-      }
+      forgetRasters()
     })
     .catch(() => {})
+
+  /** Every label is drawn again, a few per frame (`MAX_RASTERS_PER_FRAME`),
+   *  as it next shows. */
+  function forgetRasters() {
+    pending.length = 0
+    for (const entry of entries.values()) {
+      release(entry)
+      entry.source = null // forces setText, and with it a fresh measure
+    }
+  }
+
+  /**
+   * After a context loss. The atlas is filled only by GPU-side copies, so it
+   * comes back as zeros while every entry still holds a cell in it: the names
+   * would stay blank until each happened to be evicted. Reallocates it, then
+   * forgets every raster, as a font load does.
+   */
+  function invalidateAtlas() {
+    renderer.initTexture(atlas)
+    forgetRasters()
+  }
 
   const occupied = new Uint8Array(ROWS * COLS)
   const copyTo = new THREE.Vector2()
@@ -1285,6 +1303,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
     setHovered,
     setDraft,
     reset,
+    invalidateAtlas,
     dispose,
     /**
      * Labels on screen after the last update: which kind it is, its id, text,

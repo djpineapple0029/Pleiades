@@ -28,6 +28,8 @@ import { readEmbeddedSettings } from './settings.js'
 import { createKeymap } from './keymap.js'
 import { VIEWER_ROWS, renderKeyList } from './keysHelp.js'
 import { setRevealScale } from './labels.js'
+import { CONTEXT_LOST, NO_WEBGL, createCrashGuard, errorText } from './crashGuard.js'
+import { watchContextLoss } from './contextLoss.js'
 
 const MAX_FRAME_DELTA = 0.1 // seconds — clamps the jump after a backgrounded tab
 
@@ -37,6 +39,13 @@ const crosshair = document.getElementById('crosshair')
 const notice = document.getElementById('notice')
 const hud = document.getElementById('hud')
 const speed = document.getElementById('speed')
+const guard = createCrashGuard({
+  overlay,
+  prompt: overlay.querySelector('.prompt'),
+  keys: overlay.querySelector('.keys'),
+  notice,
+  exitPointerLock: () => document.exitPointerLock?.(),
+})
 
 /**
  * The embedded map, or null if this page has none.
@@ -64,7 +73,16 @@ const keymap = createKeymap(settings.keybinds)
 setRevealScale(settings.visuals.label_range)
 renderKeyList(overlay.querySelector('.keys'), keymap, VIEWER_ROWS)
 
-const { renderer, scene, camera } = createScene(canvas)
+let sceneParts
+try {
+  sceneParts = createScene(canvas)
+} catch (error) {
+  // An export's recipient installed nothing and may well have WebGL off: say
+  // so instead of an inviting "Click to fly" that does nothing.
+  guard.showFatal(NO_WEBGL)
+  throw error
+}
+const { renderer, scene, camera } = sceneParts
 const skybox = createSkybox(renderer)
 scene.add(skybox.object)
 scene.add(createDust())
@@ -110,8 +128,8 @@ if (!payload) {
 }
 
 if (failure) {
-  notice.textContent = failure
-  notice.hidden = false
+  // Not under a live "Click to fly": a click would lock onto an empty scene.
+  guard.showFatal(failure)
 } else {
   // Open on the whole map rather than at the author's camera: whoever opens
   // this did not build it, and the author's last position could be pointed at
@@ -137,7 +155,7 @@ flight.controls.addEventListener('unlock', () => {
 function requestLock() {
   // In the overview a click is a drag of the orbit, and taking the lock back
   // would end the mode under the user; Tab is the only way out of it.
-  if (overview.isActive) return
+  if (overview.isActive || guard.isBlocking) return
   if (!flight.controls.isLocked) flight.controls.lock()
 }
 
@@ -149,6 +167,7 @@ window.addEventListener('keydown', (event) => {
 // Chrome refuses re-lock for ~1.25s after an Esc release; say so instead of
 // leaving the click looking broken.
 document.addEventListener('pointerlockerror', () => {
+  if (guard.isBlocking) return // a crash or context-loss notice says more
   notice.textContent = 'Pointer lock refused. Wait a moment, then click again.'
   notice.hidden = false
   overlay.hidden = false
@@ -156,7 +175,31 @@ document.addEventListener('pointerlockerror', () => {
 
 const clock = new THREE.Clock()
 
-renderer.setAnimationLoop(() => {
+function onRenderCrash(error) {
+  guard.showFatal(`Rendering stopped: ${errorText(error)}. Reload the page to try again.`)
+}
+
+guard.installGlobalHandlers(interaction.reportError)
+
+// three restores its own state; the two things that only ever lived on the GPU
+// are rebuilt here.
+watchContextLoss(canvas, {
+  onLost: () => guard.cover(CONTEXT_LOST),
+  onRestored: () => {
+    if (guard.isFatal) return
+    try {
+      skybox.rebake()
+      view.invalidateLabels()
+      guard.uncover()
+    } catch (error) {
+      onRenderCrash(error)
+    }
+  },
+})
+
+renderer.setAnimationLoop(guard.guardFrame(renderer, frame, onRenderCrash))
+
+function frame() {
   const delta = Math.min(clock.getDelta(), MAX_FRAME_DELTA)
   flight.update(delta)
   // After flight: the flight out to the overview owns the camera outright, and
@@ -167,4 +210,4 @@ renderer.setAnimationLoop(() => {
   if (settings.visuals.dust_rivers) rivers.update(delta)
   else rivers.hide()
   bloom.render() // the whole frame, stars and bloom included
-})
+}

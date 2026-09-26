@@ -66,4 +66,16 @@ describe('pointerLock.js', () => {
     lock.resume() // unpaired: ignored
     expect(controls.locks).toBe(1)
   })
+
+  it('never re-locks once disabled, and still pairs its releases', async () => {
+    const controls = fakeControls()
+    const lock = createPointerLock(controls)
+    await lock.release('panel')
+    lock.disable()
+    lock.resume()
+    expect(controls.isLocked).toBe(false)
+    await lock.release('panel')
+    lock.resume()
+    expect(controls.locks).toBe(0)
+  })
 })

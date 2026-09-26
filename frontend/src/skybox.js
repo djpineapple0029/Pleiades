@@ -268,7 +268,7 @@ export function createSkybox(renderer) {
   const group = new THREE.Group()
   group.name = 'skybox'
 
-  const cube = bakeNebula(renderer)
+  let cube = bakeNebula(renderer)
   const nebulaMaterial = new THREE.ShaderMaterial({
     uniforms: { map: { value: cube.texture } },
     vertexShader: SKY_VERTEX,
@@ -302,6 +302,14 @@ export function createSkybox(renderer) {
   }
   group.add(stars)
 
+  /** After a context loss: the cube map lived only on the GPU, so it came
+   *  back black. Bakes it again and points the sky at the new one. */
+  function rebake() {
+    cube.dispose()
+    cube = bakeNebula(renderer)
+    nebulaMaterial.uniforms.map.value = cube.texture
+  }
+
   function dispose() {
     cube.dispose()
     nebula.geometry.dispose()
@@ -310,5 +318,5 @@ export function createSkybox(renderer) {
     starMaterial.dispose()
   }
 
-  return { object: group, dispose }
+  return { object: group, rebake, dispose }
 }

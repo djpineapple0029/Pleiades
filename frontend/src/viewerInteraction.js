@@ -135,5 +135,10 @@ export function createViewerInteraction({
     controls.removeEventListener('unlock', onUnlock)
   }
 
-  return { update, dispose }
+  return {
+    update,
+    dispose,
+    /** An error from outside the frame loop, sticky on the HUD. */
+    reportError: (text) => status.error(`error: ${text}`),
+  }
 }

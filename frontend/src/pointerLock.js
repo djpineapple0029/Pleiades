@@ -19,6 +19,7 @@ export function createPointerLock(controls) {
   let resumable = false // the outermost release found the lock held
   let pendingReason = null
   let lastReason = 'manual'
+  let disabled = false // rendering has stopped: never lock onto a dead scene
 
   function onUnlock() {
     lastReason = pendingReason ?? 'manual'
@@ -46,6 +47,10 @@ export function createPointerLock(controls) {
   /** Pairs with `release`. Re-locks only if the outermost release unlocked. */
   function resume() {
     if (depth === 0) return
+    if (disabled) {
+      depth--
+      return
+    }
     depth--
     if (depth > 0 || !resumable) return
     resumable = false
@@ -60,6 +65,12 @@ export function createPointerLock(controls) {
     element.requestPointerLock()?.catch?.(() => {})
   }
 
+  /** For good: releases still pair up, but nothing re-locks afterwards. */
+  function disable() {
+    disabled = true
+    resumable = false
+  }
+
   function dispose() {
     controls.removeEventListener('unlock', onUnlock)
   }
@@ -67,6 +78,7 @@ export function createPointerLock(controls) {
   return {
     release,
     resume,
+    disable,
     dispose,
     /** Why the last unlock happened: `'panel'`, `'file'`, or `'manual'` for
      *  Esc, a lost window focus, or anything else the app didn't ask for. */

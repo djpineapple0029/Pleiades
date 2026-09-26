@@ -24,8 +24,11 @@ import { fetchSettings } from './settings.js'
 import { createKeymap } from './keymap.js'
 import { APP_ROWS, renderKeyList, renderResumePill } from './keysHelp.js'
 import { setRevealScale } from './labels.js'
+import { CONTEXT_LOST, NO_WEBGL, createCrashGuard, errorText } from './crashGuard.js'
+import { watchContextLoss } from './contextLoss.js'
 
 const MAX_FRAME_DELTA = 0.1 // seconds — clamps the jump after a backgrounded tab
+const STATUS_TICK_MS = 250 // the HUD's own clock once the frame loop has stopped
 
 const canvas = document.getElementById('viewport')
 const overlay = document.getElementById('overlay')
@@ -34,6 +37,13 @@ const notice = document.getElementById('notice')
 const resumePill = document.getElementById('resume-pill')
 const hud = document.getElementById('hud')
 const speed = document.getElementById('speed')
+const guard = createCrashGuard({
+  overlay,
+  prompt: overlay.querySelector('.prompt'),
+  keys: overlay.querySelector('.keys'),
+  notice,
+  exitPointerLock: () => document.exitPointerLock?.(),
+})
 
 // Keybinds and settings from the server's config (/admin). Defaults if the
 // server can't be reached, so a failure here never stops the app starting.
@@ -44,7 +54,16 @@ setRevealScale(visuals.label_range)
 renderKeyList(overlay.querySelector('.keys'), keymap, APP_ROWS)
 renderResumePill(resumePill, keymap)
 
-const { renderer, scene, camera, dispose: disposeScene } = createScene(canvas)
+let sceneParts
+try {
+  sceneParts = createScene(canvas)
+} catch (error) {
+  // No WebGL 2 (turned off, blocklisted, a VM): say so instead of an inviting
+  // "Click to fly" that does nothing, then stop — nothing below can run.
+  guard.showFatal(NO_WEBGL)
+  throw error
+}
+const { renderer, scene, camera, dispose: disposeScene } = sceneParts
 const skybox = createSkybox(renderer)
 scene.add(skybox.object)
 const dust = createDust()
@@ -141,7 +160,7 @@ function requestLock() {
   // field the user is typing into. In the overview a click is a drag of the
   // orbit, and taking the lock back would end the mode under the user; Tab is
   // the only way out of it.
-  if (interaction.isModal || overview.isActive) return
+  if (interaction.isModal || overview.isActive || guard.isBlocking) return
   if (!flight.controls.isLocked) flight.controls.lock()
 }
 
@@ -149,7 +168,13 @@ canvas.addEventListener('click', requestLock)
 window.addEventListener('keydown', (event) => {
   if (keymap.is(event, 'resume')) requestLock()
   // `?` swaps the small resume hint for the full key list and back.
-  if (keymap.is(event, 'help') && !flight.controls.isLocked && !interaction.isModal && !overview.isActive) {
+  if (
+    keymap.is(event, 'help') &&
+    !flight.controls.isLocked &&
+    !interaction.isModal &&
+    !overview.isActive &&
+    !guard.isBlocking
+  ) {
     const showKeys = overlay.hidden
     overlay.hidden = !showKeys
     resumePill.hidden = showKeys
@@ -159,6 +184,7 @@ window.addEventListener('keydown', (event) => {
 // Chrome refuses re-lock for ~1.25s after an Esc release; say so instead of
 // leaving the click looking broken.
 document.addEventListener('pointerlockerror', () => {
+  if (guard.isBlocking) return // a crash or context-loss notice says more
   notice.textContent = 'Pointer lock refused. Wait a moment, then click again.'
   notice.hidden = false
   // The notice lives inside the overlay, and Tab out of the overview leaves it
@@ -179,7 +205,42 @@ function updateTitle() {
   document.title = title
 }
 
-renderer.setAnimationLoop(() => {
+// Rendering has stopped for good, but the map is intact in memory and every
+// key listener still works: tell the user to save it. The HUD's messages keep
+// ticking on their own, so that save can still say how it went.
+let statusTimer = null
+function onRenderCrash(error) {
+  guard.showFatal(
+    `Rendering stopped: ${errorText(error)}. Your map is still in memory — ` +
+      `press ${keymap.label('save')} to save it, then reload.`,
+  )
+  lock.disable()
+  statusTimer = setInterval(interaction.tickStatus, STATUS_TICK_MS)
+}
+
+// Anything thrown outside the frame loop (a file flow nobody awaited, a
+// listener) lands on the HUD rather than only in the console.
+const removeGlobalHandlers = guard.installGlobalHandlers(interaction.reportError)
+
+// three restores its own state; the two things that only ever lived on the GPU
+// are rebuilt here. The notice covers the gap, which is usually a blink.
+const stopWatchingContext = watchContextLoss(canvas, {
+  onLost: () => guard.cover(CONTEXT_LOST),
+  onRestored: () => {
+    if (guard.isFatal) return
+    try {
+      skybox.rebake()
+      view.invalidateLabels()
+      guard.uncover()
+    } catch (error) {
+      onRenderCrash(error)
+    }
+  },
+})
+
+renderer.setAnimationLoop(guard.guardFrame(renderer, frame, onRenderCrash))
+
+function frame() {
   const delta = Math.min(clock.getDelta(), MAX_FRAME_DELTA)
   flight.update(delta)
   // After flight: the flight out to the overview owns the camera outright, and
@@ -209,7 +270,7 @@ renderer.setAnimationLoop(() => {
   }
   bloom.render() // the whole frame, stars and bloom included
   updateTitle()
-})
+}
 
 // Skipped under HMR: without this, every dev-time module reload would trip
 // the same "you have unsaved changes" prompt the real close of a dirty tab
@@ -225,6 +286,9 @@ if (!import.meta.hot) {
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     renderer.setAnimationLoop(null)
+    clearInterval(statusTimer)
+    removeGlobalHandlers()
+    stopWatchingContext()
     physics.stop()
     overview.dispose()
     interaction.dispose()
