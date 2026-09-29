@@ -134,6 +134,7 @@ describe('defaults fill in for a thin payload', () => {
   it('links defaults', () => expect(Array.isArray(thin.links) && thin.links.length === 0).toBe(true))
   it('cluster_color_id defaults', () => expect(thin.cluster_color_id).toBe(0))
   it('is_core defaults', () => expect(thin.is_core).toBe(false))
+  it('is_nexus defaults', () => expect(thin.is_nexus).toBe(false))
 
   g6.load({ nodes: [], edges: [] })
   const emptyPayloadLoads = g6.nodes.size === 0 && g6.edges.size === 0
@@ -354,4 +355,44 @@ describe('blend (the faded cluster colour a Balance leaves)', () => {
   c.recluster()
   it('the next recluster drops every blend', () =>
     expect(ids.every((id) => c.getNode(id).blend === null)).toBe(true))
+})
+
+describe('nexus flag', () => {
+  const g = createGraph()
+  const a = g.addNode({ x: 0, y: 0, z: 0 })
+  g.setCore(a.id, true)
+  const rev = g.revision
+  g.setNexus(a.id, true)
+  it('making a nexus clears core and bumps revision', () => {
+    expect(g.getNode(a.id).is_nexus).toBe(true)
+    expect(g.getNode(a.id).is_core).toBe(false)
+    expect(g.revision).toBeGreaterThan(rev)
+  })
+  it('marking core clears nexus', () => {
+    const h = createGraph()
+    const n = h.addNode({ x: 0, y: 0, z: 0 })
+    h.setNexus(n.id, true)
+    h.setCore(n.id, true)
+    expect([h.getNode(n.id).is_core, h.getNode(n.id).is_nexus]).toEqual([true, false])
+  })
+  it('round-trips through a payload', () => {
+    const h = createGraph()
+    h.load(g.toPayload())
+    expect(h.getNode(a.id).is_nexus).toBe(true)
+  })
+  it('a file with both flags loads as a nexus', () => {
+    const h = createGraph()
+    h.load({ nodes: [{ id: 'n1', x: 0, y: 0, z: 0, is_core: true, is_nexus: true }], edges: [] })
+    expect([h.getNode('n1').is_core, h.getNode('n1').is_nexus]).toEqual([false, true])
+  })
+  it('a non-boolean is_nexus reads as false', () => {
+    const h = createGraph()
+    h.load({ nodes: [{ id: 'n1', x: 0, y: 0, z: 0, is_nexus: 'yes' }], edges: [] })
+    expect(h.getNode('n1').is_nexus).toBe(false)
+  })
+  it('addEdge can make a directed link', () => {
+    const h = createGraph()
+    const [p, q] = [h.addNode({ x: 0, y: 0, z: 0 }), h.addNode({ x: 1, y: 0, z: 0 })]
+    expect(h.addEdge(p.id, q.id, { directed: true }).directed).toBe(true)
+  })
 })

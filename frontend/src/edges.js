@@ -23,6 +23,21 @@ const EDGE_COLOR = new THREE.Color(0x557aa3)
 const EDGE_HOVER_COLOR = new THREE.Color(0xffbe6b)
 const MOTE_COLOR = new THREE.Color(0xa9c8ea)
 
+// Connection heat (`heat.js`): each end of a line takes its own star's heat and
+// the colour runs between them, so a link from a hub to a lone star is hot at
+// the hub's end. Cool is the plain edge colour, so a quiet map looks as it
+// always did; hot runs through violet and magenta to a coral red. Yellow and
+// amber are left out: amber is the hover colour.
+const HEAT_RAMP = [0x557aa3, 0x8a6ad6, 0xd455b4, 0xff5a4f].map((hex) => new THREE.Color(hex))
+// A hot line is also stronger and fogs out less, so the busy parts of a map
+// still read from the overview.
+const HEAT_OPACITY_GAIN = 0.25
+const HEAT_FOG_FLOOR = 0.55
+// Seconds for heat to ease on or off, and for a focus to settle.
+const LOOK_EASE = 0.15
+// Click-to-focus: a line outside the focus keeps this much of its light.
+const FOCUS_DIM = 0.1
+
 // Depth fog. It runs across the map's own depth as seen from the camera —
 // the near and far side of the edges' bounding sphere — rather than a fixed
 // range, so the near half of the map reads over the far half from inside it
@@ -61,13 +76,29 @@ const EDGE_DEFINES = {
   EDGE_MIN_WIDTH: glslFloat(EDGE_MIN_WIDTH),
   EDGE_HOVER_WIDTH: glslFloat(EDGE_HOVER_WIDTH),
   FOG_FLOOR: glslFloat(FOG_FLOOR),
+  HEAT_FOG_FLOOR: glslFloat(HEAT_FOG_FLOOR),
+  HEAT_OPACITY_GAIN: glslFloat(HEAT_OPACITY_GAIN),
   END_CLEAR: glslFloat(END_CLEAR),
   END_FULL: glslFloat(END_FULL),
 }
 
+// Shared by the lines and the motes: the ramp, from HEAT_RAMP's four stops.
+const HEAT_GLSL = /* glsl */ `
+uniform vec3 heatRamp[4];
+vec3 heatColour(float t) {
+  float x = clamp(t, 0.0, 1.0) * 3.0;
+  if (x < 1.0) return mix(heatRamp[0], heatRamp[1], x);
+  if (x < 2.0) return mix(heatRamp[1], heatRamp[2], x - 1.0);
+  return mix(heatRamp[2], heatRamp[3], x - 2.0);
+}
+`
+
 // Every edge instance carries instanceStart/instanceEnd (shared with the drift
-// motes) and instanceEdge = [from radius, to radius, drift phase, seed], seed
-// in [0, 1) plus 1 for a directed edge. gl_InstanceID is the edge's index.
+// motes), instanceEdge = [from radius, to radius, drift phase, seed], seed
+// in [0, 1) plus 1 for a directed edge, and instanceLook = [heat at the from
+// end, heat at the to end, focus light, focus lift]: light is 1, or down to
+// FOCUS_DIM outside a focus, and lift is 1 inside one, where the line ignores
+// distance the way a hovered line does. gl_InstanceID is the edge's index.
 
 // three's screen-space line shader (LineMaterial, `worldUnits` off) with a
 // width that follows distance, and with everything needed to fade the edge
@@ -82,7 +113,9 @@ uniform float hovered; // index of the hovered edge, or -1
 attribute vec3 instanceStart;
 attribute vec3 instanceEnd;
 attribute vec4 instanceEdge;
+attribute vec4 instanceLook;
 varying vec2 vUv;
+varying vec4 vLook;
 varying vec3 vView; // the point on the edge, in view space
 varying float vAlong; // world distance from the start
 varying float vLength;
@@ -103,6 +136,7 @@ void trimSegment(const in vec4 start, inout vec4 end) {
 void main() {
   vHover = float(gl_InstanceID) == hovered ? 1.0 : 0.0;
   vRadii = instanceEdge.xy;
+  vLook = instanceLook;
   vUv = uv;
   float aspect = resolution.x / resolution.y;
 
@@ -151,8 +185,11 @@ const EDGE_FRAGMENT = /* glsl */ `
 uniform vec3 diffuse;
 uniform vec3 hoverColor;
 uniform float opacity;
+uniform float heat; // 1 with connection heat on, 0 off, easing between
 uniform vec2 fogRange; // distances from the camera where the fog starts and bottoms out
+${HEAT_GLSL}
 varying vec2 vUv;
+varying vec4 vLook;
 varying vec3 vView;
 varying float vAlong;
 varying float vLength;
@@ -167,12 +204,19 @@ void main() {
   // softened: taken as is, a whole map seen from outside loses its web.
   float trueWidth = EDGE_WORLD_WIDTH * vPxScale / max(-vView.z, 1e-3);
   float coverage = sqrt(min(1.0, trueWidth / EDGE_MIN_WIDTH));
-  float fog = mix(1.0, FOG_FLOOR, smoothstep(fogRange.x, fogRange.y, length(vView)));
+  // This point's heat, between its two ends' (see HEAT_RAMP).
+  float h = heat * mix(vLook.x, vLook.y, clamp(vAlong / max(vLength, 1e-3), 0.0, 1.0));
+  float floorLevel = mix(FOG_FLOOR, HEAT_FOG_FLOOR, h);
+  float fog = mix(1.0, floorLevel, smoothstep(fogRange.x, fogRange.y, length(vView)));
   float ends = smoothstep(END_CLEAR * vRadii.x, END_FULL * vRadii.x, vAlong)
     * smoothstep(END_CLEAR * vRadii.y, END_FULL * vRadii.y, vLength - vAlong);
 
-  float alpha = opacity * ends * mix(coverage * fog, 1.0, vHover);
-  gl_FragColor = vec4(mix(diffuse, hoverColor, vHover), alpha);
+  float lift = max(vHover, vLook.w);
+  float strength = min(1.0, opacity * (1.0 + HEAT_OPACITY_GAIN * h));
+  float alpha = strength * ends * vLook.z * mix(coverage * fog, 1.0, lift);
+  // The ramp's cool end is the plain edge colour (diffuse), so no heat at all
+  // looks exactly as before.
+  gl_FragColor = vec4(mix(heatColour(h), hoverColor, vHover), alpha);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
@@ -197,9 +241,12 @@ uniform float hovered;
 uniform vec3 moteColor;
 uniform vec3 hoverColor;
 uniform float dim; // 1 normally; lower while a search dims the map
+uniform float heat; // as for the lines
+${HEAT_GLSL}
 attribute vec3 instanceStart;
 attribute vec3 instanceEnd;
 attribute vec4 instanceEdge;
+attribute vec4 instanceLook;
 varying vec3 vColor;
 
 float hash12(vec2 p) {
@@ -240,8 +287,11 @@ void main() {
   float hover = float(gl_InstanceID) == hovered ? 1.0 : 0.0;
 
   float light = present * ends * (0.55 + 0.45 * hash12(vec2(seed * 97.0, slot)));
-  light *= mix(fog * coverage * coverage, 1.0, hover) * dim;
-  vColor = mix(moteColor, hoverColor, hover) * light;
+  light *= mix(fog * coverage * coverage, 1.0, max(hover, instanceLook.w)) * dim * instanceLook.z;
+  // A mote on a hot line carries a lighter shade of the line's heat.
+  float h = heat * mix(instanceLook.x, instanceLook.y, t);
+  vec3 mote = mix(moteColor, mix(heatColour(h), vec3(1.0), 0.35), smoothstep(0.1, 0.5, h));
+  vColor = mix(mote, hoverColor, hover) * light;
   gl_PointSize = drawn * pixelRatio;
   gl_Position = projectionMatrix * view;
   // Outside the clip volume: no fragments for a mote that would add nothing.
@@ -289,6 +339,11 @@ export function createEdges(graph, parent, renderer, radiusOf) {
   Object.assign(lineMaterial.defines, EDGE_DEFINES)
   lineMaterial.uniforms.hovered = hovered
   lineMaterial.uniforms.hoverColor = hoverColor
+  // Shared with the motes, like `hovered`.
+  const heatUniform = { value: 1 }
+  const heatRamp = { value: HEAT_RAMP }
+  lineMaterial.uniforms.heat = heatUniform
+  lineMaterial.uniforms.heatRamp = heatRamp
   lineMaterial.uniforms.fogRange = { value: new THREE.Vector2(FOG_NEAR_MIN, FOG_NEAR_MIN + FOG_SPAN_MIN) }
   // LineSegments2.onBeforeRender keeps this at the viewport size, in CSS px,
   // from the first frame on; seeded so a raycast before then still lands.
@@ -322,6 +377,8 @@ export function createEdges(graph, parent, renderer, radiusOf) {
       moteColor: { value: MOTE_COLOR },
       hoverColor,
       dim: { value: 1 },
+      heat: heatUniform,
+      heatRamp,
     },
     defines: DRIFT_DEFINES,
     vertexShader: DRIFT_VERTEX,
@@ -354,6 +411,11 @@ export function createEdges(graph, parent, renderer, radiusOf) {
   let edgeAttribute = null
   let phases = new Float64Array(0) // drift phase, in double precision on the CPU
   let hoverId = null
+  let look = new Float32Array(0) // per edge: heat from, heat to, focus light, focus lift
+  let lookAttribute = null
+  let heatOn = true
+  let focusIds = null // edge ids a focus keeps lit, or null
+  let lookEasing = false
 
   function writeEndpoints() {
     for (let i = 0; i < order.length; i++) {
@@ -379,6 +441,57 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     edgeAttribute.needsUpdate = true
   }
 
+  /** Each end's heat from `graph.heatOf`. Call when the graph's revision moves. */
+  function writeHeat() {
+    if (!lookAttribute) return
+    for (let i = 0; i < order.length; i++) {
+      look[i * 4] = graph.heatOf(fromIds[i])
+      look[i * 4 + 1] = graph.heatOf(toIds[i])
+    }
+    lookAttribute.needsUpdate = true
+  }
+
+  const focusLight = (id) => (!focusIds || focusIds.has(id) ? 1 : FOCUS_DIM)
+  const focusLift = (id) => (focusIds?.has(id) ? 1 : 0)
+
+  /** Every edge's focus straight to its target, for a fresh geometry. */
+  function snapFocus() {
+    for (let i = 0; i < order.length; i++) {
+      look[i * 4 + 2] = focusLight(order[i])
+      look[i * 4 + 3] = focusLift(order[i])
+    }
+  }
+
+  /** One frame of heat on/off and the focus closing on their targets. */
+  function easeLook(dt) {
+    const keep = Math.exp(-dt / LOOK_EASE)
+    const close = (from, to) => {
+      const next = to + (from - to) * keep
+      return Math.abs(next - to) < 1 / 512 ? to : next
+    }
+    let moving = false
+    const heatWanted = heatOn ? 1 : 0
+    if (heatUniform.value !== heatWanted) {
+      heatUniform.value = close(heatUniform.value, heatWanted)
+      moving ||= heatUniform.value !== heatWanted
+    }
+    let changed = false
+    for (let i = 0; i < order.length; i++) {
+      for (const [k, wanted] of [
+        [2, focusLight(order[i])],
+        [3, focusLift(order[i])],
+      ]) {
+        const o = i * 4 + k
+        if (look[o] === wanted) continue
+        look[o] = close(look[o], wanted)
+        moving ||= look[o] !== wanted
+        changed = true
+      }
+    }
+    if (changed && lookAttribute) lookAttribute.needsUpdate = true
+    return moving
+  }
+
   function resolveHover() {
     hovered.value = hoverId === null ? -1 : order.indexOf(hoverId)
   }
@@ -397,6 +510,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     const oldDrift = drift.geometry
     positions = new Float32Array(count * 6)
     edgeData = new Float32Array(count * 4)
+    look = new Float32Array(count * 4)
     phases = new Float64Array(count)
     for (let i = 0; i < count; i++) {
       phases[i] = previous.get(order[i]) ?? 0
@@ -415,6 +529,9 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     edgeAttribute = new THREE.InstancedBufferAttribute(edgeData, 4)
     edgeAttribute.setUsage(THREE.DynamicDrawUsage) // the drift phase moves every frame
     lineGeometry.setAttribute('instanceEdge', edgeAttribute)
+    lookAttribute = new THREE.InstancedBufferAttribute(look, 4)
+    lookAttribute.setUsage(THREE.DynamicDrawUsage)
+    lineGeometry.setAttribute('instanceLook', lookAttribute)
 
     // The motes read the lines' own endpoint buffer: one upload serves both.
     const driftGeometry = new THREE.InstancedBufferGeometry()
@@ -422,6 +539,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     driftGeometry.setAttribute('instanceStart', lineGeometry.getAttribute('instanceStart'))
     driftGeometry.setAttribute('instanceEnd', lineGeometry.getAttribute('instanceEnd'))
     driftGeometry.setAttribute('instanceEdge', edgeAttribute)
+    driftGeometry.setAttribute('instanceLook', lookAttribute)
     driftGeometry.instanceCount = count
 
     lines.geometry = lineGeometry
@@ -432,6 +550,8 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     oldLines.dispose()
     oldDrift.dispose()
     writeRadii()
+    writeHeat()
+    snapFocus()
 
     lines.visible = drift.visible = count > 0
   }
@@ -447,8 +567,9 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     lines.geometry.computeBoundingSphere()
   }
 
-  /** Advances the drift by `dt` seconds. */
+  /** Advances the drift by `dt` seconds, and eases heat and focus. */
   function update(dt) {
+    if (lookEasing && dt > 0) lookEasing = easeLook(dt)
     if (order.length === 0 || dt <= 0) return
     for (let i = 0; i < order.length; i++) {
       const o = i * 6
@@ -495,5 +616,33 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     driftMaterial.uniforms.dim.value = level
   }
 
-  return { sync, updatePositions, writeRadii, update, setHovered, setDim, raycast, dispose }
+  /** Connection heat colours on or off, easing unless `instant`. */
+  function setHeat(on, { instant = false } = {}) {
+    heatOn = Boolean(on)
+    if (instant) heatUniform.value = heatOn ? 1 : 0
+    lookEasing = true
+  }
+
+  /** Edge ids a click-to-focus keeps lit (a Set), dimming every other; null for none. */
+  function setFocus(ids) {
+    focusIds = ids ?? null
+    lookEasing = true
+  }
+
+  return {
+    sync,
+    updatePositions,
+    writeRadii,
+    writeHeat,
+    update,
+    setHovered,
+    setDim,
+    setHeat,
+    setFocus,
+    raycast,
+    dispose,
+    get heatOn() {
+      return heatOn
+    },
+  }
 }

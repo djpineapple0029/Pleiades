@@ -5,6 +5,11 @@ import { NODE_RADIUS } from './graphView.js'
 // Bigger nodes rest further apart; see `seed`.
 const LINK_DISTANCE = 60
 const CHARGE = -70 // node-to-node repulsion; negative repels
+// A nexus is a joint several stars share, not one more star: its links rest
+// this much shorter and it pushes with this share of CHARGE, so the stars on
+// it gather round it instead of being held apart by it.
+const NEXUS_LINK_SCALE = 0.6
+const NEXUS_CHARGE_SCALE = 0.5
 // Past this range repulsion is ignored, so disconnected components drift to a
 // readable gap and stop instead of expanding forever.
 const CHARGE_RANGE = 350
@@ -196,7 +201,13 @@ export function createPhysics(graph, view) {
     .alphaMin(ALPHA_MIN)
     .alphaDecay(ALPHA_DECAY)
     .force('link', linkForce)
-    .force('charge', forceManyBody().strength(CHARGE).distanceMax(CHARGE_RANGE).theta(CHARGE_THETA))
+    .force(
+      'charge',
+      forceManyBody()
+        .strength((body) => body.charge)
+        .distanceMax(CHARGE_RANGE)
+        .theta(CHARGE_THETA),
+    )
     .force('collide', forceCollide((body) => body.collide).iterations(COLLIDE_ITERATIONS))
     .force('cluster', forceCluster())
     .force('edgeRepel', edgeRepelForce)
@@ -223,6 +234,8 @@ export function createPhysics(graph, view) {
       // Before `simulation.nodes()` below, which is when forceCollide reads it.
       // The target size, not the one the view is still easing toward.
       body.collide = COLLIDE_RADIUS * graph.sizeOf(node.id)
+      body.nexus = node.is_nexus === true
+      body.charge = body.nexus ? CHARGE * NEXUS_CHARGE_SCALE : CHARGE
       // Read fresh every tick by forceCluster, so unlike `collide` this one is
       // not tied to when the simulation is handed its nodes.
       body.cluster = node.cluster_color_id
@@ -241,16 +254,21 @@ export function createPhysics(graph, view) {
     // A link rests as far beyond LINK_DISTANCE as its endpoints' collision
     // shells are beyond base size, so the gap between two shells is the same
     // for any pair. A flat length would have collide shoving a core node's
-    // neighbours out while the spring pulls them straight back in.
+    // neighbours out while the spring pulls them straight back in. A link to
+    // a nexus is shorter again (NEXUS_LINK_SCALE).
     linkForce.links([])
     simulation.nodes(active)
     linkForce.links(
-      [...graph.edges.values()].map((edge) => ({
-        source: edge.from,
-        target: edge.to,
-        distance:
-          LINK_DISTANCE + bodies.get(edge.from).collide + bodies.get(edge.to).collide - 2 * COLLIDE_RADIUS,
-      })),
+      [...graph.edges.values()].map((edge) => {
+        const from = bodies.get(edge.from)
+        const to = bodies.get(edge.to)
+        const rest = LINK_DISTANCE + from.collide + to.collide - 2 * COLLIDE_RADIUS
+        return {
+          source: edge.from,
+          target: edge.to,
+          distance: from.nexus || to.nexus ? rest * NEXUS_LINK_SCALE : rest,
+        }
+      }),
     )
     // Self-loops have no midpoint distinct from their one endpoint and would
     // repel nothing; every real edge becomes one [bodyA, bodyB] pair. Shares

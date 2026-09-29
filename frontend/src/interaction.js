@@ -4,6 +4,7 @@ import { createStatus } from './status.js'
 import { createHistory } from './history.js'
 import { createCommands } from './commands.js'
 import { rankNodes } from './search.js'
+import { focusSetOf } from './heat.js'
 import { FLY_DURATION } from './flyTo.js'
 import { createKeymap } from './keymap.js'
 
@@ -18,20 +19,40 @@ const SEARCH_ROWS = 8
 // Poses kept for Backspace to fly back through.
 const MAX_JUMPS = 20
 
-// Clockwise from the top. The core toggle takes the bottom wedge: the side
-// wedges are too narrow for its label, and Edit and Delete keep the sides they
-// had in the three-wedge menu.
-const nodeMenu = (node) => [
+// Clockwise from the top. The type wedge takes the bottom-left: the side
+// wedges are too narrow for a long label, and Edit and Delete keep the sides
+// they had in the three-wedge menu. Five wedges, not six, on purpose: with six
+// a flick straight right lands on the border between Edit and Move.
+const NODE_MENU = [
   { key: 'connect', label: 'Connect' },
   { key: 'edit', label: 'Edit' },
   { key: 'move', label: 'Move' },
-  { key: 'core', label: node.is_core ? 'Unmark core' : 'Mark core' },
+  { key: 'type', label: 'Type…' },
   { key: 'delete', label: 'Delete' },
 ]
 
+// What a star is: plain, a core, or a nexus (a small shared connection point
+// several stars link through). One sub-ring, the way More… is one for the
+// map, naming the types themselves — short enough for any wedge — with the
+// current one ticked. Picking one makes the star that type.
+const typeOf = (node) => (node.is_core ? 'core' : node.is_nexus ? 'nexus' : 'star')
+const TYPE_MENU = (node) =>
+  [
+    { key: 'star', label: 'Star' },
+    { key: 'core', label: 'Core' },
+    { key: 'nexus', label: 'Nexus' },
+  ]
+    .map((item) => (item.key === typeOf(node) ? { ...item, label: `${item.label} ✓` } : item))
+    .concat({ key: 'back', label: 'Back' })
+
+// Four wedges so Edit stays up and Delete down, as they were with two. Add
+// nexus splits the link with a nexus at its middle, for more stars to share;
+// Focus lights both of its stars' connections.
 const EDGE_MENU = [
   { key: 'edit', label: 'Edit' },
+  { key: 'split', label: 'Add nexus' },
   { key: 'delete', label: 'Delete' },
+  { key: 'focus', label: 'Focus' },
 ]
 
 // Right-click on empty space: no node/edge under the crosshair.
@@ -119,7 +140,7 @@ export function createInteraction({
   let moveDistance = 0 // camera-to-node distance captured when the move started
   const lastGhostPoint = new THREE.Vector3()
   let menuTarget = null
-  let dwellKey = null // submenu wedge ('more' or 'back') currently being held
+  let dwellKey = null // submenu wedge ('more', 'type' or 'back') currently being held
   let dwellSince = 0
   let lastLeftDown = 0
   let lastSpeedText = null
@@ -131,6 +152,11 @@ export function createInteraction({
   // right before it's replaced.
   let loading = false
   let sidebarKey = null // what the notes sidebar last showed: `${id}:${contentRevision}`
+  // Click-to-focus: `{ kind, id }` of the star (or link) whose connections
+  // alone stay lit, or null. Re-walked whenever the graph's revision moves, so
+  // a link made or cut shows at once.
+  let focusTarget = null
+  let focusRevision = -1
   // Camera poses from before each search jump, newest last, for Backspace.
   const jumps = []
   const swatch = new THREE.Color()
@@ -150,7 +176,9 @@ export function createInteraction({
     if (!target) return null
     if (target.kind === 'node') {
       const node = graph.getNode(target.id)
-      return node && `node ${nodeName(node)} · ${graph.degree(node.id)} links${node.is_core ? ' · core' : ''}`
+      if (!node) return null
+      if (node.is_nexus) return `nexus ${nodeName(node)} · joins ${graph.connectionsOf(node.id).size}`
+      return `node ${nodeName(node)} · ${graph.degree(node.id)} links${node.is_core ? ' · core' : ''}`
     }
     const edge = graph.getEdge(target.id)
     if (!edge) return null
@@ -187,8 +215,11 @@ export function createInteraction({
       // Unlocked there is no crosshair to describe, but the fallback still
       // says what's open, behind the overlay.
       const described = controls.isLocked && describe(hover)
+      const focused = focusLine()
       if (described) {
         text = described
+      } else if (focused) {
+        text = focused
       } else {
         const dirty = files.isDirty ? ' · unsaved' : ''
         text = `${files.filename}${dirty} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`
@@ -214,8 +245,36 @@ export function createInteraction({
     speedEl.textContent = speedText
   }
 
+  /**
+   * Focuses a star or a link (`{ kind, id }`): only its connections stay lit
+   * and named. null, or a target that no longer exists, clears the focus.
+   */
+  function setFocus(target) {
+    focusRevision = graph.revision
+    const lit = target && focusSetOf(graph, target)
+    focusTarget = lit ? target : null
+    view.setFocus(lit || null)
+  }
+
+  function focusLine() {
+    if (!focusTarget) return null
+    const clear = 'click empty space to clear'
+    if (focusTarget.kind === 'edge') return `focus ${describe(focusTarget)} · ${clear}`
+    const node = graph.getNode(focusTarget.id)
+    const count = graph.connectionsOf(node.id).size
+    return `focus ${nodeName(node)} · ${count} connection${count === 1 ? '' : 's'} · ${clear}`
+  }
+
+  /** A click on the star or link under the crosshair focuses it; on it again, or on empty space, clears. */
+  function clickFocus() {
+    if (!hover) setFocus(null)
+    else setFocus(sameTarget(hover, focusTarget) ? null : hover)
+  }
+
   function update() {
     updateSpeedReadout()
+    // A delete, a new link, a nexus flag: re-walk (or drop) the focus.
+    if (focusTarget && graph.revision !== focusRevision) setFocus(focusTarget)
 
     if (mode === 'idle' || mode === 'connecting' || mode === 'moving') {
       if (!controls.isLocked) {
@@ -258,11 +317,11 @@ export function createInteraction({
       }
     }
 
-    if (mode === 'menu' && menuTarget?.kind === 'map') {
+    const submenuKey = mode === 'menu' ? submenuKeyOf(menuTarget) : null
+    if (submenuKey) {
       // Held on the ring's submenu wedge without releasing: charge, then
       // auto-swap. A quick arm-then-release still swaps instantly through
       // the ordinary key dispatch in closeMenu — this only covers staying.
-      const submenuKey = menuTarget.ring === 'top' ? 'more' : 'back'
       if (menu.armed === submenuKey) {
         if (dwellKey !== submenuKey) {
           dwellKey = submenuKey
@@ -271,7 +330,7 @@ export function createInteraction({
         } else if (performance.now() - dwellSince >= SUBMENU_DWELL_MS) {
           dwellKey = null
           menu.charge(false)
-          openMapMenu(menuTarget.ring === 'top' ? 'more' : 'top')
+          swapRing(menuTarget)
         }
       } else if (dwellKey !== null) {
         dwellKey = null
@@ -706,7 +765,7 @@ export function createInteraction({
       label: hit.label,
       mark: hit.mark,
       swatch: colour,
-      meta: hit.isCore ? `core · ${links}` : links,
+      meta: hit.isCore ? `core · ${links}` : graph.getNode(hit.id)?.is_nexus ? `nexus · ${links}` : links,
     }
   }
 
@@ -783,17 +842,31 @@ export function createInteraction({
     flyTo.toPose(pose.position, pose.quaternion, renderSettings.reducedMotion ? 0 : FLY_DURATION, endModal)
   }
 
-  /** Poses from one map mean nothing in another. */
+  /** Poses and a focus from one map mean nothing in another. */
   function forgetJumps() {
     jumps.length = 0
+    setFocus(null)
   }
 
-  function openMenu(target) {
+  function openMenu(target, ring = 'top') {
     if (!describe(target)) return
-    menuTarget = target
+    menuTarget = { kind: target.kind, id: target.id, ring }
     mode = 'menu'
-    beginModal()
-    menu.open(target.kind === 'node' ? nodeMenu(graph.getNode(target.id)) : EDGE_MENU)
+    beginModal() // idempotent if already modal from the ring we're leaving
+    if (target.kind === 'edge') menu.open(EDGE_MENU)
+    else menu.open(ring === 'top' ? NODE_MENU : TYPE_MENU(graph.getNode(target.id)))
+  }
+
+  /** The wedge that swaps a ring for its other one, or null for a ring with none. */
+  function submenuKeyOf(target) {
+    if (target?.kind === 'map') return target.ring === 'top' ? 'more' : 'back'
+    if (target?.kind === 'node') return target.ring === 'top' ? 'type' : 'back'
+    return null
+  }
+
+  function swapRing(target) {
+    if (target.kind === 'map') openMapMenu(target.ring === 'top' ? 'more' : 'top')
+    else openMenu(target, target.ring === 'top' ? 'type' : 'top')
   }
 
   // `ring` re-opens the widget with a different item array rather than
@@ -832,18 +905,24 @@ export function createInteraction({
     if (target.kind === 'node') {
       const node = graph.getNode(target.id)
       if (!node) return
+      if (key === 'type' || key === 'back') return swapRing(target)
+      const hit = { kind: 'node', id: node.id }
       if (key === 'connect') startConnect(node.id)
-      else if (key === 'edit') editTitle(target)
+      else if (key === 'edit') editTitle(hit)
       else if (key === 'move') startMove(node.id)
-      else if (key === 'core') commands.toggleCore(node.id)
+      else if (key === 'star' || key === 'core' || key === 'nexus') commands.setType(node.id, key)
       else if (key === 'delete') deleteNode(node.id)
       return
     }
 
     const edge = graph.getEdge(target.id)
     if (!edge) return
-    if (key === 'edit') editTitle(target)
-    else if (key === 'delete') {
+    if (key === 'edit') editTitle({ kind: 'edge', id: edge.id })
+    else if (key === 'focus') setFocus({ kind: 'edge', id: edge.id })
+    else if (key === 'split') {
+      commands.splitEdge(edge.id)
+      clearHover()
+    } else if (key === 'delete') {
       commands.deleteEdge(edge.id)
       clearHover()
     }
@@ -880,8 +959,15 @@ export function createInteraction({
     // so you can stack a sphere on top of another. Mid-connection it only spawns
     // in open space (that is how a chain gets built: drop the far end, click to
     // link); a double-click onto a node there confirms the link instead.
-    if (isDouble && (mode === 'idle' || !hover)) spawnNode()
-    else if (mode === 'connecting') confirmConnect()
+    if (isDouble && (mode === 'idle' || !hover)) {
+      // A new star belongs to no focus, and would only appear dimmed in one.
+      if (mode === 'idle') setFocus(null)
+      spawnNode()
+    } else if (mode === 'connecting') confirmConnect()
+    // A single click, idle: focus the star or link under the crosshair, or
+    // clear the focus on it again or on empty space. The first click of a double-click
+    // lands here too, which is harmless: the spawn still follows.
+    else if (mode === 'idle' && !isDouble) clickFocus()
   }
 
   function onMouseUp(event) {
@@ -968,6 +1054,11 @@ export function createInteraction({
     if (is('notes_sidebar') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
       sidebar.toggle()
       sidebarKey = null
+    }
+
+    if (is('heat') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
+      view.setHeat(!view.heatOn)
+      status.info(`connection heat ${view.heatOn ? 'on' : 'off'}`)
     }
 
     if (event.key === 'Escape') {

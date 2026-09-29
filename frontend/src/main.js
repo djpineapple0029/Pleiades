@@ -23,7 +23,7 @@ import { createFlyTo } from './flyTo.js'
 import { fetchSettings } from './settings.js'
 import { createKeymap } from './keymap.js'
 import { APP_ROWS, renderKeyList, renderResumePill } from './keysHelp.js'
-import { setRevealScale } from './labels.js'
+import { setRevealScale, setLabelTarget } from './labels.js'
 import { CONTEXT_LOST, NO_WEBGL, createCrashGuard, errorText } from './crashGuard.js'
 import { watchContextLoss } from './contextLoss.js'
 
@@ -51,6 +51,7 @@ const settings = await fetchSettings(`${import.meta.env.BASE_URL}api/config`)
 const keymap = createKeymap(settings.keybinds)
 const { visuals } = settings
 setRevealScale(visuals.label_range)
+setLabelTarget(visuals.label_count)
 renderKeyList(overlay.querySelector('.keys'), keymap, APP_ROWS)
 renderResumePill(resumePill, keymap)
 
@@ -78,6 +79,7 @@ camera.position.set(0, 0, 260)
 
 const graph = createGraph()
 const view = createGraphView(graph, scene, renderer)
+view.setHeat(visuals.connection_heat, { instant: true })
 const rivers = createDustRivers(graph, scene, { radiusOf: view.radiusOf })
 const supernova = createSupernova(scene)
 const physics = createPhysics(graph, view)

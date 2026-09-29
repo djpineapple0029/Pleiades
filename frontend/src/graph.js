@@ -12,7 +12,9 @@
  * Node sizes are derived, not stored: `sizeOf` reads a cache that every
  * mutation below throws away, so nothing outside this module has to remember
  * to recompute them. `is_core` is one of their inputs, which is why it changes
- * through `setCore` rather than by assignment.
+ * through `setCore` rather than by assignment. `is_nexus` is the other input —
+ * a small shared connection point rather than a star — and changes through
+ * `setNexus` for the same reason. A node is never both.
  *
  * `cluster_color_id` is the other way round — it *is* stored, because it has to
  * survive a re-partition and a reopen to stay stable (see `clustering.js`).
@@ -27,6 +29,7 @@
 import { computeSizes } from './sizing.js'
 import { computeClusters } from './clustering.js'
 import { computeBlend } from './colorBlend.js'
+import { computeHeat, reach, focusOf as walkFocus } from './heat.js'
 import { migrate, PayloadError } from './format/schema.js'
 
 /** Thrown by `load` when a decrypted payload is not a graph. */
@@ -43,6 +46,7 @@ const NODE_KEYS = new Set([
   'cluster_color_id',
   'blend',
   'is_core',
+  'is_nexus',
 ])
 const EDGE_KEYS = new Set(['id', 'from', 'to', 'directed', 'label'])
 // What d3-force stamps on whatever it simulates. Physics runs on proxies, so
@@ -115,12 +119,14 @@ export function createGraph() {
   let contentRevision = 0
   let contentSeq = 0
   let sizes = null // id -> size multiplier, rebuilt on demand
+  let heat = null // id -> connection heat 0..1 (`heat.js`), rebuilt on demand
   let clusterCount = 0 // communities that earned a colour in the last run
 
   function changed() {
     revision++
     contentRevision = ++contentSeq
     sizes = null
+    heat = null
   }
 
   /** Bumps only contentRevision — for a change that's worth saving but has no
@@ -152,6 +158,7 @@ export function createGraph() {
       cluster_color_id: 0,
       blend: null,
       is_core: false,
+      is_nexus: false,
     }
     nodes.set(id, node)
     incident.set(id, new Set())
@@ -159,8 +166,11 @@ export function createGraph() {
     return node
   }
 
-  /** Returns the new edge, or null if it is a self-loop or already exists. */
-  function addEdge(fromId, toId) {
+  /**
+   * Returns the new edge, or null if it is a self-loop or already exists.
+   * `directed` runs it from→to.
+   */
+  function addEdge(fromId, toId, { directed = false } = {}) {
     if (fromId === toId) return null
     if (!nodes.has(fromId) || !nodes.has(toId)) return null
     for (const edgeId of incident.get(fromId)) {
@@ -169,7 +179,7 @@ export function createGraph() {
     }
 
     const id = mintId('e', edges, () => ++edgeSeq)
-    const edge = { id, from: fromId, to: toId, directed: false, label: '' }
+    const edge = { id, from: fromId, to: toId, directed: directed === true, label: '' }
     edges.set(id, edge)
     incident.get(fromId).add(id)
     incident.get(toId).add(id)
@@ -309,12 +319,35 @@ export function createGraph() {
     return true
   }
 
-  /** Flags or unflags a core node. Returns false if the node does not exist. */
+  /**
+   * Flags or unflags a core node. Returns false if the node does not exist.
+   * Marking a nexus core turns it back into a star first: the two exclude
+   * each other.
+   */
   function setCore(id, value) {
     const node = nodes.get(id)
     if (!node) return false
-    if (node.is_core !== Boolean(value)) {
-      node.is_core = Boolean(value)
+    const core = Boolean(value)
+    if (node.is_core !== core || (core && node.is_nexus)) {
+      node.is_core = core
+      if (core) node.is_nexus = false
+      changed()
+    }
+    return true
+  }
+
+  /**
+   * Makes a node a nexus — a small shared connection point — or a star
+   * again. A nexus is never a core, so making one clears `is_core`. Returns
+   * false if the node does not exist.
+   */
+  function setNexus(id, value) {
+    const node = nodes.get(id)
+    if (!node) return false
+    const nexus = Boolean(value)
+    if (node.is_nexus !== nexus || (nexus && node.is_core)) {
+      node.is_nexus = nexus
+      if (nexus) node.is_core = false
       changed()
     }
     return true
@@ -380,6 +413,35 @@ export function createGraph() {
     return sizes.get(id) ?? 1
   }
 
+  /** Ids of the nodes an edge joins to `id`. */
+  function* neighbours(id) {
+    for (const edgeId of incident.get(id) ?? []) {
+      const edge = edges.get(edgeId)
+      yield edge.from === id ? edge.to : edge.from
+    }
+  }
+
+  /** The edges touching `id`. */
+  function* edgesOf(id) {
+    for (const edgeId of incident.get(id) ?? []) yield edges.get(edgeId)
+  }
+
+  /** What a click-to-focus on `id` keeps lit, `{ nodes, edges }`; see `heat.js`. */
+  function focusOf(id) {
+    return walkFocus(id, nodes, edgesOf)
+  }
+
+  /** Connection heat 0..1; see `heat.js`. 0 for an unknown id. */
+  function heatOf(id) {
+    if (!heat) heat = computeHeat(nodes, neighbours)
+    return heat.get(id) ?? 0
+  }
+
+  /** The stars `id` is connected to, counting through nexuses (`heat.js` `reach`). */
+  function connectionsOf(id) {
+    return nodes.has(id) ? reach(id, nodes, neighbours) : new Set()
+  }
+
   /**
    * The graph as `.atlasmap` payload fields. Copies, not the live objects:
    * physics writes x/y/z on the model every tick, and a save should be a value
@@ -425,7 +487,10 @@ export function createGraph() {
         z: requireFinite(raw.z, `node ${id} z`),
         cluster_color_id: Number.isInteger(raw.cluster_color_id) ? raw.cluster_color_id : 0,
         blend: readBlend(raw.blend),
-        is_core: raw.is_core === true,
+        // A node is a star or a nexus, never a core nexus: a damaged or
+        // hand-edited file with both reads as the nexus it was last made.
+        is_core: raw.is_core === true && raw.is_nexus !== true,
+        is_nexus: raw.is_nexus === true,
       })
       nextIncident.set(id, new Set())
     }
@@ -492,10 +557,15 @@ export function createGraph() {
     layoutSnapshot,
     applyLayout,
     setCore,
+    setNexus,
     setNodeText,
     setEdgeLabel,
     touchContent,
     sizeOf,
+    heatOf,
+    neighbours,
+    connectionsOf,
+    focusOf,
     recluster,
     reblend,
     toPayload,

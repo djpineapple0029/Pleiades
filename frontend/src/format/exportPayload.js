@@ -11,7 +11,7 @@
  */
 import { envelope } from './schema.js'
 
-const NODE_KEYS = ['id', 'label', 'x', 'y', 'z', 'cluster_color_id', 'blend', 'is_core']
+const NODE_KEYS = ['id', 'label', 'x', 'y', 'z', 'cluster_color_id', 'blend', 'is_core', 'is_nexus']
 const EDGE_KEYS = ['id', 'from', 'to', 'directed', 'label']
 
 const pick = (object, keys) => Object.fromEntries(keys.filter((k) => k in object).map((k) => [k, object[k]]))

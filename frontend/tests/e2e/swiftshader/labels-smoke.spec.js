@@ -76,7 +76,9 @@ test('labels compile and place: font, shaders, instances', async ({ page }) => {
   }, threeUrl)
 
   expect.soft(out.fontLoaded, 'the Jost face used to raster labels is loaded').toBe(true)
-  expect.soft(out.shown.length, 'both nodes with a label are shown (the far one is out of range)').toBe(2)
+  // Three names is fewer than the stretched range aims for, so even the one
+  // 1150 units off (far past the 200-unit floor) is named.
+  expect.soft(out.shown.length, 'a three-star map names all three, the far one included').toBe(3)
   expect
     .soft(
       out.shown.some((l) => l.tier === 'core'),
