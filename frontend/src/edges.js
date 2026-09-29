@@ -38,10 +38,6 @@ const HEAT_FOG_FLOOR = 0.55
 const LOOK_EASE = 0.15
 // Click-to-focus: a line outside the focus keeps this much of its light.
 const FOCUS_DIM = 0.1
-// Portals (prototype): a long link between two groups drawn only as a stub
-// this long (world units, from each star's centre) at each end, pointing at
-// the star at the other end, until it is hovered or lit by a focus.
-const PORTAL_STUB = 46
 
 // Depth fog. It runs across the map's own depth as seen from the camera —
 // the near and far side of the edges' bounding sphere — rather than a fixed
@@ -85,7 +81,6 @@ const EDGE_DEFINES = {
   HEAT_OPACITY_GAIN: glslFloat(HEAT_OPACITY_GAIN),
   END_CLEAR: glslFloat(END_CLEAR),
   END_FULL: glslFloat(END_FULL),
-  PORTAL_STUB: glslFloat(PORTAL_STUB),
 }
 
 // Shared by the lines and the motes: the ramp, from HEAT_RAMP's four stops.
@@ -106,8 +101,7 @@ vec3 heatColour(float t) {
 // FOCUS_DIM outside a focus, and lift is 1 inside one, where the line ignores
 // distance the way a hovered line does. gl_InstanceID is the edge's index.
 // instanceHide is 1 for a link drawn as a lane (`lanes.js`): its straight line
-// only shows hovered or inside a focus. 2 is a portal: only a PORTAL_STUB at
-// each end shows, and the whole line when hovered or inside a focus. The lanes themselves are the same
+// only shows hovered or inside a focus. The lanes themselves are the same
 // shader with LANE defined, one instance per piece of a lane, and give way to
 // the straight line where it shows.
 
@@ -232,8 +226,7 @@ void main() {
   float shown = 1.0 - vLook.w;
   lift = 0.0;
 #else
-  float stub = 1.0 - smoothstep(PORTAL_STUB * 0.7, PORTAL_STUB, min(vAlong, vLength - vAlong));
-  float shown = vHide > 1.5 ? max(lift, stub) : mix(1.0, lift, vHide);
+  float shown = mix(1.0, lift, vHide);
 #endif
   float strength = min(1.0, opacity * (1.0 + HEAT_OPACITY_GAIN * h));
   float alpha = shown * strength * ends * vLook.z * mix(coverage * fog, 1.0, lift);
@@ -254,7 +247,6 @@ const DRIFT_DEFINES = {
   MOTE_FOG_FAR: glslFloat(MOTE_FOG_FAR),
   END_CLEAR: glslFloat(END_CLEAR),
   END_FULL: glslFloat(END_FULL),
-  PORTAL_STUB: glslFloat(PORTAL_STUB),
 }
 
 // One point per slot per edge instance; position.x is the slot.
@@ -313,11 +305,8 @@ void main() {
 
   float light = present * ends * (0.55 + 0.45 * hash12(vec2(seed * 97.0, slot)));
   light *= mix(fog * coverage * coverage, 1.0, max(hover, instanceLook.w)) * dim * instanceLook.z;
-  // A lane has no motes (yet); its link's straight line only carries them when
-  // shown. A portal carries them along its stubs.
-  float lit = max(hover, instanceLook.w);
-  float stub = 1.0 - smoothstep(PORTAL_STUB * 0.7, PORTAL_STUB, min(t, 1.0 - t) * len);
-  light *= instanceHide > 1.5 ? max(lit, stub) : mix(1.0, lit, instanceHide);
+  // A lane has no motes (yet); its link's straight line only carries them when shown.
+  light *= mix(1.0, max(hover, instanceLook.w), instanceHide);
   // A mote on a hot line carries a lighter shade of the line's heat.
   float h = heat * mix(instanceLook.x, instanceLook.y, t);
   vec3 mote = mix(moteColor, mix(heatColour(h), vec3(1.0), 0.35), smoothstep(0.1, 0.5, h));
@@ -471,7 +460,6 @@ export function createEdges(graph, parent, renderer, radiusOf) {
   let heatOn = true
   let focusIds = null // edge ids a focus keeps lit, or null
   let focusDim = FOCUS_DIM // what a line outside the focus keeps
-  let portalIds = null // edge ids drawn as portals, or null
   let lookEasing = false
   let hide = new Float32Array(0) // per edge: 1 if drawn as a lane
   let hideAttribute = null
@@ -690,18 +678,11 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     laneLines.visible = pieces > 0
   }
 
-  /** Per edge: 1 drawn as a lane, 2 as a portal, 0 as a plain line. */
+  /** Per edge: 1 drawn as a lane, 0 as a plain line. */
   function writeHide() {
     const laned = new Set(laneIds)
-    for (let i = 0; i < order.length; i++)
-      hide[i] = laned.has(order[i]) ? 1 : portalIds?.has(order[i]) ? 2 : 0
+    for (let i = 0; i < order.length; i++) hide[i] = laned.has(order[i]) ? 1 : 0
     if (hideAttribute) hideAttribute.needsUpdate = true
-  }
-
-  /** Edge ids to draw as portals (a Set), or null for none. */
-  function setPortals(ids) {
-    portalIds = ids ?? null
-    writeHide()
   }
 
   function writeLanePositions(upload = true) {
@@ -847,7 +828,6 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     setHeat,
     setFocus,
     setLanes,
-    setPortals,
     raycast,
     dispose,
     get heatOn() {

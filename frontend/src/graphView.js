@@ -4,7 +4,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { STAR_LAYER } from './bloom.js'
 import { createEdges, EDGE_WIDTH } from './edges.js'
-import { computeLanes, measureGroups, portalLinks } from './lanes.js'
+import { computeLanes, measureGroups } from './lanes.js'
 import { focusSetOf } from './heat.js'
 import { createNebulae } from './nebulae.js'
 import { createLabels } from './labels.js'
@@ -796,23 +796,22 @@ export function createGraphView(graph, scene, renderer) {
   // Links between colour groups drawn as lanes (`lanes.js`); on by default.
   // Nebulae behind colour groups (`nebulae.js`) sit on the same measured balls.
   // Lanes were tried and read worse (bundled strands can't be followed one
-  // link at a time), so they are off unless asked for. Portals: long links
-  // between groups drawn as stubs (`lanes.portalLinks`, `edges.js`).
+  // link at a time), so they are off unless asked for.
   let lanesOn = false
-  let portalsOn = false
   function refreshLanes() {
-    edges.setPortals(portalsOn ? portalLinks(graph.nodes, graph.edges) : null)
     if (!lanesOn && !nebulae.on) return edges.setLanes(null)
     const groups = measureGroups(graph.nodes)
     edges.setLanes(lanesOn ? computeLanes(graph.nodes, graph.edges, groups) : null)
     if (nebulae.on) nebulae.setGroups(groups)
   }
 
-  // Aim-to-reveal (prototype): every line drawn at REVEAL_DIM, and the star
-  // under the crosshair lights its own lines and names the stars they reach —
-  // the click-to-focus set, without clicking and without dimming stars.
+  // Aim to reveal: every line drawn at REVEAL_DIM, and the star under the
+  // crosshair lights its own lines and names the stars they reach — the
+  // click-to-focus set, without clicking and without dimming stars. Always on
+  // in the app since round 2 of the Balance rework (context/BALANCE2.md);
+  // `setReveal(false)` is for suites that measure a line's full light.
   const REVEAL_DIM = 0.28
-  let revealOn = false
+  let revealOn = true
   let aim = null // focusSetOf the hovered target, while revealing
   let aimKey = null
 
@@ -1030,17 +1029,12 @@ export function createGraphView(graph, scene, renderer) {
     get lanesOn() {
       return lanesOn
     },
-    /** Aim-to-reveal on or off (prototype; see REVEAL_DIM). */
+    /** Aim to reveal on or off (see REVEAL_DIM); on by default. */
     setReveal(on) {
       revealOn = Boolean(on)
       aim = null
       aimKey = null
       applyFocus()
-    },
-    /** Portals (long links between groups as stubs) on or off (prototype). */
-    setPortals(on) {
-      portalsOn = Boolean(on)
-      refreshLanes()
     },
     /** Nebulae behind colour groups on or off (`nebulae.js`). */
     setNebulae(on) {

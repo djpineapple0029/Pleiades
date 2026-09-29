@@ -1,6 +1,7 @@
 /**
  * Look frames for the Balance rework's round-2 options (context/BALANCE2.md):
- * the constellation layout with straight lines, aim-to-reveal, portals,
+ * the constellation layout with straight lines, aim-to-reveal (portals were
+ * here too, and were dropped),
  * orbit view and a path, all on artifacts/busy_map.json. Runs the app's own
  * modules in a page on the headless-harness Vite at :5180 and renders the
  * real scene. Real GPU, headless.
@@ -53,6 +54,8 @@ await page.evaluate(async (payload) => {
   const bloom = createBloom(renderer, scene, camera)
   const view = createGraphView(graph, scene, renderer)
   const physics = createPhysics(graph, view)
+  // Aim to reveal is on by default now; the 'plain' frames are without it.
+  view.setReveal(false)
   view.sync()
   const settle = () => {
     let frames = 0
@@ -104,7 +107,6 @@ await page.evaluate(async (payload) => {
       view.syncNodes()
       view.updateEdgePositions()
       view.setReveal(false)
-      view.setPortals(false)
       view.setFocus(null)
       view.setHover(null)
     },
@@ -112,7 +114,6 @@ await page.evaluate(async (payload) => {
       view.setReveal(on)
       view.setHover(on ? { kind: 'node', id: hub } : null)
     },
-    portals: (on) => view.setPortals(on),
     orbit() {
       // Facing the inside camera, as pressing O there would.
       const node = graph.getNode(hub)
@@ -153,11 +154,6 @@ const views = async (scene, { overview = true, inside = true, far = 1 } = {}) =>
 await views('plain')
 await page.evaluate(() => fx.reveal(true))
 await views('reveal')
-await page.evaluate(() => fx.reset())
-await page.evaluate(() => fx.portals(true))
-await views('portals')
-await page.evaluate(() => fx.reveal(true))
-await views('portals_reveal', { overview: false })
 await page.evaluate(() => fx.reset())
 await page.evaluate(() => fx.orbit())
 await views('orbit', { overview: false })

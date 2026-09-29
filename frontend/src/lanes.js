@@ -161,23 +161,3 @@ export function measureGroups(nodes) {
   }
   return groups
 }
-
-// Portals (prototype round 2): a link between two different colour groups
-// longer than this (world units) is drawn as a stub at each end instead of a
-// line across the map. Shorter ones — neighbouring groups — stay whole.
-const PORTAL_MIN = 300
-
-/** Edge ids of the links to draw as portals: between two groups and long. */
-export function portalLinks(nodes, edges) {
-  const ids = new Set()
-  for (const edge of edges.values()) {
-    const from = nodes.get(edge.from)
-    const to = nodes.get(edge.to)
-    if (!from || !to) continue
-    const a = from.cluster_color_id
-    const b = to.cluster_color_id
-    if (!a || !b || a === b) continue
-    if (Math.hypot(from.x - to.x, from.y - to.y, from.z - to.z) > PORTAL_MIN) ids.add(edge.id)
-  }
-  return ids
-}

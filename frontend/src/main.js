@@ -87,14 +87,10 @@ const supernova = createSupernova(scene)
 // (force | rings | subgroups). Temporary, while the variants are compared.
 const layoutParam = new URLSearchParams(location.search).get('layout')?.split(',') ?? []
 // Prototype switches (context/BALANCE2.md), temporary: `?lanes=1` bundles
-// links between groups, `?nebula=1` adds group nebulae, `?reveal=1` lights
-// only the aimed star's links, `?portals=1` draws long links between groups
-// as stubs.
+// links between groups, `?nebula=1` adds group nebulae.
 const layoutFlags = new URLSearchParams(location.search)
 view.setLanes(layoutFlags.get('lanes') === '1')
 view.setNebulae(layoutFlags.get('nebula') === '1')
-view.setReveal(layoutFlags.get('reveal') === '1')
-view.setPortals(layoutFlags.get('portals') === '1')
 const physics = createPhysics(graph, view, {
   layout: {
     arrangement: layoutParam.find((v) => ['free', 'shell', 'disc'].includes(v)),
