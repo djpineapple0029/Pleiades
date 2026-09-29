@@ -86,10 +86,15 @@ const supernova = createSupernova(scene)
 // picks an arrangement (free | shell | disc) and/or an inner layout
 // (force | rings | subgroups). Temporary, while the variants are compared.
 const layoutParam = new URLSearchParams(location.search).get('layout')?.split(',') ?? []
-// `?lanes=0` draws every link straight; `?nebula=1` adds the group nebulae.
+// Prototype switches (context/BALANCE2.md), temporary: `?lanes=1` bundles
+// links between groups, `?nebula=1` adds group nebulae, `?reveal=1` lights
+// only the aimed star's links, `?portals=1` draws long links between groups
+// as stubs.
 const layoutFlags = new URLSearchParams(location.search)
-view.setLanes(layoutFlags.get('lanes') !== '0')
+view.setLanes(layoutFlags.get('lanes') === '1')
 view.setNebulae(layoutFlags.get('nebula') === '1')
+view.setReveal(layoutFlags.get('reveal') === '1')
+view.setPortals(layoutFlags.get('portals') === '1')
 const physics = createPhysics(graph, view, {
   layout: {
     arrangement: layoutParam.find((v) => ['free', 'shell', 'disc'].includes(v)),

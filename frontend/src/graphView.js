@@ -4,7 +4,8 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { STAR_LAYER } from './bloom.js'
 import { createEdges, EDGE_WIDTH } from './edges.js'
-import { computeLanes, measureGroups } from './lanes.js'
+import { computeLanes, measureGroups, portalLinks } from './lanes.js'
+import { focusSetOf } from './heat.js'
 import { createNebulae } from './nebulae.js'
 import { createLabels } from './labels.js'
 import { clusterInk } from './palette.js'
@@ -794,13 +795,26 @@ export function createGraphView(graph, scene, renderer) {
 
   // Links between colour groups drawn as lanes (`lanes.js`); on by default.
   // Nebulae behind colour groups (`nebulae.js`) sit on the same measured balls.
-  let lanesOn = true
+  // Lanes were tried and read worse (bundled strands can't be followed one
+  // link at a time), so they are off unless asked for. Portals: long links
+  // between groups drawn as stubs (`lanes.portalLinks`, `edges.js`).
+  let lanesOn = false
+  let portalsOn = false
   function refreshLanes() {
+    edges.setPortals(portalsOn ? portalLinks(graph.nodes, graph.edges) : null)
     if (!lanesOn && !nebulae.on) return edges.setLanes(null)
     const groups = measureGroups(graph.nodes)
     edges.setLanes(lanesOn ? computeLanes(graph.nodes, graph.edges, groups) : null)
     if (nebulae.on) nebulae.setGroups(groups)
   }
+
+  // Aim-to-reveal (prototype): every line drawn at REVEAL_DIM, and the star
+  // under the crosshair lights its own lines and names the stars they reach —
+  // the click-to-focus set, without clicking and without dimming stars.
+  const REVEAL_DIM = 0.28
+  let revealOn = false
+  let aim = null // focusSetOf the hovered target, while revealing
+  let aimKey = null
 
   /** Rebuilds the edge geometry. Call when edges are added or removed. */
   function syncEdges() {
@@ -836,6 +850,14 @@ export function createGraphView(graph, scene, renderer) {
     labels.setHovered(target)
     // Held by id, so it survives an edge sync that renumbers the edges.
     edges.setHovered(target?.kind === 'edge' ? target.id : null)
+    if (revealOn) {
+      const key = target ? `${target.kind}:${target.id}:${graph.revision}` : null
+      if (key !== aimKey) {
+        aimKey = key
+        aim = target ? focusSetOf(graph, target) : null
+        applyFocus()
+      }
+    }
   }
 
   /**
@@ -859,8 +881,15 @@ export function createGraphView(graph, scene, renderer) {
 
   function applyFocus() {
     const active = emphasis ? null : focus
-    edges.setFocus(active?.edges ?? null)
-    labels.setFocus(active)
+    if (!active && revealOn && !emphasis) {
+      edges.setFocus(aim?.edges ?? new Set(), { dim: REVEAL_DIM })
+      labels.setFocus(null)
+      labels.setAim(aim?.nodes ?? null)
+    } else {
+      edges.setFocus(active?.edges ?? null)
+      labels.setFocus(active)
+      labels.setAim(null)
+    }
     easing = true
   }
 
@@ -1000,6 +1029,18 @@ export function createGraphView(graph, scene, renderer) {
     },
     get lanesOn() {
       return lanesOn
+    },
+    /** Aim-to-reveal on or off (prototype; see REVEAL_DIM). */
+    setReveal(on) {
+      revealOn = Boolean(on)
+      aim = null
+      aimKey = null
+      applyFocus()
+    },
+    /** Portals (long links between groups as stubs) on or off (prototype). */
+    setPortals(on) {
+      portalsOn = Boolean(on)
+      refreshLanes()
     },
     /** Nebulae behind colour groups on or off (`nebulae.js`). */
     setNebulae(on) {

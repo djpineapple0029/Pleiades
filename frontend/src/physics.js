@@ -1,5 +1,6 @@
 import { NODE_RADIUS } from './graphView.js'
 import { computeConstellation } from './constellation.js'
+import { computeOrbit } from './orbit.js'
 
 // Hard non-overlap radius of a base-size node, scaled by `graph.sizeOf` per
 // node. Wider than the node so halos and labels have room.
@@ -36,18 +37,26 @@ export function createPhysics(graph, view, options = {}) {
   let from = new Map() // id -> [x, y, z] at the start of the flight
   let to = new Map() // id -> [x, y, z] where the layout put it
   let last = null // the last layout's groups and bridges, for lanes
+  let orbitCentre = null // set while the run in flight is an orbit, not a Balance
+  let orbitPlane = {} // the camera's right and up when the orbit was asked for
+  const collideOf = (id) => COLLIDE_RADIUS * graph.sizeOf(id)
 
   function plan() {
+    from = new Map()
+    for (const node of graph.nodes.values()) from.set(node.id, [node.x, node.y, node.z])
+    frame = 0
+    if (orbitCentre !== null && graph.nodes.has(orbitCentre)) {
+      to = computeOrbit(graph.nodes, graph.neighbours, orbitCentre, { collideOf, ...orbitPlane })
+      return
+    }
+    orbitCentre = null
     const result = computeConstellation(graph.nodes, graph.edges, {
-      collideOf: (id) => COLLIDE_RADIUS * graph.sizeOf(id),
+      collideOf,
       baseCollide: COLLIDE_RADIUS,
       ...layoutOptions,
     })
-    from = new Map()
-    for (const node of graph.nodes.values()) from.set(node.id, [node.x, node.y, node.z])
     to = result.positions
     last = { groups: result.groups, bridges: result.bridges }
-    frame = 0
   }
 
   function writeBack(t) {
@@ -92,6 +101,23 @@ export function createPhysics(graph, view, options = {}) {
     // Balance is what re-partitions the map: the layout a run produces is that
     // partition made visible, so the two can never disagree.
     graph.recluster()
+    orbitCentre = null
+    plan()
+    running = true
+    graph.touchContent()
+    return true
+  }
+
+  /**
+   * Starts a run that lays the map out round one star (`orbit.js`) instead of
+   * balancing it. Colours are left as they are: the groups still mean what
+   * the last Balance said. `plane` is `{ right, up }`, the camera's, so the
+   * orbit faces whoever asked for it. False for an unknown star or a map of one.
+   */
+  function orbit(id, plane = {}) {
+    if (graph.nodes.size < 2 || !graph.nodes.has(id)) return false
+    orbitCentre = id
+    orbitPlane = plane
     plan()
     running = true
     graph.touchContent()
@@ -131,6 +157,7 @@ export function createPhysics(graph, view, options = {}) {
 
   return {
     start,
+    orbit,
     stop,
     toggle,
     reset,
