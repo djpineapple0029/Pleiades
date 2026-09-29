@@ -380,8 +380,32 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
       }
       return { x: c.x / all.length, y: c.y / all.length, z: c.z / all.length }
     })()
-    camera.position.set(lmid.x, lmid.y, lmid.z + 150)
-    camera.rotation.set(0, 0, 0)
+    // Side-on to the line between the two groups, and far enough back to take
+    // both in. Balance keeps groups a gap apart (constellation.js), so a
+    // fixed 150 units down z could leave one off screen or behind the other.
+    const lc = lblobs.map((blob) => {
+      const c = { x: 0, y: 0, z: 0 }
+      for (const id of blob) {
+        const member = lg.getNode(id)
+        c.x += member.x / blob.length
+        c.y += member.y / blob.length
+        c.z += member.z / blob.length
+      }
+      return c
+    })
+    const dx = lc[1].x - lc[0].x
+    const dz = lc[1].z - lc[0].z
+    const span = Math.hypot(dx, lc[1].y - lc[0].y, dz)
+    // Perpendicular to the pair in the horizontal plane (d × up), or +z when
+    // the pair is stacked vertically.
+    let px = -dz
+    let pz = dx
+    const plen = Math.hypot(px, pz)
+    if (plen < 1e-6) [px, pz] = [0, 1]
+    else [px, pz] = [px / plen, pz / plen]
+    const back = Math.max(150, span * 1.1)
+    camera.position.set(lmid.x + px * back, lmid.y, lmid.z + pz * back)
+    camera.lookAt(lmid.x, lmid.y, lmid.z)
     camera.updateMatrixWorld(true)
     let lt = 0
     for (let i = 0; i < 40; i++) {

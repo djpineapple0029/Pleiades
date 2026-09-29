@@ -57,6 +57,10 @@ test('undo and redo through the keyboard', async ({ page }) => {
 
   // Balance moves n1 out from under the crosshair; undo puts it back.
   await page.keyboard.press('b')
+  // The HUD is rewritten once a frame, so wait for the run to show before
+  // waiting for it to end — polling straight away read the text from before
+  // the keypress and checked a run six frames in.
+  await settle(page)
   const deadline = Date.now() + 60000
   while (Date.now() < deadline && (await t(page, 'hud()')).includes('balancing'))
     await page.waitForTimeout(250)

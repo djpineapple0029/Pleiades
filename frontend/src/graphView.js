@@ -4,6 +4,8 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { STAR_LAYER } from './bloom.js'
 import { createEdges, EDGE_WIDTH } from './edges.js'
+import { computeLanes, measureGroups } from './lanes.js'
+import { createNebulae } from './nebulae.js'
 import { createLabels } from './labels.js'
 import { clusterInk } from './palette.js'
 import { hash32 } from './random.js'
@@ -444,6 +446,7 @@ export function createGraphView(graph, scene, renderer) {
   allocate(0)
 
   const edges = createEdges(graph, root, renderer, radiusOf)
+  const nebulae = createNebulae(root)
   const labels = createLabels(graph, root, renderer, { radiusOf, baseRadius: NODE_RADIUS })
 
   const ringMap = ringTexture()
@@ -789,14 +792,26 @@ export function createGraphView(graph, scene, renderer) {
     edges.writeRadii()
   }
 
+  // Links between colour groups drawn as lanes (`lanes.js`); on by default.
+  // Nebulae behind colour groups (`nebulae.js`) sit on the same measured balls.
+  let lanesOn = true
+  function refreshLanes() {
+    if (!lanesOn && !nebulae.on) return edges.setLanes(null)
+    const groups = measureGroups(graph.nodes)
+    edges.setLanes(lanesOn ? computeLanes(graph.nodes, graph.edges, groups) : null)
+    if (nebulae.on) nebulae.setGroups(groups)
+  }
+
   /** Rebuilds the edge geometry. Call when edges are added or removed. */
   function syncEdges() {
     edges.sync()
+    refreshLanes()
   }
 
   /** Rewrites edge endpoints from current node positions, in place. */
   function updateEdgePositions() {
     edges.updatePositions()
+    refreshLanes()
   }
 
   /**
@@ -941,12 +956,15 @@ export function createGraphView(graph, scene, renderer) {
       refreshTints()
       // Heat reads connections, which any structural edit or nexus flag moves.
       edges.writeHeat()
+      // So do lanes, and they also follow colour groups, which a re-partition moves.
+      refreshLanes()
       easing = true
     }
     if (easing) easing = easeAppearance(dt)
     edges.update(dt)
     // After easing: a label sits below its star's drawn radius.
     if (camera) labels.update(camera, dt)
+    if (camera) nebulae.update(camera)
     else labels.hide()
   }
 
@@ -957,6 +975,7 @@ export function createGraphView(graph, scene, renderer) {
     nodeMaterial.dispose()
     ringMap.dispose()
     edges.dispose()
+    nebulae.dispose()
     labels.dispose()
     pendingGeometry.dispose()
     pendingLine.material.dispose()
@@ -974,6 +993,19 @@ export function createGraphView(graph, scene, renderer) {
     setHover,
     setEmphasis,
     setFocus,
+    /** Lanes between colour groups on or off (`lanes.js`). */
+    setLanes(on) {
+      lanesOn = Boolean(on)
+      refreshLanes()
+    },
+    get lanesOn() {
+      return lanesOn
+    },
+    /** Nebulae behind colour groups on or off (`nebulae.js`). */
+    setNebulae(on) {
+      nebulae.setOn(on)
+      refreshLanes()
+    },
     /** Connection heat colours on or off (`edges.js`). */
     setHeat: edges.setHeat,
     get heatOn() {
