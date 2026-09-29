@@ -69,6 +69,8 @@ shows the keys actually in use.
 | `W` `A` `S` `D` / `Space` / `Shift` | fly |
 | mouse | look |
 | double-click in open space | new node at the crosshair |
+| left-click a star or link | focus: only its connections stay lit and named, everything else dims; click it again or empty space to clear |
+| `H` | connection heat colours on/off |
 | hold right button | radial menu on the targeted node or edge; move the mouse to pick a wedge, release to run it |
 | left-click a node while connecting | link it |
 | right-click / `Esc` while connecting | cancel |
@@ -101,10 +103,18 @@ editing all keep working while the layout settles; the HUD shows how far along i
 is. Editing the graph mid-run reheats the simulation so the change gets settled
 in too.
 
-The node menu is Connect (up), Edit (right), Mark core / Unmark core (down) and
-Delete (left). Only core nodes are bigger: a core is 2.25×, and every other node
-is 1× however many links it has or how close it is to a core. Sizes update as
-soon as a node is marked or unmarked, and Balance spaces cores further apart.
+The node menu is Connect (up), Edit (right), Move, Type… (down) and Delete
+(left). Type… opens a ring of the three types — Star, Core, Nexus, with the
+current one ticked — and picking one makes the node that type. A core is 2.25×,
+a nexus ½×, and every other node 1× however many links it has. Sizes update as
+soon as the type changes, and Balance spaces cores further apart.
+
+A nexus is a small shared connection point: link several stars to it and they
+all count as connected to each other. Heat and focus count through it, and
+Balance pulls the stars on a nexus in around it. Make one from a star's Type…
+ring, or from a link's menu — Edit (up), Add nexus (right), Delete (down), Focus
+(left) — where Add nexus splits the link A–B into A–nexus–B at its midpoint (a
+named link's name moves to the nexus). It is named and labelled like any star.
 
 Balance also groups the map. It looks for communities — sets of nodes that link
 to each other more than to the rest — pulls each one together toward its own
@@ -127,14 +137,27 @@ all. Colours and the fade are saved in the file, so a reopened map looks the way
 you left it; a map saved before the fade existed shows flat cluster colours until
 its next Balance.
 
+Edges are coloured by connection heat: each end takes how connected its own star
+is, cool blue for one link through violet and magenta to coral red for the
+map's busiest stars, so a link from a hub to a leaf is hot at the hub's end. The
+scale follows the map (at least 8 connections, or its busiest 5%, is fully hot),
+and hot lines fog out less, so the hubs read from the overview. `H` switches it
+off. Clicking a star focuses it: its links stay lit at full strength at any
+distance, its neighbours (and the stars across any nexus it touches) keep their
+names, and the rest of the map dims. Clicking a link, or its menu's Focus,
+focuses both of its ends at once.
+
 Edges thin with distance and fade toward the far side of the map, so nearby
 connections read over the ones behind them. Each edge fades out into the glow of
 the nodes it joins. Motes drift along every edge: both ways on an undirected
 edge, from → to on a directed one. The edge under the crosshair is drawn wider,
 in amber, at full strength whatever its distance.
 
-A node's label (set with Edit) is drawn under its star, and shows within 200
-units. Core nodes are labelled at any distance, in capitals. The node under the crosshair always shows its label, in
+A node's label (set with Edit) is drawn under its star. Names reach out until
+about 35 are on screen (the admin's "names at once"), so a small map or a
+sparse patch is named from far off and a crowd falls back to 200 units, the
+nearest they ever stop ("label distance" scales that). Core nodes are labelled
+at any distance, in capitals. The node under the crosshair always shows its label, in
 amber. Labels never overlap. Where two would, the nearer or more important one
 stays and the other fades out; a core's label moves above its star rather than
 lose its place. A node with no label shows nothing.
@@ -214,7 +237,8 @@ server/api.py         POST /api/save, POST /api/open
 server/static/        Vite build output (generated, gitignored)
 frontend/src/         Three.js frontend — owns the graph entirely
 frontend/src/files.js payload assembly, the two calls, download and upload
-frontend/src/sizing.js node size rule: a core is 2.25×, everything else 1×
+frontend/src/sizing.js node size rule: a core is 2.25×, a nexus ½×, everything else 1×
+frontend/src/heat.js   connections counted through nexuses: heat per star, and what a focus keeps lit
 frontend/src/clustering.js  Louvain communities, and the (random) colour that stays with a cluster
 frontend/src/colorBlend.js  the fade between cluster colours, worked out when a Balance ends
 frontend/src/edges.js  edges and drift motes: distance width, depth fog, endpoint fade

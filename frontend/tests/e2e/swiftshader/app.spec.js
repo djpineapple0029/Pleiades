@@ -9,6 +9,22 @@
 import { test, expect } from '@playwright/test'
 import { collectConsoleErrors, installGestures, t, settle, pickMenu } from '../helpers/gestures.js'
 
+/**
+ * Down on the node menu arms Type…, which swaps to the type ring on release;
+ * then look (dx, dy) from its centre and release again, the way the map
+ * menu's More ring is driven below. Returns the type ring's labels and the
+ * wedge armed there.
+ */
+async function pickType(page, dx, dy) {
+  const top = await pickMenu(page, 0, 60)
+  const labels = await t(page, 'wedges()')
+  await t(page, `look(${dx}, ${dy})`)
+  const armed = await t(page, 'armed()')
+  await t(page, 'rightUp()')
+  await settle(page)
+  return { top, labels, armed }
+}
+
 test('the whole app, driven through its own input handlers', async ({ page }, testInfo) => {
   const errors = collectConsoleErrors(page)
   await page.goto('/')
@@ -40,16 +56,13 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   await settle(page)
   expect.soft((await t(page, 'hud()')).startsWith('node n1'), 'aimed at n1').toBe(true)
   const connectMenu = await pickMenu(page, 0, -60)
-  // Five wedges now: the "Move" node-move affordance shipped after this
-  // suite was first captured (see the "Radial wheel: map menu, auto-resizing
-  // wedges, and Move" commit) — Connect/Edit/Move/Mark core/Delete, evenly
-  // spaced at 72 degrees apart starting from straight up.
+  // Five wedges: Connect/Edit/Move/Type…/Delete, evenly spaced at 72 degrees
+  // apart starting from straight up. Type… took Mark core's place when the
+  // nexus arrived, and opens a ring of its own (core, nexus, back), so a
+  // flick straight right still lands on Edit.
   expect
-    .soft(
-      JSON.stringify(connectMenu.labels),
-      'node menu has five wedges with Mark core second from the bottom',
-    )
-    .toBe(JSON.stringify(['Connect', 'Edit', 'Move', 'Mark core', 'Delete']))
+    .soft(JSON.stringify(connectMenu.labels), 'node menu has five wedges with Type… second from the bottom')
+    .toBe(JSON.stringify(['Connect', 'Edit', 'Move', 'Type…', 'Delete']))
   expect.soft(connectMenu.armed, 'up arms Connect').toBe('Connect')
   await t(page, 'look(150, 0)')
   await settle(page)
@@ -76,8 +89,12 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   await settle(page)
   await page.screenshot({ path: testInfo.outputPath('app_before.png') })
 
-  const coreMenu = await pickMenu(page, 0, 60)
-  expect.soft(coreMenu.armed, 'down arms Mark core').toBe('Mark core')
+  const coreMenu = await pickType(page, 60, 0)
+  expect.soft(coreMenu.top.armed, 'down arms Type…').toBe('Type…')
+  expect
+    .soft(JSON.stringify(coreMenu.labels), 'the type ring: star (ticked), core, nexus, back')
+    .toBe(JSON.stringify(['Star ✓', 'Core', 'Nexus', 'Back']))
+  expect.soft(coreMenu.armed, 'right on the type ring arms Core').toBe('Core')
   expect
     .soft(
       await page.evaluate(() => document.getElementById('radial-menu').hidden),
@@ -95,11 +112,11 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   await t(page, `look(0, ${-UP})`)
   await settle(page)
 
-  const unmark = await pickMenu(page, 0, 60)
+  const unmark = await pickType(page, 0, -60)
   expect
     .soft(
-      unmark.labels[3] === 'Unmark core' && unmark.armed === 'Unmark core',
-      'core node offers Unmark core',
+      unmark.labels[1] === 'Core ✓' && unmark.armed === 'Star',
+      'a core is ticked Core, and Star turns it back',
     )
     .toBe(true)
   expect.soft(await t(page, 'hud()'), 'HUD drops core').toBe('node n1 · 1 links')
@@ -187,7 +204,7 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   await page.screenshot({ path: testInfo.outputPath('app_label.png') })
 
   // Balance with a core in the graph, then everything still picks.
-  await pickMenu(page, 0, 60)
+  await pickType(page, 60, 0)
   await page.keyboard.press('b')
   await settle(page)
   const started = (await t(page, 'hud()')).includes('balancing')

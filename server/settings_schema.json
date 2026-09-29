@@ -15,6 +15,7 @@
     { "id": "search", "group": "View", "label": "Find a star by name", "default": ["/", "Mod+F"], "contexts": ["flight", "free", "overview"], "scope": ["app"] },
     { "id": "jump_back", "group": "View", "label": "Fly back to before the last jump", "default": ["Backspace"], "contexts": ["flight"], "scope": ["app"] },
     { "id": "notes_sidebar", "group": "View", "label": "Notes sidebar on/off", "default": ["N"], "contexts": ["flight", "overview"], "scope": ["app"] },
+    { "id": "heat", "group": "View", "label": "Connection heat colours on/off", "default": ["H"], "contexts": ["flight", "overview"], "scope": ["app", "viewer"] },
 
     { "id": "rename", "group": "Edit", "label": "Rename the targeted star or link", "default": ["Enter"], "contexts": ["flight"], "scope": ["app"] },
     { "id": "edit_notes", "group": "Edit", "label": "Edit the targeted star's notes", "default": ["Mod+Enter"], "contexts": ["flight"], "scope": ["app"] },
@@ -38,6 +39,8 @@
     { "section": "visuals", "key": "supernova", "label": "Supernova on delete", "type": "boolean", "default": true, "scope": "client", "help": "A flash and shockwave when a star is deleted." },
     { "section": "visuals", "key": "bloom_strength", "label": "Bloom strength", "type": "number", "min": 0, "max": 1, "step": 0.05, "default": 0.3, "scope": "client", "help": "Share of star light spread out as glow." },
     { "section": "visuals", "key": "label_range", "label": "Label distance", "type": "number", "min": 0.25, "max": 4, "step": 0.05, "default": 1.0, "scope": "client", "help": "Multiplies how far away star names appear. Higher shows more names at once." },
+    { "section": "visuals", "key": "label_count", "label": "Names at once", "type": "integer", "min": 5, "max": 150, "default": 35, "scope": "client", "help": "About how many star names to show at once. Names reach further out until about this many are on screen; label distance sets the nearest they ever stop." },
+    { "section": "visuals", "key": "connection_heat", "label": "Connection heat", "type": "boolean", "default": true, "scope": "client", "help": "Colour links by how connected their stars are, cool blue to hot red. H switches it in the map." },
 
     { "section": "server", "key": "max_upload_mb", "label": "Largest file Open accepts (MB)", "type": "integer", "min": 1, "max": 1024, "default": 64, "scope": "server", "help": "Uploads over this are refused before they're read." },
 

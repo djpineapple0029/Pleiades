@@ -27,7 +27,7 @@ import { createViewerInteraction } from './viewerInteraction.js'
 import { readEmbeddedSettings } from './settings.js'
 import { createKeymap } from './keymap.js'
 import { VIEWER_ROWS, renderKeyList } from './keysHelp.js'
-import { setRevealScale } from './labels.js'
+import { setRevealScale, setLabelTarget } from './labels.js'
 import { CONTEXT_LOST, NO_WEBGL, createCrashGuard, errorText } from './crashGuard.js'
 import { watchContextLoss } from './contextLoss.js'
 
@@ -71,6 +71,7 @@ function readPayload() {
 const settings = readEmbeddedSettings()
 const keymap = createKeymap(settings.keybinds)
 setRevealScale(settings.visuals.label_range)
+setLabelTarget(settings.visuals.label_count)
 renderKeyList(overlay.querySelector('.keys'), keymap, VIEWER_ROWS)
 
 let sceneParts
@@ -93,6 +94,7 @@ camera.position.set(0, 0, 260)
 
 const graph = createGraph()
 const view = createGraphView(graph, scene, renderer)
+view.setHeat(settings.visuals.connection_heat, { instant: true })
 const rivers = createDustRivers(graph, scene, { radiusOf: view.radiusOf })
 const overview = createOverview({ camera, canvas, graph, view, controls: flight.controls })
 

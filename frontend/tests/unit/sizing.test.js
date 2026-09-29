@@ -6,7 +6,7 @@
 // because it is mutated between assertions.
 import { describe, it, expect } from 'vitest'
 import { createGraph } from '../../src/graph.js'
-import { CORE_SIZE } from '../../src/sizing.js'
+import { CORE_SIZE, NEXUS_SIZE } from '../../src/sizing.js'
 import { ALWAYS_ON_SIZE } from '../../src/labels.js'
 
 describe('sizing', () => {
@@ -65,4 +65,18 @@ describe('sizing', () => {
   it('load bumps revision', () => expect(g2.revision).toBeGreaterThan(rev2))
   it('loaded core size', () => expect(g2.sizeOf(chain[0])).toBe(CORE_SIZE))
   it('unknown id is 1', () => expect(g2.sizeOf('zzz')).toBe(1))
+})
+
+describe('nexus sizing', () => {
+  it('a nexus is half a star', () => expect(NEXUS_SIZE).toBe(0.5))
+  const g = createGraph()
+  const n = g.addNode({ x: 0, y: 0, z: 0 })
+  const before = g.sizeOf(n.id)
+  g.setNexus(n.id, true)
+  const after = g.sizeOf(n.id)
+  it('making a nexus shrinks it at once, and back', () => {
+    expect([before, after]).toEqual([1, NEXUS_SIZE])
+    g.setNexus(n.id, false)
+    expect(g.sizeOf(n.id)).toBe(1)
+  })
 })

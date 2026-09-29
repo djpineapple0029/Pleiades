@@ -16,11 +16,25 @@ import { clusterInk } from './palette.js'
 // core node (2.25x) and nothing else. Below it a label is revealed within
 // revealRange(size) of the camera, which grows with the cube of the size: 200
 // units for any node that is not a core.
+//
+// That is only the floor. Since only cores are bigger, 200 units is about three
+// links, which left most of a map nameless from anywhere. So the range also
+// stretches to reach roughly the LABEL_TARGET nearest named stars on screen
+// (`adaptiveRange`): a small map or a sparse patch names everything far out,
+// and a dense one falls back to the floor. The declutter below still keeps
+// what it adds from overlapping.
 export const ALWAYS_ON_SIZE = 2
 const REVEAL_BASE = 200
 const REVEAL_GROWTH = 3
 // A revealed label fades in across the outer quarter of its range.
 const REVEAL_FADE = 0.25
+// How far the stretched range may go, as a multiple of the floor: past this a
+// name is at the smallest size and draining anyway.
+const REVEAL_MAX_FACTOR = 30
+// The stretch eases so names don't pop while flying: it grows slowly, and
+// gives way faster when flying into a crowd.
+const RANGE_GROW_EASE = 0.6
+const RANGE_SHRINK_EASE = 0.25
 // Flying through a star: its label goes between these many drawn radii from
 // the camera, before the label is pushed off the screen by the offset below.
 const NEAR_CLEAR = 1.5
@@ -29,9 +43,34 @@ const NEAR_FULL = 3
 // The admin's "label distance" setting: scales both reveal ranges. Module
 // state, set once at startup before any label is drawn.
 let rangeScale = 1
+// The admin's "names at once" setting: how many star names the stretched
+// range aims to reach. Same module state as the scale.
+export const DEFAULT_LABEL_TARGET = 35
+let labelTarget = DEFAULT_LABEL_TARGET
 
 export function setRevealScale(scale) {
   rangeScale = Number.isFinite(scale) && scale > 0 ? scale : 1
+}
+
+/** 0 turns the stretch off: every plain name keeps to the floor range. */
+export function setLabelTarget(count) {
+  labelTarget = Number.isInteger(count) && count >= 0 ? count : DEFAULT_LABEL_TARGET
+}
+
+/**
+ * The reveal range that reaches the `target` nearest of `count` distances
+ * (the start of `distances`, which it sorts in place), never below the floor
+ * `revealRange(1)` or above REVEAL_MAX_FACTOR times it. Fewer than `target`
+ * names on screen means every one of them is reached.
+ */
+export function adaptiveRange(distances, count, target = labelTarget) {
+  const floor = revealRange(1)
+  const most = floor * REVEAL_MAX_FACTOR
+  if (target <= 0) return floor
+  if (count < target) return most
+  const nearest = distances.subarray(0, count).sort()
+  // Far enough that the target-th is fully in, with the fade beyond it.
+  return clamp(nearest[target - 1] / (1 - REVEAL_FADE), floor, most)
 }
 
 export function revealRange(size) {
@@ -492,6 +531,14 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
   const entries = new Map()
   let hoverId = null
   let hoverKind = null
+  // Click-to-focus: the node and edge ids kept named, or null. Every other
+  // name is left out while it is set.
+  let focusNodes = null
+  let focusEdges = null
+  // The stretched reveal range (see `adaptiveRange`), eased; 0 until the
+  // first frame sets it outright. `distances` collects this frame's.
+  let stretch = 0
+  let distances = new Float64Array(256)
   let draftKind = null // an edit in progress: see `setDraft`
   let draftId = null
   let draft = null
@@ -822,6 +869,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
     starBuckets.clear()
     discCount = 0
     let seen = 0
+    let named = 0
     for (const node of graph.nodes.values()) {
       let entry = entries.get(`n:${node.id}`)
       if (!entry) {
@@ -884,13 +932,29 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
         addStar(sx, sy, radiusPx, node.id)
       }
       if (!entry.text) continue
+      // Every named non-core on screen counts toward the stretched range.
+      if (!node.is_core && sx >= 0 && sx <= width && sy >= 0 && sy <= height) {
+        if (named === distances.length) {
+          const grown = new Float64Array(named * 2)
+          grown.set(distances)
+          distances = grown
+        }
+        distances[named++] = distance
+      }
+      // Focused: only the focus is named, whatever its range.
+      const focused = focusNodes?.has(node.id) ?? false
+      if (focusNodes && !focused && !hovered) continue
 
-      const range = revealRange(nodeSize)
-      let visibility = hovered || landmark ? 1 : smoothstep(range, range * (1 - REVEAL_FADE), distance)
+      // A nexus is named like a star (labelSize 1), not cut by its half size.
+      const labelSize = Math.max(nodeSize, 1)
+      const range = Math.max(revealRange(labelSize), stretch)
+      let visibility =
+        hovered || landmark || focused ? 1 : smoothstep(range, range * (1 - REVEAL_FADE), distance)
       visibility *= smoothstep(NEAR_CLEAR, NEAR_FULL, distance / radius)
       if (visibility <= 0) continue
 
-      const fontPx = clamp(LABEL_HEIGHT * radiusPx, MIN_PX[tier], MAX_PX[tier])
+      const labelPx = (Math.max(radius, baseRadius) * pxPerUnit) / depth
+      const fontPx = clamp(LABEL_HEIGHT * labelPx, MIN_PX[tier], MAX_PX[tier])
       const scale = fontPx / FONT_PX
       // Distance drains the far ones; the hovered label is never drained.
       const dim = hovered
@@ -923,7 +987,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       entry.hue = node.cluster_color_id ? (node.blend ?? clusterInk(node.cluster_color_id)) : null
       // Cores and landmarks rank by size before nearness, so a core keeps its
       // label over a neighbour that happens to be closer.
-      const rank = hovered ? 1e6 : landmark ? 1e3 * nodeSize : 0
+      const rank = hovered ? 1e6 : landmark ? 1e3 * nodeSize : focused ? 500 : 0
       entry.priority = rank + (radius / depth) * (entry.placed ? HOLD_BONUS : 1)
       // Still fading out, so still drawn: its cells must survive this frame.
       if (entry.alpha > 0) entry.used = frame
@@ -969,6 +1033,8 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
         setText(entry, label, EDGE, hovered)
       }
       if (!entry.text) continue
+      const focused = focusEdges?.has(edge.id) ?? false
+      if (focusEdges && !focused && !hovered) continue
 
       const midX = (from.x + to.x) / 2
       const midY = (from.y + to.y) / 2
@@ -1006,7 +1072,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       const toRadius = radiusOf(to.id)
       const distance = Math.hypot(midX - eye.x, midY - eye.y, midZ - eye.z)
       const range = edgeRevealRange(Math.max(fromRadius, toRadius) / baseRadius)
-      const visibility = hovered ? 1 : smoothstep(range, range * (1 - REVEAL_FADE), distance)
+      const visibility = hovered || focused ? 1 : smoothstep(range, range * (1 - REVEAL_FADE), distance)
       if (visibility <= 0) continue
 
       const fontPx = clamp((EDGE_HEIGHT * baseRadius * pxPerUnit) / depth, MIN_PX[EDGE], MAX_PX[EDGE])
@@ -1048,6 +1114,14 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
         (hovered ? 1e6 : 0) + EDGE_PRIORITY * (baseRadius / depth) * (entry.placed ? HOLD_BONUS : 1)
       if (entry.alpha > 0) entry.used = frame
       candidates.push(entry)
+    }
+
+    // Next frame's stretched range, from this frame's distances.
+    const wanted = adaptiveRange(distances, named)
+    if (!stretch) stretch = wanted
+    else {
+      const ease = wanted > stretch ? RANGE_GROW_EASE : RANGE_SHRINK_EASE
+      stretch = wanted + (stretch - wanted) * Math.exp(-Math.max(dt, 0) / ease)
     }
 
     // Deleted nodes and edges, and edges whose label was cleared.
@@ -1280,10 +1354,20 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
    * and a label mid-fade under a reused id should not carry over.
    */
   function reset() {
+    stretch = 0
     entries.clear()
     occupied.fill(0)
     pending.length = 0
     hide()
+  }
+
+  /**
+   * Click-to-focus: `{ nodes, edges }` (Sets of ids) are the only names drawn,
+   * each at any range; null names everything again.
+   */
+  function setFocus(focus) {
+    focusNodes = focus?.nodes ?? null
+    focusEdges = focus?.edges ?? null
   }
 
   function dispose() {
@@ -1302,6 +1386,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
     hide,
     setHovered,
     setDraft,
+    setFocus,
     reset,
     invalidateAtlas,
     dispose,
@@ -1317,6 +1402,10 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
      * there are the corner of the box it reserves, which for a turned name is
      * larger than the ink. Lengths are CSS px, y down.
      */
+    /** The stretched reveal range as it stands (see `adaptiveRange`). */
+    get range() {
+      return stretch
+    },
     shown: () =>
       drawn.map((entry) => {
         const { id, kind, text, tier, cluster, opacity, dim, fontPx, clean, layout } = entry

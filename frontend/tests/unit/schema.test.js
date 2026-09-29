@@ -192,7 +192,7 @@ describe('HTML export allowlist', () => {
 
   it('keeps exactly what the viewer draws', () => {
     expect(Object.keys(out.nodes[0]).sort()).toEqual(
-      ['blend', 'cluster_color_id', 'id', 'is_core', 'label', 'x', 'y', 'z'].sort(),
+      ['blend', 'cluster_color_id', 'id', 'is_core', 'is_nexus', 'label', 'x', 'y', 'z'].sort(),
     )
     expect(Object.keys(out.edges[0]).sort()).toEqual(['directed', 'from', 'id', 'label', 'to'])
     expect(out.camera).toEqual(camera)

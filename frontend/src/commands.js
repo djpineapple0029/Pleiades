@@ -12,8 +12,8 @@
  * - Anything structural or positional: `physics.invalidate()`, so a Balance
  *   run in flight settles the new shape. Its re-seed copies the model's
  *   positions into the bodies, so a restored position wins over the run.
- * - Core flags: the view polls `graph.revision` by itself; only physics
- *   needs telling.
+ * - Core and nexus flags: the view polls `graph.revision` by itself; only
+ *   physics needs telling.
  *
  * No DOM and no three.js, so it runs in Node against stubs. The viewer never
  * imports it: an exported map has no edits to undo.
@@ -72,8 +72,14 @@ export function createCommands({ graph, view, physics, history }) {
     physics.invalidate()
   }
 
-  function setCoreSynced(id, value) {
-    graph.setCore(id, value)
+  // A node's kind is its two flags together — star, core or nexus — since
+  // setting one can clear the other. Undo puts both back.
+  const kindOf = (node) => ({ core: node.is_core, nexus: node.is_nexus })
+
+  function setKindSynced(id, { core, nexus }) {
+    graph.setNexus(id, false)
+    graph.setCore(id, core)
+    if (nexus) graph.setNexus(id, true)
     physics.invalidate()
   }
 
@@ -179,15 +185,91 @@ export function createCommands({ graph, view, physics, history }) {
     const node = graph.getNode(id)
     if (!node) return false
     const before = graph.contentRevision
-    const value = !node.is_core
-    setCoreSynced(id, value)
+    const previous = kindOf(node)
+    const next = { core: !node.is_core, nexus: false }
+    setKindSynced(id, next)
     record(
-      `${value ? 'mark' : 'unmark'} core ${nodeName(node)}`,
+      `${next.core ? 'mark' : 'unmark'} core ${nodeName(node)}`,
       before,
-      () => setCoreSynced(id, !value),
-      () => setCoreSynced(id, value),
+      () => setKindSynced(id, previous),
+      () => setKindSynced(id, next),
     )
     return true
+  }
+
+  /** A star becomes a nexus (a small shared connection point), or back. */
+  function toggleNexus(id) {
+    const node = graph.getNode(id)
+    if (!node) return false
+    const before = graph.contentRevision
+    const previous = kindOf(node)
+    const next = { core: false, nexus: !node.is_nexus }
+    setKindSynced(id, next)
+    record(
+      `${next.nexus ? 'make nexus' : 'make star'} ${nodeName(node)}`,
+      before,
+      () => setKindSynced(id, previous),
+      () => setKindSynced(id, next),
+    )
+    return true
+  }
+
+  /**
+   * Makes a node a `'star'`, `'core'` or `'nexus'`: one undo entry, or none if
+   * it already is one. Returns whether anything changed.
+   */
+  function setType(id, type) {
+    const node = graph.getNode(id)
+    if (!node) return false
+    if (type === 'core') return !node.is_core && toggleCore(id)
+    if (type === 'nexus') return !node.is_nexus && toggleNexus(id)
+    if (node.is_core) return toggleCore(id)
+    if (node.is_nexus) return toggleNexus(id)
+    return false
+  }
+
+  /**
+   * Replaces the link A–B with A–nexus–B: a new nexus at the link's midpoint,
+   * so more stars can share the connection. A directed link stays directed
+   * through it (A→N→B), and a named link's name moves to the nexus, which now
+   * stands for the connection. One undo entry. Returns the nexus, or null.
+   */
+  function splitEdge(edgeId) {
+    const edge = graph.getEdge(edgeId)
+    if (!edge) return null
+    const a = graph.getNode(edge.from)
+    const b = graph.getNode(edge.to)
+    if (!a || !b) return null
+    const before = graph.contentRevision
+    const label = `split ${edgeName(edge)} with a nexus`
+    let edgeSnapshot = graph.removeEdge(edgeId)
+    const nexus = graph.addNode({
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+      z: (a.z + b.z) / 2,
+      label: edgeSnapshot.label,
+    })
+    graph.setNexus(nexus.id, true)
+    graph.addEdge(a.id, nexus.id, { directed: edgeSnapshot.directed })
+    graph.addEdge(nexus.id, b.id, { directed: edgeSnapshot.directed })
+    view.syncNodes()
+    view.syncEdges()
+    physics.invalidate()
+    // Taken at undo time, like `spawn`: a Balance run may move the nexus.
+    let nexusSnapshot = null
+    record(
+      label,
+      before,
+      () => {
+        nexusSnapshot = removeNodeSynced(nexus.id)
+        restoreEdgeSynced(edgeSnapshot)
+      },
+      () => {
+        edgeSnapshot = removeEdgeSynced(edgeId)
+        restoreNodeSynced(nexusSnapshot)
+      },
+    )
+    return nexus
   }
 
   function move(id, { x, y, z }) {
@@ -279,6 +361,9 @@ export function createCommands({ graph, view, physics, history }) {
     setNodeText,
     setEdgeLabel,
     toggleCore,
+    toggleNexus,
+    setType,
+    splitEdge,
     move,
     toggleBalance,
     undo,

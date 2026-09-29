@@ -174,6 +174,59 @@ describe('commands.js undo/redo round trips', () => {
     expect(ctx.graph.sizeOf(b.id)).toBe(sizeBefore)
   })
 
+  it('nexus toggle, from a core, puts the core back on undo', () => {
+    const ctx = setup()
+    const { a } = populate(ctx.graph)
+    roundTrip(ctx, () => ctx.commands.toggleNexus(a.id))
+    expect(ctx.graph.getNode(a.id).is_nexus).toBe(true)
+    expect(ctx.graph.getNode(a.id).is_core).toBe(false)
+    ctx.commands.undo()
+    expect(ctx.graph.getNode(a.id).is_core).toBe(true)
+    expect(ctx.graph.getNode(a.id).is_nexus).toBe(false)
+  })
+
+  it('core toggle on a nexus puts the nexus back on undo', () => {
+    const ctx = setup()
+    const { b } = populate(ctx.graph)
+    ctx.graph.setNexus(b.id, true)
+    roundTrip(ctx, () => ctx.commands.toggleCore(b.id))
+    ctx.commands.undo()
+    expect(ctx.graph.getNode(b.id).is_nexus).toBe(true)
+  })
+
+  it('setType: to what it already is records nothing; otherwise one entry', () => {
+    const ctx = setup()
+    const { a, b } = populate(ctx.graph)
+    expect(ctx.commands.setType(a.id, 'core')).toBe(false)
+    expect(ctx.commands.setType(b.id, 'star')).toBe(false)
+    roundTrip(ctx, () => ctx.commands.setType(a.id, 'nexus'))
+    expect(ctx.graph.getNode(a.id).is_nexus).toBe(true)
+    roundTrip(ctx, () => ctx.commands.setType(a.id, 'star'))
+    expect([ctx.graph.getNode(a.id).is_core, ctx.graph.getNode(a.id).is_nexus]).toEqual([false, false])
+    roundTrip(ctx, () => ctx.commands.setType(b.id, 'core'))
+  })
+
+  it('split a link with a nexus', () => {
+    const ctx = setup()
+    const { a, b, ab } = populate(ctx.graph)
+    ctx.graph.getEdge(ab.id).directed = true
+    let nexus = null
+    roundTrip(ctx, () => (nexus = ctx.commands.splitEdge(ab.id)))
+    // After the redo roundTrip ends on: A→N→B, the name moved to the nexus.
+    expect(ctx.graph.getEdge(ab.id)).toBeNull()
+    const n = ctx.graph.getNode(nexus.id)
+    expect(n.is_nexus).toBe(true)
+    expect(n.label).toBe('pays')
+    expect([n.x, n.y, n.z]).toEqual([30, 0, 0])
+    const halves = [...ctx.graph.edges.values()].filter((e) => e.from === nexus.id || e.to === nexus.id)
+    expect(halves.map((e) => [e.from, e.to, e.directed])).toEqual([
+      [a.id, nexus.id, true],
+      [nexus.id, b.id, true],
+    ])
+    expect(ctx.graph.sizeOf(nexus.id)).toBe(0.5)
+    expect(ctx.commands.splitEdge('nope')).toBeNull()
+  })
+
   it('move', () => {
     const ctx = setup()
     const { c } = populate(ctx.graph)

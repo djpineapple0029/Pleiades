@@ -427,7 +427,12 @@ export function createGraphView(graph, scene, renderer) {
   const shownGlow = new Map()
   // Ids a search has matched, or null when no search is dimming the map.
   let emphasis = null
+  // Click-to-focus: `{ nodes, edges }` id Sets kept lit, or null. A search
+  // takes over while it is open and hands back to this when it closes.
+  let focus = null
   let shownEdgeDim = 1
+  // How far a focus has dimmed the rest of the map, for `mapDim`.
+  let shownFocusDim = 1
   let sizedRevision = -1 // graph.revision the easing last aimed at
   let easing = false
   let lastSeconds = null
@@ -487,7 +492,8 @@ export function createGraphView(graph, scene, renderer) {
   }
 
   function glowOf(id) {
-    return emphasis && !emphasis.has(id) ? DIM_GLOW : 1
+    const lit = emphasis ?? focus?.nodes
+    return lit && !lit.has(id) ? DIM_GLOW : 1
   }
 
   /** Drawn radius of a node, in world units. NODE_RADIUS for one with no instance. */
@@ -752,6 +758,14 @@ export function createGraphView(graph, scene, renderer) {
       else moving = true
       edges.setDim(shownEdgeDim)
     }
+    // A focus dims its own lines per edge (`edges.setFocus`); this is only
+    // for what follows the map as a whole, like the dust rivers.
+    const focusDim = focus ? DIM_EDGES : 1
+    if (shownFocusDim !== focusDim) {
+      shownFocusDim = focusDim + (shownFocusDim - focusDim) * keepGlow
+      if (Math.abs(shownFocusDim - focusDim) < 1 / 512) shownFocusDim = focusDim
+      else moving = true
+    }
     return moving
   }
 
@@ -765,6 +779,7 @@ export function createGraphView(graph, scene, renderer) {
       shownGlow.set(id, glowOf(id))
     }
     shownEdgeDim = emphasis ? DIM_EDGES : 1
+    shownFocusDim = focus ? DIM_EDGES : 1
     edges.setDim(shownEdgeDim)
     sizedRevision = graph.revision
     easing = false
@@ -814,6 +829,23 @@ export function createGraphView(graph, scene, renderer) {
    */
   function setEmphasis(ids) {
     emphasis = ids ? new Set(ids) : null
+    applyFocus()
+  }
+
+  /**
+   * Click-to-focus: keeps `{ nodes, edges }` (Sets of ids) lit and named and
+   * dims everything else, easing; null lifts it. While a search is dimming
+   * the map, the search wins and the focus waits underneath.
+   */
+  function setFocus(next) {
+    focus = next ?? null
+    applyFocus()
+  }
+
+  function applyFocus() {
+    const active = emphasis ? null : focus
+    edges.setFocus(active?.edges ?? null)
+    labels.setFocus(active)
     easing = true
   }
 
@@ -907,6 +939,8 @@ export function createGraphView(graph, scene, renderer) {
       // An edit moves sizes and a re-partition moves tints; both arrive as a
       // revision bump, so retarget both and let the ease work out what moved.
       refreshTints()
+      // Heat reads connections, which any structural edit or nexus flag moves.
+      edges.writeHeat()
       easing = true
     }
     if (easing) easing = easeAppearance(dt)
@@ -939,6 +973,12 @@ export function createGraphView(graph, scene, renderer) {
     updateEdgePositions,
     setHover,
     setEmphasis,
+    setFocus,
+    /** Connection heat colours on or off (`edges.js`). */
+    setHeat: edges.setHeat,
+    get heatOn() {
+      return edges.heatOn
+    },
     /** Live text for a label being edited in place; see `labels.setDraft`. */
     setLabelDraft: labels.setDraft,
     setSource,
@@ -953,10 +993,10 @@ export function createGraphView(graph, scene, renderer) {
     labelsShown: labels.shown,
     /** After a context loss: redraw every label into a fresh atlas. */
     invalidateLabels: labels.invalidateAtlas,
-    /** How lit the map's edges are right now (1, or easing toward DIM_EDGES
-     *  under a search), for anything else drawn over the map to follow. */
+    /** How lit the map is right now (1, or easing toward DIM_EDGES under a
+     *  search or a focus), for anything else drawn over the map to follow. */
     get mapDim() {
-      return shownEdgeDim
+      return Math.min(shownEdgeDim, shownFocusDim)
     },
     dispose,
   }

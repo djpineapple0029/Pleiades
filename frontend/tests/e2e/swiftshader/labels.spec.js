@@ -18,7 +18,11 @@ test('node labels: reveal, tiers, callout, declutter, hover, edits', async ({ pa
     const { createGraph } = await import('/src/graph.js')
     const { createGraphView, NODE_RADIUS } = await import('/src/graphView.js')
     const { createBloom, LABEL_LAYER } = await import('/src/bloom.js')
-    const { revealRange, ALWAYS_ON_SIZE } = await import('/src/labels.js')
+    const { revealRange, ALWAYS_ON_SIZE, setLabelTarget } = await import('/src/labels.js')
+    // Everything here tests the floor rule on maps of a few stars, which the
+    // stretched range would name from anywhere; label-stretch.spec.js covers
+    // the stretch.
+    setLabelTarget(0)
     document.getElementById('viewport').remove()
     // The atlas is rasterised on a canvas, which falls back silently: every
     // width here assumes the real face is in.

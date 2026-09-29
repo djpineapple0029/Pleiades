@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { createStatus } from './status.js'
 import { createKeymap } from './keymap.js'
+import { focusSetOf } from './heat.js'
 
 /**
  * The read-only half of `interaction.js`, for the exported viewer.
@@ -12,14 +13,17 @@ import { createKeymap } from './keymap.js'
  * targeting, the HUD, and Tab — and this one simply has no menu, no editor, no
  * spawn, no delete, no Balance and no file flows.
  *
+ * Click-to-focus and the heat key are here too: both only change what is lit,
+ * never the graph.
+ *
  * Pointer lock behaves exactly as it does in the app: Tab is the one mode
  * switch that releases it, and Esc drops it as browsers reserve it.
  *
  * Shares `status.js` with `interaction.js` (imported directly, not through
  * it — this module must never import anything that can mutate a graph) so
- * the HUD's message-vs-state split can never drift between the two. In
- * practice this side never calls `info`/`success`/`error`/`busy`: there are
- * no file flows here, so the message channel just stays empty.
+ * the HUD's message-vs-state split can never drift between the two. There
+ * are no file flows here, so the only message this side ever posts is the
+ * heat key's `info`.
  */
 
 const nodeName = (node) => node.label || node.id
@@ -46,6 +50,14 @@ export function createViewerInteraction({
 
   let hover = null // { kind, id } under the crosshair
   let lastSpeedText = null
+  let focusTarget = null // `{ kind, id }` whose connections alone stay lit, or null
+
+  /** Focuses a star or link, or clears the focus with null. The graph never changes here. */
+  function setFocus(target) {
+    const lit = target && focusSetOf(graph, target)
+    focusTarget = lit ? target : null
+    view.setFocus(lit || null)
+  }
 
   function clearHover() {
     hover = null
@@ -57,7 +69,9 @@ export function createViewerInteraction({
     if (!target) return null
     if (target.kind === 'node') {
       const node = graph.getNode(target.id)
-      return node && `node ${nodeName(node)} · ${graph.degree(node.id)} links${node.is_core ? ' · core' : ''}`
+      if (!node) return null
+      if (node.is_nexus) return `nexus ${nodeName(node)} · joins ${graph.connectionsOf(node.id).size}`
+      return `node ${nodeName(node)} · ${graph.degree(node.id)} links${node.is_core ? ' · core' : ''}`
     }
     const edge = graph.getEdge(target.id)
     if (!edge) return null
@@ -73,7 +87,10 @@ export function createViewerInteraction({
       const back = keymap.label('overview')
       return `overview · ${counts}${back ? ` · ${back} to fly` : ''}`
     }
-    return (controls.isLocked && describe(hover)) || counts
+    if (controls.isLocked && describe(hover)) return describe(hover)
+    const focused = focusTarget && describe(focusTarget)
+    if (focused) return `focus ${focused} · click empty space to clear`
+    return counts
   }
 
   function updateHud() {
@@ -112,7 +129,18 @@ export function createViewerInteraction({
     if (keymap.is(event, 'overview') && !event.repeat) {
       event.preventDefault()
       overview.toggle()
+      return
     }
+    if (keymap.is(event, 'heat') && !event.repeat && (controls.isLocked || overview.isActive)) {
+      view.setHeat(!view.heatOn)
+      status.info(`connection heat ${view.heatOn ? 'on' : 'off'}`)
+    }
+  }
+
+  // A click on a star or link focuses it; on it again, or on empty space, clears.
+  function onMouseDown(event) {
+    if (!controls.isLocked || event.button !== 0) return
+    setFocus(!hover || sameTarget(hover, focusTarget) ? null : hover)
   }
 
   // No radial menu here, but a right-click while locked should still not raise
@@ -126,11 +154,13 @@ export function createViewerInteraction({
   }
 
   window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('mousedown', onMouseDown)
   window.addEventListener('contextmenu', onContextMenu)
   controls.addEventListener('unlock', onUnlock)
 
   function dispose() {
     window.removeEventListener('keydown', onKeyDown)
+    window.removeEventListener('mousedown', onMouseDown)
     window.removeEventListener('contextmenu', onContextMenu)
     controls.removeEventListener('unlock', onUnlock)
   }
