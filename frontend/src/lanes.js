@@ -161,3 +161,57 @@ export function measureGroups(nodes) {
   }
   return groups
 }
+
+// Cross-links as arcs (`context/BALANCE2.md` §8): how far the middle of an arc
+// bows out from the straight line, as a share of the line's length.
+const ARC_BOW = 0.13
+
+/**
+ * One arc per link in `ids` (the backbone's cross-links): edge id ->
+ * Float32Array of LANE_POINTS xyz points, a quadratic curve from `from` to
+ * `to`. Never bundled — every arc is its own — and each bows away from the
+ * map's centre, so the curves read as a different kind of line from the
+ * straight branches and don't run along them.
+ */
+export function computeArcs(nodes, edges, ids) {
+  const routes = new Map()
+  if (!ids.size) return routes
+  const centre = [0, 0, 0]
+  for (const node of nodes.values()) {
+    centre[0] += node.x / nodes.size
+    centre[1] += node.y / nodes.size
+    centre[2] += node.z / nodes.size
+  }
+  for (const id of ids) {
+    const edge = edges.get(id)
+    const a = edge && nodes.get(edge.from)
+    const b = edge && nodes.get(edge.to)
+    if (!a || !b) continue
+    const p = [a.x, a.y, a.z]
+    const q = [b.x, b.y, b.z]
+    const chord = [q[0] - p[0], q[1] - p[1], q[2] - p[2]]
+    const length = Math.hypot(...chord)
+    if (length < 1e-6) continue
+    const u = chord.map((v) => v / length)
+    const mid = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2, (p[2] + q[2]) / 2]
+    // Away from the centre, square to the line; any square direction when the
+    // line runs through the centre.
+    let out = [mid[0] - centre[0], mid[1] - centre[1], mid[2] - centre[2]]
+    const along = out[0] * u[0] + out[1] * u[1] + out[2] * u[2]
+    out = out.map((v, k) => v - u[k] * along)
+    let size = Math.hypot(...out)
+    if (size < 1e-6) {
+      out = Math.abs(u[1]) < 0.9 ? [u[2], 0, -u[0]] : [0, -u[2], u[1]]
+      size = Math.hypot(...out)
+    }
+    const control = mid.map((v, k) => v + (out[k] / size) * length * ARC_BOW * 2)
+    const arc = new Float32Array(LANE_POINTS * 3)
+    for (let i = 0; i < LANE_POINTS; i++) {
+      const t = i / (LANE_POINTS - 1)
+      const s = 1 - t
+      for (let k = 0; k < 3; k++) arc[i * 3 + k] = s * s * p[k] + 2 * s * t * control[k] + t * t * q[k]
+    }
+    routes.set(id, arc)
+  }
+  return routes
+}

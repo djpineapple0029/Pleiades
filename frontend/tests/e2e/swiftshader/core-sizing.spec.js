@@ -339,6 +339,8 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
       render()
       return renderer.info.render.calls
     })()
+    // Cross-links drawn as arcs (lanes.computeArcs) are one more call, all of them together.
+    r.curves = scene.getObjectByName('lanes')?.visible ? 1 : 0
     r.coreSize = CORE_SIZE
     return r
   }, threeUrl)
@@ -426,6 +428,8 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
   // real per-frame blowup, not to pin a millisecond figure this tight.
   expect.soft(out.easeFrame3000, '3000 nodes: easing frame stays cheap').toBeLessThan(8)
   expect.soft(out.idleFrame3000, '3000 nodes: idle frame stays near-free').toBeLessThan(1)
-  expect.soft(out.calls, 'still one draw call for nodes (+1 edges, +1 drift)').toBe(3)
+  expect
+    .soft(out.calls, 'still one draw call for nodes (+1 edges, +1 drift, +1 cross-link curves if any)')
+    .toBe(3 + out.curves)
   expect.soft(errors, 'no console errors or warnings').toEqual([])
 })

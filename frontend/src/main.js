@@ -93,6 +93,9 @@ view.setLanes(layoutFlags.get('lanes') === '1')
 view.setNebulae(layoutFlags.get('nebula') === '1')
 const physics = createPhysics(graph, view, {
   layout: {
+    // `?tree=disc|cone|off`: the tree Balance's shape, or off for round 1's
+    // constellation layout (which `?layout=` then shapes).
+    tree: ['disc', 'cone', 'off'].find((v) => v === layoutFlags.get('tree')) ?? 'disc',
     arrangement: layoutParam.find((v) => ['free', 'shell', 'disc'].includes(v)),
     inner: layoutParam.find((v) => ['force', 'rings', 'subgroups'].includes(v)),
   },

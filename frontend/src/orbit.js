@@ -38,14 +38,12 @@ export function computeOrbit(nodes, neighbours, centreId, { collideOf, right = [
 
   // The breadth-first tree: each star's parent is the first star on the ring
   // inside it that reaches it, children in the order they were found.
-  const depth = new Map([[centreId, 0]])
   const children = new Map([[centreId, []]])
   const queue = [centreId]
   for (let head = 0; head < queue.length; head++) {
     const id = queue[head]
     for (const other of neighbours(id)) {
-      if (!nodes.has(other) || depth.has(other)) continue
-      depth.set(other, depth.get(id) + 1)
+      if (!nodes.has(other) || children.has(other)) continue
       children.get(id).push(other)
       children.set(other, [])
       queue.push(other)
@@ -55,39 +53,63 @@ export function computeOrbit(nodes, neighbours, centreId, { collideOf, right = [
   const colour = (id) => nodes.get(id).cluster_color_id || 0
   for (const list of children.values()) list.sort((a, b) => colour(a) - colour(b))
 
-  const weight = new Map()
-  const weigh = (id) => {
-    let w = 1
-    for (const child of children.get(id)) w += weigh(child)
-    weight.set(id, w)
-    return w
-  }
-  weigh(centreId)
-
-  // Ring radii: RING_STEP apart, wider where a ring holds more than fits.
-  const perRing = []
-  for (const [id, d] of depth) {
-    if (d === 0) continue
-    perRing[d] = (perRing[d] ?? 0) + ROOM * collideOf(id)
-  }
-  const unreached = [...nodes.keys()].filter((id) => !depth.has(id))
-  const radii = [0]
-  for (let d = 1; d < perRing.length; d++)
-    radii[d] = Math.max(radii[d - 1] + RING_STEP, (perRing[d] ?? 0) / (2 * Math.PI))
-
-  const angles = new Map()
-  const place = (id, angle, radius) => {
-    const c = Math.cos(angle) * radius
-    const s = Math.sin(angle) * radius
+  const { flat, outer } = radialTree(centreId, children, collideOf)
+  const place = (id, [c, s]) =>
     positions.set(
       id,
       [0, 1, 2].map((k) => origin[k] + right[k] * c + up[k] * s),
     )
+  for (const [id, point] of flat) place(id, point)
+
+  const unreached = [...nodes.keys()].filter((id) => !children.has(id))
+  if (unreached.length) {
+    let room = 0
+    for (const id of unreached) room += ROOM * collideOf(id)
+    const radius = Math.max(outer + RING_STEP * 1.5, room / (2 * Math.PI))
+    unreached
+      .sort((a, b) => colour(a) - colour(b))
+      .forEach((id, i) => {
+        const angle = Math.PI / 2 - (2 * Math.PI * (i + 0.5)) / unreached.length
+        place(id, [Math.cos(angle) * radius, Math.sin(angle) * radius])
+      })
   }
-  positions.set(centreId, origin)
+  return positions
+}
+
+/**
+ * A radial tree in 2D, `root` at the origin: every star on the ring its depth
+ * gives it, each subtree in a wedge as wide as its share of the tree, and each
+ * ring spread so neighbours are at least their room apart. `children` is
+ * id -> ordered child ids for every star in the tree. Returns
+ * `{ flat: id -> [x, y], outer }`, `outer` being the last ring's radius.
+ * Shared by the orbit view and the tree Balance (`treeLayout.js`).
+ */
+export function radialTree(root, children, collideOf, { ringStep = RING_STEP } = {}) {
+  const depth = new Map([[root, 0]])
+  const order = [root]
+  for (let head = 0; head < order.length; head++)
+    for (const child of children.get(order[head]) ?? []) {
+      depth.set(child, depth.get(order[head]) + 1)
+      order.push(child)
+    }
+  const weight = new Map()
+  for (let i = order.length - 1; i >= 0; i--) {
+    let w = 1
+    for (const child of children.get(order[i]) ?? []) w += weight.get(child)
+    weight.set(order[i], w)
+  }
+
+  // Ring radii: ringStep apart, wider where a ring holds more than fits.
+  const perRing = []
+  for (const [id, d] of depth) if (d > 0) perRing[d] = (perRing[d] ?? 0) + ROOM * collideOf(id)
+  const radii = [0]
+  for (let d = 1; d < perRing.length; d++)
+    radii[d] = Math.max(radii[d - 1] + ringStep, (perRing[d] ?? 0) / (2 * Math.PI))
+
+  const angles = new Map()
   // Each subtree gets a wedge as wide as its share; a star sits in the middle of its own.
   const lay = (id, from, to) => {
-    const kids = children.get(id)
+    const kids = children.get(id) ?? []
     const total = kids.reduce((sum, child) => sum + weight.get(child), 0)
     let at = from
     for (const child of kids) {
@@ -98,16 +120,14 @@ export function computeOrbit(nodes, neighbours, centreId, { collideOf, right = [
     }
   }
   // Start at the top, going clockwise as seen from the camera.
-  lay(centreId, Math.PI / 2, Math.PI / 2 - 2 * Math.PI)
+  lay(root, Math.PI / 2, Math.PI / 2 - 2 * Math.PI)
 
   // Wedges follow branch size, so a run of leaves gets a sliver each and
   // lands in a pile. Spread each ring so neighbours are at least their room
   // apart, keeping their order round it.
+  const flat = new Map([[root, [0, 0]]])
   const rings = []
-  for (const [id, angle] of angles) {
-    const d = depth.get(id)
-    ;(rings[d] ??= []).push({ id, angle })
-  }
+  for (const [id, angle] of angles) (rings[depth.get(id)] ??= []).push({ id, angle })
   rings.forEach((ring, d) => {
     if (!ring) return
     ring.sort((a, b) => a.angle - b.angle)
@@ -127,16 +147,7 @@ export function computeOrbit(nodes, neighbours, centreId, { collideOf, right = [
       }
       if (!moved) break
     }
-    for (const { id, angle } of ring) place(id, angle, radii[d])
+    for (const { id, angle } of ring) flat.set(id, [Math.cos(angle) * radii[d], Math.sin(angle) * radii[d]])
   })
-
-  if (unreached.length) {
-    let room = 0
-    for (const id of unreached) room += ROOM * collideOf(id)
-    const outer = Math.max(radii[radii.length - 1] + RING_STEP * 1.5, room / (2 * Math.PI))
-    unreached
-      .sort((a, b) => colour(a) - colour(b))
-      .forEach((id, i) => place(id, Math.PI / 2 - (2 * Math.PI * (i + 0.5)) / unreached.length, outer))
-  }
-  return positions
+  return { flat, outer: radii[radii.length - 1] }
 }

@@ -409,6 +409,23 @@ function ringDepths(ids, links, nodes, degree) {
 }
 
 /**
+ * `arrange` for callers outside this file (`treeLayout.js`): places `units`
+ * — `{ key, ids, local: id -> [x, y, z], radius }`, each laid out in its own
+ * frame — as balls with gaps between them, turned to face the units they link
+ * to. `links` are [id, id] pairs. Returns id -> [x, y, z] and sets
+ * `unit.centre`.
+ */
+export function arrangeUnits(
+  units,
+  links,
+  { arrangement = 'free', gap = GAP_BASE, gapRatio = GAP_RATIO } = {},
+) {
+  const unitById = new Map()
+  for (const unit of units) for (const id of unit.ids) unitById.set(id, unit)
+  return arrange(units, links, unitById, [], { arrangement, gapScale: 1, ctx: { gap, gapRatio } })
+}
+
+/**
  * Lays out units (groups or sub-groups, each already laid out in its own frame
  * with a measured `radius`) as single bodies, turns each to face the units it
  * links to, and returns every star's position: id -> [x, y, z]. Sets
@@ -468,6 +485,9 @@ function arrange(units, links, unitById, extraWeights, { arrangement, gapScale, 
     // Pull toward the middle so a loose group doesn't drift off on its own.
     simulation.force('gather', forceRadial(0).strength(0.1))
     if (arrangement === 'disc') simulation.force('flat', forceY(0).strength(0.4))
+    // A sheet: every centre in the y = 0 plane, for units that are flat in it
+    // themselves (the tree Balance's discs), so the whole map is one plane.
+    if (arrangement === 'sheet') simulation.force('flat', forceY(0).strength(1))
     if (arrangement === 'shell') {
       // A sphere with room for every ball, at about 55% of its surface covered.
       let area = 0
@@ -477,6 +497,7 @@ function arrange(units, links, unitById, extraWeights, { arrangement, gapScale, 
     }
     simulation.alpha(1).alphaDecay(1 - Math.pow(0.001, 1 / ARRANGE_TICKS))
     for (let i = 0; i < ARRANGE_TICKS; i++) simulation.tick()
+    if (arrangement === 'sheet') for (const body of bodies) body.y = 0
     // Collision ran against a padded radius; one last exact pass makes sure no
     // two balls are closer than their gap, whatever the forces left.
     separate(bodies, gapOf)
@@ -496,7 +517,7 @@ function arrange(units, links, unitById, extraWeights, { arrangement, gapScale, 
   }
   const placed = new Map()
   for (const unit of units) {
-    const rotation = facing(unit, outward)
+    const rotation = facing(unit, outward, arrangement === 'sheet')
     for (const id of unit.ids) {
       const p = rotate(rotation, unit.local.get(id))
       placed.set(id, [unit.centre[0] + p[0], unit.centre[1] + p[1], unit.centre[2] + p[2]])
@@ -551,7 +572,7 @@ function towards(outward, id, from, to) {
  * eigenvector of a 4×4 built from the weighted cross-covariance, found by
  * power iteration). Identity when nothing in the unit links out.
  */
-function facing(unit, outward) {
+function facing(unit, outward, flat = false) {
   const S = [
     [0, 0, 0],
     [0, 0, 0],
@@ -571,6 +592,12 @@ function facing(unit, outward) {
     total += w
   }
   if (!total) return [1, 0, 0, 0]
+  // Flat: only a turn about y, so a unit lying in the sheet stays in it. The
+  // best angle has a closed form: θ = atan2(Σ w (pz qx − px qz), Σ w (px qx + pz qz)).
+  if (flat) {
+    const theta = Math.atan2(S[2][0] - S[0][2], S[0][0] + S[2][2])
+    return [Math.cos(theta / 2), 0, Math.sin(theta / 2), 0]
+  }
   const [[xx, xy, xz], [yx, yy, yz], [zx, zy, zz]] = S
   const N = [
     [xx + yy + zz, yz - zy, zx - xz, xy - yx],

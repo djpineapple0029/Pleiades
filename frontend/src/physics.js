@@ -1,6 +1,7 @@
 import { NODE_RADIUS } from './graphView.js'
 import { computeConstellation } from './constellation.js'
 import { computeOrbit } from './orbit.js'
+import { computeTreeLayout } from './treeLayout.js'
 
 // Hard non-overlap radius of a base-size node, scaled by `graph.sizeOf` per
 // node. Wider than the node so halos and labels have room.
@@ -31,7 +32,12 @@ function ease(t) {
  * which is how the look frames and `?layout=` compare them.
  */
 export function createPhysics(graph, view, options = {}) {
-  const layoutOptions = { ...options.layout }
+  const { tree, ...rest } = options.layout ?? {}
+  const layoutOptions = rest
+  // Off unless asked: the app asks for the tree Balance (`main.js`); suites
+  // that build physics on their own keep testing the constellation layout
+  // they were written against, while the tree Balance is a prototype.
+  const treeShape = tree ?? 'off'
   let running = false
   let frame = 0
   let from = new Map() // id -> [x, y, z] at the start of the flight
@@ -50,6 +56,13 @@ export function createPhysics(graph, view, options = {}) {
       return
     }
     orbitCentre = null
+    // The tree Balance (`treeLayout.js`) unless `tree: 'off'` asks for the
+    // constellation layout of round 1.
+    if (treeShape !== 'off') {
+      to = computeTreeLayout(graph.nodes, graph.edges, { collideOf, shape: treeShape }).positions
+      last = null
+      return
+    }
     const result = computeConstellation(graph.nodes, graph.edges, {
       collideOf,
       baseCollide: COLLIDE_RADIUS,

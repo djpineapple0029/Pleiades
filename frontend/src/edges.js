@@ -38,6 +38,11 @@ const HEAT_FOG_FLOOR = 0.55
 const LOOK_EASE = 0.15
 // Click-to-focus: a line outside the focus keeps this much of its light.
 const FOCUS_DIM = 0.1
+// A curved link (a cross-link, `lanes.computeArcs`) at this share of a
+// straight one's strength until hovered or lit: the branches are the map's
+// shape, the cross-links a lighter second kind, the way mind-map tools draw
+// "relationship" lines.
+const LANE_BASE = 0.55
 
 // Depth fog. It runs across the map's own depth as seen from the camera —
 // the near and far side of the edges' bounding sphere — rather than a fixed
@@ -100,10 +105,12 @@ vec3 heatColour(float t) {
 // end, heat at the to end, focus light, focus lift]: light is 1, or down to
 // FOCUS_DIM outside a focus, and lift is 1 inside one, where the line ignores
 // distance the way a hovered line does. gl_InstanceID is the edge's index.
-// instanceHide is 1 for a link drawn as a lane (`lanes.js`): its straight line
-// only shows hovered or inside a focus. The lanes themselves are the same
-// shader with LANE defined, one instance per piece of a lane, and give way to
-// the straight line where it shows.
+// instanceHide is 1 for a link drawn as a curve instead (`lanes.js`: a
+// cross-link's arc, or a bundled lane): its straight line isn't drawn. The
+// curves are the same shader with LANE defined, one instance per piece, and
+// there instanceHide holds the piece's link's index, so a curve hovers and
+// focuses with its link. A curve is drawn at LANE_BASE of a line's strength
+// until it is hovered or lit.
 
 // three's screen-space line shader (LineMaterial, `worldUnits` off) with a
 // width that follows distance, and with everything needed to fade the edge
@@ -141,7 +148,11 @@ void trimSegment(const in vec4 start, inout vec4 end) {
 }
 
 void main() {
+#ifdef LANE
+  vHover = instanceHide == hovered ? 1.0 : 0.0;
+#else
   vHover = float(gl_InstanceID) == hovered ? 1.0 : 0.0;
+#endif
   vRadii = instanceEdge.xy;
   vLook = instanceLook;
   vHide = instanceHide;
@@ -222,11 +233,9 @@ void main() {
 
   float lift = max(vHover, vLook.w);
 #ifdef LANE
-  // A lane piece gives way to its link's exact line inside a focus.
-  float shown = 1.0 - vLook.w;
-  lift = 0.0;
+  float shown = mix(LANE_BASE, 1.0, lift);
 #else
-  float shown = mix(1.0, lift, vHide);
+  float shown = 1.0 - vHide;
 #endif
   float strength = min(1.0, opacity * (1.0 + HEAT_OPACITY_GAIN * h));
   float alpha = shown * strength * ends * vLook.z * mix(coverage * fog, 1.0, lift);
@@ -305,8 +314,9 @@ void main() {
 
   float light = present * ends * (0.55 + 0.45 * hash12(vec2(seed * 97.0, slot)));
   light *= mix(fog * coverage * coverage, 1.0, max(hover, instanceLook.w)) * dim * instanceLook.z;
-  // A lane has no motes (yet); its link's straight line only carries them when shown.
-  light *= mix(1.0, max(hover, instanceLook.w), instanceHide);
+  // A link drawn as a curve carries no motes (yet): they'd run along the
+  // straight line that isn't drawn.
+  light *= 1.0 - instanceHide;
   // A mote on a hot line carries a lighter shade of the line's heat.
   float h = heat * mix(instanceLook.x, instanceLook.y, t);
   vec3 mote = mix(moteColor, mix(heatColour(h), vec3(1.0), 0.35), smoothstep(0.1, 0.5, h));
@@ -434,7 +444,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
   })
   laneMaterial.vertexShader = EDGE_VERTEX
   laneMaterial.fragmentShader = EDGE_FRAGMENT
-  Object.assign(laneMaterial.defines, EDGE_DEFINES, { LANE: '' })
+  Object.assign(laneMaterial.defines, EDGE_DEFINES, { LANE: '', LANE_BASE: glslFloat(LANE_BASE) })
   for (const name of ['hoverColor', 'heat', 'heatRamp', 'fogRange', 'opacity'])
     laneMaterial.uniforms[name] = name === 'hoverColor' ? hoverColor : lineMaterial.uniforms[name]
   laneMaterial.uniforms.heat = heatUniform
@@ -672,7 +682,11 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     laneLookAttribute = new THREE.InstancedBufferAttribute(laneLook, 4)
     laneLookAttribute.setUsage(THREE.DynamicDrawUsage)
     geometry.setAttribute('instanceLook', laneLookAttribute)
-    geometry.setAttribute('instanceHide', new THREE.InstancedBufferAttribute(new Float32Array(pieces), 1))
+    // A piece's link index, read by the LANE shader for hover (see above).
+    geometry.setAttribute(
+      'instanceHide',
+      new THREE.InstancedBufferAttribute(Float32Array.from(laneParent), 1),
+    )
     laneLines.geometry = geometry
     old.dispose()
     laneLines.visible = pieces > 0
@@ -706,6 +720,9 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     })
     if (upload && laneIds.length) {
       laneLines.geometry.attributes.instanceStart.data.needsUpdate = true
+      // Raycasting gates on the bounds, as for the lines.
+      laneLines.geometry.computeBoundingBox()
+      laneLines.geometry.computeBoundingSphere()
       writeLaneLook()
     }
   }
@@ -779,9 +796,20 @@ export function createEdges(graph, parent, renderer, radiusOf) {
   /** Nearest edge under the ray as `{ id, distance }`, or null. */
   function raycast(raycaster) {
     if (!lines.visible) return null
-    const hit = raycaster.intersectObject(lines, false)[0]
-    const id = hit ? order[hit.faceIndex] : undefined
-    return id ? { id, distance: hit.distance } : null
+    let best = null
+    // A link drawn as a curve is picked on its curve, not on the straight
+    // line that isn't drawn.
+    for (const hit of raycaster.intersectObject(lines, false)) {
+      if (hide[hit.faceIndex]) continue
+      best = { id: order[hit.faceIndex], distance: hit.distance }
+      break
+    }
+    if (laneLines.visible) {
+      const hit = raycaster.intersectObject(laneLines, false)[0]
+      if (hit && (!best || hit.distance < best.distance))
+        best = { id: order[laneParent[hit.faceIndex]], distance: hit.distance }
+    }
+    return best?.id ? best : null
   }
 
   function dispose() {

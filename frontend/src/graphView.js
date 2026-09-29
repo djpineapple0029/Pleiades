@@ -4,7 +4,8 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { STAR_LAYER } from './bloom.js'
 import { createEdges, EDGE_WIDTH } from './edges.js'
-import { computeLanes, measureGroups } from './lanes.js'
+import { computeArcs, computeLanes, measureGroups } from './lanes.js'
+import { computeBackbone } from './backbone.js'
 import { focusSetOf } from './heat.js'
 import { createNebulae } from './nebulae.js'
 import { createLabels } from './labels.js'
@@ -797,11 +798,16 @@ export function createGraphView(graph, scene, renderer) {
   // Nebulae behind colour groups (`nebulae.js`) sit on the same measured balls.
   // Lanes were tried and read worse (bundled strands can't be followed one
   // link at a time), so they are off unless asked for.
+  // Cross-links (every link off the backbone, `backbone.js`) are drawn as
+  // arcs (`lanes.computeArcs`) unless `setArcs(false)`.
   let lanesOn = false
+  let arcsOn = true
   function refreshLanes() {
-    if (!lanesOn && !nebulae.on) return edges.setLanes(null)
-    const groups = measureGroups(graph.nodes)
-    edges.setLanes(lanesOn ? computeLanes(graph.nodes, graph.edges, groups) : null)
+    const groups = lanesOn || nebulae.on ? measureGroups(graph.nodes) : null
+    if (lanesOn) edges.setLanes(computeLanes(graph.nodes, graph.edges, groups))
+    else if (arcsOn)
+      edges.setLanes(computeArcs(graph.nodes, graph.edges, computeBackbone(graph.nodes, graph.edges).cross))
+    else edges.setLanes(null)
     if (nebulae.on) nebulae.setGroups(groups)
   }
 
@@ -1028,6 +1034,11 @@ export function createGraphView(graph, scene, renderer) {
     },
     get lanesOn() {
       return lanesOn
+    },
+    /** Cross-links as arcs on or off (`lanes.computeArcs`); on by default. */
+    setArcs(on) {
+      arcsOn = Boolean(on)
+      refreshLanes()
     },
     /** Aim to reveal on or off (see REVEAL_DIM); on by default. */
     setReveal(on) {

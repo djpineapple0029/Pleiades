@@ -37,6 +37,10 @@ test('edges: width, fog, endpoint fade, hover, drift motes', async ({ page }) =>
     // The plain line: every measurement below is of width, fog, fades and
     // motes, which heat would tint and lift (heat.spec.js covers heat).
     view.setHeat(false, { instant: true })
+    // Straight lines only: this suite measures and picks a line along its
+    // chord, which a cross-link drawn as an arc (lanes.computeArcs) no longer
+    // has. Arcs are covered in tests/unit/backbone.test.js.
+    view.setArcs(false)
     const physics = createPhysics(graph, view)
     const lines = () => scene.getObjectByName('edges')
     const drift = () => scene.getObjectByName('edge-drift')
