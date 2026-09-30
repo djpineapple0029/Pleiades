@@ -162,6 +162,7 @@ export function createInteraction({
   keymap = createKeymap(),
   serverMap = null,
   leaveToMaps = () => {},
+  goToMap = () => {},
 }) {
   const raycaster = new THREE.Raycaster()
   const crosshair = new THREE.Vector2(0, 0) // dead centre of the viewport
@@ -184,6 +185,9 @@ export function createInteraction({
   let lastLeftDown = 0
   let lastSpeedText = null
   let busy = false // a file flow is somewhere between its first prompt and its result
+  // The server map's conflict/deleted panel was shown and put off with Esc;
+  // Ctrl+S brings it back.
+  let problemPutOff = false
   // True only across a `files.open()` await: closes the gap where `endModal()`
   // has already returned `mode` to 'idle' (the moment a password is submitted)
   // but the decrypt-and-swap it triggered hasn't resolved yet. `isModal` below
@@ -433,6 +437,9 @@ export function createInteraction({
 
     updateSidebar()
     updateHud()
+
+    // Waits for any panel, menu or edit in progress to finish first.
+    if (serverMap?.isStopped && !problemPutOff && mode === 'idle' && !busy && !loading) resolveServerProblem()
   }
 
   /** Strictly the star under the crosshair, only while flying. */
@@ -662,6 +669,7 @@ export function createInteraction({
 
   /** Ctrl/Cmd+S on a server map: no panel, and no waiting for the autosave. */
   async function saveToServer() {
+    if (serverMap.isStopped) return resolveServerProblem()
     status.busy('saving')
     const result = await serverMap.saveNow()
     if (result.ok) status.success(result.unchanged ? 'already saved' : 'saved')
@@ -697,18 +705,141 @@ export function createInteraction({
 
   /** Resolves true only if the user chooses to leave a map that isn't saved. */
   async function confirmLeave(reason) {
+    const kept = serverMap.keepsLocally
+      ? ' Your changes stay in this browser and are offered the next time you open this map.'
+      : ''
+    const choice = await askChoice(`${serverMap.name} is not saved`, `${reason}.${kept}`, [
+      { key: 'l', label: 'L: leave anyway' },
+    ])
+    return choice === 'l'
+  }
+
+  /** A modal panel of keyed choices; the chosen key, or null for Esc. */
+  async function askChoice(title, note, choices) {
     await lock.release('panel')
     try {
       mode = 'editing'
       beginModal()
-      const choice = await editor.confirm(`${serverMap.name} is not saved`, `${reason}.`, [
-        { key: 'l', label: 'L: leave anyway' },
-      ])
+      const choice = await editor.confirm(title, note, choices)
       endModal()
-      return choice === 'l'
+      return choice
     } finally {
       if (mode === 'editing') endModal()
       lock.resume()
+    }
+  }
+
+  /**
+   * Another tab or device saved this map, or it was deleted: autosave has
+   * stopped for good, and only the user can say what becomes of the edits
+   * here. Opens by itself the first time (from `update`); Esc puts it off,
+   * and Ctrl/Cmd+S asks again. The edits are kept in this browser meanwhile.
+   */
+  async function resolveServerProblem() {
+    if (busy) {
+      status.info('a file operation is still in progress')
+      return { ok: false }
+    }
+    busy = true
+    problemPutOff = true
+    const conflict = serverMap.problemKind === 'conflict'
+    try {
+      let choice
+      if (conflict) {
+        const at = serverMap.conflictAt
+          ? ` at ${new Date(serverMap.conflictAt * 1000).toLocaleTimeString()}`
+          : ''
+        choice = await askChoice(
+          `${serverMap.name} was changed in another tab or device${at}`,
+          'Your changes here are not saved. Loading theirs drops them.',
+          [
+            { key: 'l', label: 'L: load theirs' },
+            { key: 'c', label: 'C: save mine as a copy' },
+          ],
+        )
+      } else {
+        choice = await askChoice(
+          `${serverMap.name} was deleted`,
+          'Your changes here are not saved anywhere.',
+          [{ key: 'c', label: 'C: save as a new map' }],
+        )
+      }
+      if (choice === 'l') {
+        serverMap.leave()
+        await serverMap.forgetBackup()
+        goToMap(serverMap.id)
+        return { ok: true }
+      }
+      if (choice === 'c') {
+        status.busy('saving a copy')
+        const result = await serverMap.saveCopy(
+          conflict ? `${serverMap.name} (conflict copy)` : serverMap.name,
+        )
+        if (!result.ok) {
+          status.error(`copy not saved: ${result.error}`)
+          return result
+        }
+        serverMap.leave()
+        await serverMap.forgetBackup()
+        status.success(`saved as ${result.name}`)
+        goToMap(result.id)
+        return { ok: true }
+      }
+      status.info(`not saved · ${keymap.label('save')} to choose what happens`)
+      return { ok: false }
+    } finally {
+      busy = false
+    }
+  }
+
+  /**
+   * Opening a server map this browser holds unsaved edits for
+   * (`localBackup.js`, `backupOffer`). 'restore' puts them straight on and
+   * autosave sends them; 'copy' (the server has moved on since) can only keep
+   * them as a map of their own. Esc keeps them for next time.
+   */
+  async function offerBackup(record, kind) {
+    if (busy) return
+    busy = true
+    try {
+      const restore = kind === 'restore'
+      const choice = await askChoice(
+        `unsaved changes to ${serverMap.name} from ${new Date(record.savedAt).toLocaleString()}`,
+        restore
+          ? 'This browser kept them; they never reached the server.'
+          : 'This browser kept them, but the map has changed on the server since, so they can only be kept as a copy.',
+        [
+          restore ? { key: 'r', label: 'R: restore them' } : { key: 'c', label: 'C: save them as a copy' },
+          { key: 'd', label: 'D: discard them' },
+        ],
+      )
+      if (choice === 'd') {
+        await serverMap.forgetBackup()
+        status.info('discarded the unsaved changes')
+      } else if (choice === 'r') {
+        try {
+          files.applyPayload(record.payload)
+        } catch (error) {
+          status.error(`could not restore them: ${error.message}`)
+          return
+        }
+        commands.clear()
+        forgetJumps()
+        overview.refit()
+        serverMap.adoptBackup()
+        status.success('restored the unsaved changes')
+      } else if (choice === 'c') {
+        status.busy('saving a copy')
+        const result = await serverMap.saveCopy(`${serverMap.name} (unsaved copy)`, record.payload)
+        if (!result.ok) {
+          status.error(`copy not saved: ${result.error}`)
+          return
+        }
+        await serverMap.forgetBackup()
+        status.success(`saved as ${result.name} in My maps`)
+      }
+    } finally {
+      busy = false
     }
   }
 
@@ -1331,6 +1462,7 @@ export function createInteraction({
     /** The HUD's messages alone, for when the frame loop has stopped and a
      *  save from the crash notice still has to say how it went. */
     tickStatus: () => status.tick(),
+    offerBackup,
     /** True while a panel owns the keyboard, or a file is being decrypted and
      *  swapped in — nothing should steal focus back, or re-lock and edit the
      *  graph that's about to be replaced. */

@@ -23,12 +23,13 @@ import { createSearchPanel } from './searchPanel.js'
 import { createFlyTo } from './flyTo.js'
 import { fetchSettings } from './settings.js'
 import { createKeymap } from './keymap.js'
-import { APP_ROWS, renderKeyList, renderResumePill } from './keysHelp.js'
+import { APP_ROWS, SERVER_MAP_ROWS, renderKeyList, renderResumePill } from './keysHelp.js'
 import { setRevealScale, setLabelTarget } from './labels.js'
 import { CONTEXT_LOST, NO_WEBGL, createCrashGuard, errorText } from './crashGuard.js'
 import { watchContextLoss } from './contextLoss.js'
-import { accountUrl, accountsEnabled } from './api.js'
+import { accountUrl, accountsEnabled, appUrl } from './api.js'
 import { TICK_MS, createServerMap, loadServerMap } from './serverMap.js'
+import { backupOffer, createBackupStore } from './localBackup.js'
 
 const MAX_FRAME_DELTA = 0.1 // seconds — clamps the jump after a backgrounded tab
 const STATUS_TICK_MS = 250 // the HUD's own clock once the frame loop has stopped
@@ -62,10 +63,13 @@ const askAboutAccounts =
 
 // Keybinds and settings from the server's config (/admin). Defaults if the
 // server can't be reached, so a failure here never stops the app starting.
-const [settings, toAccountShell, opened] = await Promise.all([
+// A server map's unsaved edits this browser kept (localBackup.js), if any.
+const backups = mapId ? createBackupStore() : null
+const [settings, toAccountShell, opened, keptLocally] = await Promise.all([
   fetchSettings(`${import.meta.env.BASE_URL}api/config`),
   askAboutAccounts ? accountsEnabled() : false,
   mapId ? loadServerMap(mapId) : null,
+  backups ? backups.get(mapId) : null,
 ])
 if (toAccountShell) {
   location.replace(accountUrl())
@@ -84,7 +88,7 @@ const keymap = createKeymap(settings.keybinds)
 const { visuals } = settings
 setRevealScale(visuals.label_range)
 setLabelTarget(visuals.label_count)
-renderKeyList(overlay.querySelector('.keys'), keymap, APP_ROWS)
+renderKeyList(overlay.querySelector('.keys'), keymap, opened ? SERVER_MAP_ROWS : APP_ROWS)
 renderResumePill(resumePill, keymap)
 
 let sceneParts
@@ -145,8 +149,17 @@ if (opened) {
     await halt()
   }
   files.setFilename(opened.map.name)
-  serverMap = createServerMap({ map: opened.map, graph, physics, toPayload: files.toPayload })
+  serverMap = createServerMap({
+    map: opened.map,
+    graph,
+    physics,
+    toPayload: files.toPayload,
+    backup: backups,
+  })
 }
+// Offered once the scene is up (below); already on the server → just dropped.
+const backupKind = opened ? backupOffer(keptLocally, opened.map) : null
+if (backupKind === 'same') serverMap?.forgetBackup()
 // Set once the user has chosen to go back to the list, so leaving doesn't
 // also ask "leave site?" about the save they already decided on.
 let leaving = false
@@ -218,7 +231,13 @@ const interaction = createInteraction({
     leaving = true
     location.assign(accountUrl())
   },
+  // Another server map, or this one afresh, after a conflict was settled.
+  goToMap: (id) => {
+    leaving = true
+    location.assign(appUrl(id))
+  },
 })
+if (backupKind === 'restore' || backupKind === 'copy') interaction.offerBackup(keptLocally, backupKind)
 
 // Autosave runs on its own timer, not the frame loop, so it outlives a
 // rendering crash. Going out of sight or away flushes what's pending.

@@ -1,7 +1,9 @@
-// Accounts, milestone 2 (USERS.md): sign-up in the account shell, the map
-// list, opening a server map, autosave, Ctrl+S, back to the list, and the
-// safety rails around them (a second tab never overwrites, signed-out goes
-// to sign-in). Runs against a Flask of its own (playwright.accounts.config.js).
+// Accounts, milestones 2 and 3 (USERS.md): sign-up in the account shell, the
+// map list, opening a server map, autosave, Ctrl+S, back to the list, and the
+// safety rails around them: a second tab never overwrites (the conflict
+// panel), edits made offline survive in this browser and are offered back,
+// signed-out goes to sign-in. Runs against a Flask of its own
+// (playwright.accounts.config.js).
 import { test, expect } from '@playwright/test'
 import { collectConsoleErrors, installGestures, pickMenu, settle, t } from '../helpers/gestures.js'
 
@@ -32,6 +34,33 @@ async function newMap(page, name) {
 }
 
 const hud = (page) => t(page, 'hud()')
+const panel = (page) => page.locator('#editor')
+
+// The same map in a second tab of the same browser (same session cookie).
+async function openAgain(page, id) {
+  const other = await page.context().newPage()
+  await other.goto(`/?map=${id}`)
+  await other.waitForTimeout(1500)
+  await installGestures(other)
+  return other
+}
+
+// Tab A saves a star; tab B, still on revision 1, adds its own and is refused.
+async function makeConflict(page, id) {
+  const other = await openAgain(page, id)
+  await t(page, 'doubleClick()')
+  await settle(page)
+  await page.keyboard.press('ControlOrMeta+s')
+  await expect.poll(async () => (await serverMap(page, id)).revision).toBe(2)
+  await t(other, 'look(300, 0)')
+  await settle(other)
+  await t(other, 'doubleClick()')
+  await settle(other)
+  await t(other, 'look(0, 200)')
+  await settle(other)
+  await other.keyboard.press('ControlOrMeta+s')
+  return other
+}
 const serverMap = async (page, id) => (await page.request.get(`/api/maps/${id}`)).json()
 
 test('sign up, make a map, and it saves itself', async ({ page }) => {
@@ -94,29 +123,166 @@ test('Ctrl+S saves at once, and My maps goes back to the list', async ({ page })
   await expect(page.locator('.map .meta')).toContainText('2 stars')
 })
 
-test('a second tab never overwrites the first', async ({ page, context }) => {
+test('a second tab never overwrites the first; its edits can become a copy', async ({ page }) => {
   await signUp(page)
   const id = await newMap(page, 'Twins')
-  const other = await context.newPage()
-  await other.goto(`/?map=${id}`)
-  await other.waitForTimeout(1500)
-  await installGestures(other)
+  const other = await makeConflict(page, id)
 
-  await t(page, 'doubleClick()')
-  await settle(page)
-  await page.keyboard.press('ControlOrMeta+s')
-  await expect.poll(async () => (await serverMap(page, id)).revision).toBe(2)
-
-  // The other tab still thinks it's on revision 1.
-  await t(other, 'look(300, 0)')
-  await settle(other)
-  await t(other, 'doubleClick()')
-  await settle(other)
-  await other.keyboard.press('ControlOrMeta+s')
+  // The panel comes up by itself; Esc puts it off, Ctrl+S brings it back.
+  await expect(panel(other)).toContainText('Twins was changed in another tab or device at')
+  await other.keyboard.press('Escape')
+  await expect(panel(other)).toBeHidden()
   await expect.poll(() => t(other, 'hud()')).toContain('changed in another tab or device')
   const stored = await serverMap(page, id)
   expect(stored.revision).toBe(2)
   expect(stored.payload.nodes).toHaveLength(1)
+  await other.keyboard.press('ControlOrMeta+s')
+  await expect(panel(other)).toContainText('L: load theirs')
+
+  await Promise.all([other.waitForURL((url) => !url.search.includes(id)), other.keyboard.press('c')])
+  const copyId = new URL(other.url()).searchParams.get('map')
+  const copy = await serverMap(page, copyId)
+  expect(copy.name).toBe('Twins (conflict copy)')
+  expect(copy.payload.nodes).toHaveLength(1)
+  const at = (node) => [node.x, node.y, node.z]
+  expect(at(copy.payload.nodes[0])).not.toEqual(at(stored.payload.nodes[0]))
+  // The original is untouched, and the copy opens clean, with nothing to restore.
+  expect((await serverMap(page, id)).revision).toBe(2)
+  await other.waitForTimeout(1500)
+  await expect(panel(other)).toBeHidden()
+  await expect
+    .poll(() => other.locator('#hud').textContent())
+    .toContain('Twins (conflict copy) · saved · 1 nodes')
+})
+
+test('load theirs drops the edits in this tab and opens the saved map', async ({ page }) => {
+  await signUp(page)
+  const id = await newMap(page, 'Gemini')
+  const theirs = (await serverMap(page, id)).payload
+  const other = await makeConflict(page, id)
+  await expect(panel(other)).toContainText('L: load theirs')
+  await Promise.all([other.waitForEvent('load'), other.keyboard.press('l')])
+  await other.waitForTimeout(1500)
+  // No offer of the dropped edits: they were the user's to drop.
+  await expect(panel(other)).toBeHidden()
+  await expect.poll(() => other.locator('#hud').textContent()).toContain('Gemini · saved · 1 nodes')
+  expect(theirs.nodes).toHaveLength(0)
+  expect((await serverMap(page, id)).revision).toBe(2)
+})
+
+async function signIn(page, username) {
+  await page.goto('/account.html')
+  await page.locator('#sign-in-username').fill(username)
+  await page.locator('#sign-in-password').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.locator('#who-name')).toHaveText(username)
+}
+
+// Adds a star while this browser is offline, waits for the HUD to say so, then
+// leaves the page for good (a dead laptop, a closed tab) and signs back in.
+// Only what this browser kept survives. Chromium still lets the keepalive save
+// sent on the way out through under setOffline, so the session is ended first
+// (as if it expired meanwhile) and that save is refused.
+async function editOfflineAndLeave(page, context, username) {
+  await context.setOffline(true)
+  await t(page, 'doubleClick()')
+  await settle(page)
+  await t(page, 'look(300, 0)')
+  await settle(page)
+  await expect.poll(() => hud(page), { timeout: 15_000 }).toContain('offline, not saved (retrying)')
+  await page.request.post('/api/auth/logout', { headers: { 'X-Atlas': '1' } })
+  await page.goto('about:blank')
+  await context.setOffline(false)
+  await signIn(page, username)
+}
+
+test('offline: keeps retrying, keeps the edits in this browser, and offers them back', async ({
+  page,
+  context,
+}) => {
+  page.on('dialog', (dialog) => dialog.accept())
+  const username = await signUp(page)
+  const id = await newMap(page, 'Vela')
+  await editOfflineAndLeave(page, context, username)
+  expect((await serverMap(page, id)).revision).toBe(1)
+
+  await page.goto(`/?map=${id}`)
+  await page.waitForTimeout(1500)
+  await expect(panel(page)).toContainText('unsaved changes to Vela')
+  await expect(panel(page)).toContainText('R: restore them')
+  await page.keyboard.press('r')
+  await expect(panel(page)).toBeHidden()
+  await expect.poll(async () => (await serverMap(page, id)).payload.nodes.length, { timeout: 15_000 }).toBe(1)
+  await expect.poll(() => page.locator('#hud').textContent()).toContain('Vela · saved · 1 nodes')
+
+  // Saved, so nothing is offered next time.
+  await page.reload()
+  await page.waitForTimeout(1500)
+  await expect(panel(page)).toBeHidden()
+})
+
+test('a save that landed on the way out leaves nothing to offer', async ({ page }) => {
+  page.on('dialog', (dialog) => dialog.accept())
+  await signUp(page)
+  const id = await newMap(page, 'Pyxis')
+  // Autosave is refused while the tab is open; the keepalive save sent as it
+  // goes gets through (the route can't catch a request from a page that's gone).
+  const offline = (route) => (route.request().method() === 'PUT' ? route.abort() : route.continue())
+  await page.route('**/api/maps/*', offline)
+  await t(page, 'doubleClick()')
+  await settle(page)
+  await t(page, 'look(300, 0)')
+  await settle(page)
+  await expect.poll(() => hud(page), { timeout: 15_000 }).toContain('offline')
+  await page.goto('/account.html')
+  await page.unroute('**/api/maps/*', offline)
+  await expect.poll(async () => (await serverMap(page, id)).revision).toBe(2)
+
+  await page.goto(`/?map=${id}`)
+  await page.waitForTimeout(1500)
+  await expect(panel(page)).toBeHidden()
+  await expect.poll(() => page.locator('#hud').textContent()).toContain('Pyxis · saved · 1 nodes')
+})
+
+test('edits kept here after the map moved on can only become a copy', async ({ page, context }) => {
+  page.on('dialog', (dialog) => dialog.accept())
+  const username = await signUp(page)
+  const id = await newMap(page, 'Cetus')
+  await editOfflineAndLeave(page, context, username)
+
+  // Meanwhile another device saves the map.
+  const moved = await page.request.put(`/api/maps/${id}`, {
+    headers: { 'X-Atlas': '1', 'If-Match': '1' },
+    data: { payload: { schema: 1, nodes: [], edges: [], note: 'elsewhere' } },
+  })
+  expect(moved.ok()).toBe(true)
+
+  await page.goto(`/?map=${id}`)
+  await page.waitForTimeout(1500)
+  await expect(panel(page)).toContainText('changed on the server since')
+  await page.keyboard.press('c')
+  await expect(panel(page)).toBeHidden()
+  await expect.poll(() => page.locator('#hud').textContent()).toContain('Cetus (unsaved copy)')
+  const list = (await (await page.request.get('/api/maps')).json()).maps
+  const copy = list.find((map) => map.name === 'Cetus (unsaved copy)')
+  expect(copy.node_count).toBe(1)
+  // The map itself keeps the other device's version.
+  expect((await serverMap(page, id)).payload.note).toBe('elsewhere')
+
+  await page.goto('/account.html')
+  await page.getByRole('button', { name: 'Sign out' }).click()
+  await expect(page.locator('#sign-in-form')).toBeVisible()
+  const left = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const req = indexedDB.open('atlasmap', 1)
+        req.onsuccess = () => {
+          const get = req.result.transaction('unsaved-maps').objectStore('unsaved-maps').count()
+          get.onsuccess = () => resolve(get.result)
+        }
+      }),
+  )
+  expect(left, 'sign-out clears what this browser kept').toBe(0)
 })
 
 test('the list: rename, duplicate, delete', async ({ page }) => {
@@ -171,9 +337,7 @@ test('sign in with the wrong password, then the right one', async ({ page, brows
   await fresh.locator('#sign-in-password').fill('not it at all')
   await fresh.getByRole('button', { name: 'Sign in' }).click()
   await expect(fresh.locator('#sign-in-error')).toHaveText('Wrong username or password.')
-  await fresh.locator('#sign-in-password').fill(PASSWORD)
-  await fresh.getByRole('button', { name: 'Sign in' }).click()
-  await expect(fresh.locator('#who-name')).toHaveText(username)
+  await signIn(fresh, username)
 })
 
 test('?local is the classic app, even with accounts on', async ({ page }) => {

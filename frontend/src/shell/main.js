@@ -7,9 +7,11 @@
  */
 import './shell.css'
 import { BASE, appUrl, request } from '../api.js'
+import { createBackupStore } from '../localBackup.js'
 import { mapSummary } from './format.js'
 
 const $ = (id) => document.getElementById(id)
+const backups = createBackupStore()
 const views = ['loading', 'off', 'signed-out', 'signed-in']
 
 const NOTICES = {
@@ -109,6 +111,8 @@ $('sign-up-form').addEventListener('submit', async (event) => {
 
 $('sign-out').addEventListener('click', async () => {
   await request('api/auth/logout', { method: 'POST' })
+  // Unsaved edits this browser kept are plaintext, and belong to whoever signed in.
+  await backups.clear()
   start()
 })
 
@@ -247,6 +251,7 @@ function confirmDelete(row, map) {
         yes.disabled = false
         return signedOutBy(result) || rowError(row, result.error)
       }
+      await backups.remove(map.id)
       refreshList()
     },
     'danger small',

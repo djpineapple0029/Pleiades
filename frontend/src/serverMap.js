@@ -10,8 +10,14 @@
  *
  * Every save sends the revision it was based on (`If-Match`). A 409 means
  * another tab or device saved in between: autosave stops for good rather than
- * overwrite it. A network failure or 5xx retries with backoff; a refusal that
- * retrying won't fix (too large, malformed) waits for the next edit instead.
+ * overwrite it, and the user picks what happens (`interaction.js`'s conflict
+ * panel, `saveCopy`). A network failure or 5xx retries with backoff; a refusal
+ * that retrying won't fix (too large, malformed) waits for the next edit instead.
+ *
+ * Edits the server doesn't have yet also go to this browser (`backup`,
+ * `localBackup.js`): when a save fails, while a problem lasts, and when the tab
+ * goes away. A save that leaves the map clean removes them again. The happy
+ * path never touches the backup.
  *
  * Driven by `tick()` on a timer of the caller's, not by the frame loop, so it
  * keeps saving if rendering stops.
@@ -45,6 +51,8 @@ export function createServerMap({
   toPayload,
   request = defaultRequest,
   now = () => performance.now(),
+  backup = null,
+  wallClock = () => Date.now(),
 }) {
   const { id, name } = map
   let revision = map.revision
@@ -61,6 +69,15 @@ export function createServerMap({
   let retryAt = 0
   // A refusal retrying won't fix: wait until the content changes again.
   let refusedToken
+  // The content token this browser's backup holds; undefined when there is
+  // none, null when there is one of unknown content (`adoptBackup`).
+  let backupToken
+  // IndexedDB refused a write (private window, full disk): stop asking.
+  let backupBroken = false
+  // When the other tab or device saved, from a 409 (epoch seconds).
+  let conflictAt = null
+  // The user has decided and the page is going: nothing more is kept or sent.
+  let left = false
 
   const isDirty = () => Boolean(physics.isRunning) || graph.contentRevision !== savedToken
 
@@ -69,12 +86,32 @@ export function createServerMap({
     retryAt = now() + Math.min(RETRY_MIN_MS * 2 ** (failures - 1), RETRY_MAX_MS)
   }
 
-  function recordFailure(result, sentToken) {
+  /** Puts `payload` (content `token`) in this browser, one record per map. */
+  function keepLocally(payload, token) {
+    if (!backup || backupBroken || left) return
+    backupToken = token
+    const record = { mapId: id, name, baseRevision: revision, savedAt: wallClock(), payload }
+    backup.put(record).then((stored) => {
+      if (stored) return
+      backupBroken = true
+      if (backupToken === token) backupToken = undefined
+    })
+  }
+
+  function dropBackup() {
+    if (!backup || backupToken === undefined) return
+    backupToken = undefined
+    backup.remove(id)
+  }
+
+  function recordFailure(result, sentToken, payload) {
     const { status, error } = result
+    // Kept before `revision` can move: the record says what the edits were based on.
+    if (payload) keepLocally(payload, sentToken)
     if (status === 409) {
       stopped = true
       problem = { kind: 'conflict', text: 'changed in another tab or device, not saved' }
-      if (Number.isInteger(result.data?.revision)) revision = result.data.revision
+      if (Number.isInteger(result.data?.updated_at)) conflictAt = result.data.updated_at
     } else if (status === 404) {
       stopped = true
       problem = { kind: 'gone', text: 'this map was deleted, not saved' }
@@ -95,9 +132,11 @@ export function createServerMap({
     // since the run keeps moving nodes past what went out.
     const sentToken = graph.contentRevision
     const tokenAtSave = physics.isRunning ? null : sentToken
+    let payload
     let body
     try {
-      body = JSON.stringify({ payload: toPayload() })
+      payload = toPayload()
+      body = JSON.stringify({ payload })
     } catch (error) {
       problem = { kind: 'refused', text: `not saved: ${error.message}` }
       refusedToken = sentToken
@@ -116,9 +155,10 @@ export function createServerMap({
       failures = 0
       retryAt = 0
       refusedToken = undefined
+      if (!isDirty()) dropBackup()
       return { ok: true }
     }
-    recordFailure(result.ok ? { status: 0, error: 'unexpected answer' } : result, sentToken)
+    recordFailure(result.ok ? { status: 0, error: 'unexpected answer' } : result, sentToken, payload)
     return { ok: false, error: problem.text }
   }
 
@@ -142,15 +182,20 @@ export function createServerMap({
 
   /** Once per TICK_MS: notices edits and saves DEBOUNCE_MS after the last one. */
   function tick() {
+    if (left) return
     const token = graph.contentRevision
     if (token !== seenToken) {
       seenToken = token
       changedAt = now()
     }
-    if (stopped || inFlight || !isDirty() || physics.isRunning) return
-    if (refusedToken !== undefined && refusedToken === token) return
+    if (inFlight || !isDirty() || physics.isRunning) return
     const at = now()
-    if (at - changedAt < DEBOUNCE_MS || at < retryAt) return
+    const settled = at - changedAt >= DEBOUNCE_MS
+    // While saving can't work, edits made since still reach this browser.
+    if (problem && settled && token !== backupToken) keepLocally(toPayload(), token)
+    if (stopped) return
+    if (refusedToken !== undefined && refusedToken === token) return
+    if (!settled || at < retryAt) return
     save()
   }
 
@@ -163,10 +208,43 @@ export function createServerMap({
       if (!stopped && !inFlight && !isDirty()) return Promise.resolve({ ok: true, unchanged: true })
       return save()
     },
-    /** The tab is going away or out of sight: send what there is, keepalive if it fits. */
+    /**
+     * The tab is going away or out of sight: keep what there is in this
+     * browser, then send it, keepalive if it fits. A save still on its way
+     * may not outlive the tab, so that's kept too.
+     */
     flush() {
-      if (stopped || inFlight || !isDirty()) return
+      if (left || (!isDirty() && !inFlight)) return
+      if (isDirty()) keepLocally(toPayload(), graph.contentRevision)
+      if (stopped || inFlight) return
       save({ keepalive: true })
+    },
+    /**
+     * A new map in the account holding `payload` (by default, this one as it
+     * stands). `{ ok: true, id, name }`, or the failure. A copy made of this
+     * map's unsaved edits should `forgetBackup()` afterwards.
+     */
+    async saveCopy(copyName, payload = toPayload()) {
+      const result = await request('api/maps', { method: 'POST', body: { name: copyName, payload } })
+      if (!result.ok) return result
+      if (typeof result.data?.id !== 'string') return { ok: false, status: 0, error: 'unexpected answer' }
+      return { ok: true, id: result.data.id, name: result.data.name ?? copyName }
+    },
+    /** The graph now holds the edits from this browser's backup: remove it once they're saved. */
+    adoptBackup() {
+      backupToken = null
+    },
+    /** The user has decided about this browser's copy (kept elsewhere, or
+     *  dropped). Resolves once it's gone, so a page can navigate after. */
+    forgetBackup() {
+      backupToken = undefined
+      return backup ? backup.remove(id) : Promise.resolve(true)
+    },
+    /** The page is leaving this map on the user's word: no more saves, and the
+     *  way out (pagehide) doesn't put back a backup they just dropped. */
+    leave() {
+      left = true
+      stopped = true
     },
     get id() {
       return id
@@ -186,6 +264,18 @@ export function createServerMap({
     },
     get isStopped() {
       return stopped
+    },
+    /** 'conflict' | 'gone' | 'offline' | 'signed-out' | 'refused', or null. */
+    get problemKind() {
+      return problem?.kind ?? null
+    },
+    /** When another tab or device saved over this one's base (epoch seconds), after a conflict. */
+    get conflictAt() {
+      return conflictAt
+    },
+    /** Whether unsaved edits can be kept in this browser at all. */
+    get keepsLocally() {
+      return Boolean(backup) && !backupBroken
     },
     /** The HUD's word for where the map stands. */
     get statusText() {

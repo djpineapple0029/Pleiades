@@ -11,7 +11,27 @@ import {
   loadServerMap,
 } from '../../src/serverMap.js'
 
-function setup({ revision = 1 } = {}) {
+// Stands in for localBackup.js's store: one record per map, and a log of what was asked.
+function fakeBackup({ works = true } = {}) {
+  const records = new Map()
+  const ops = []
+  return {
+    records,
+    ops,
+    put: async (record) => {
+      ops.push('put')
+      if (works) records.set(record.mapId, structuredClone(record))
+      return works
+    },
+    remove: async (mapId) => {
+      ops.push('remove')
+      records.delete(mapId)
+      return true
+    },
+  }
+}
+
+function setup({ revision = 1, backup = null } = {}) {
   const graph = createGraph()
   const physics = { isRunning: false }
   const clock = { t: 0 }
@@ -29,6 +49,8 @@ function setup({ revision = 1 } = {}) {
     toPayload: () => graph.toPayload(),
     request,
     now: () => clock.t,
+    backup,
+    wallClock: () => 1_700_000_000_000,
   })
   const answer = async (result) => {
     pending.shift()(result)
@@ -44,7 +66,11 @@ function setup({ revision = 1 } = {}) {
     graph.addNode({ x: 0, y: 0, z: 0 })
     map.tick()
   }
-  return { graph, physics, clock, calls, map, answer, ok, advance, edit }
+  return { graph, physics, clock, calls, map, answer, ok, advance, edit, backup }
+}
+
+const settle = async () => {
+  for (let i = 0; i < 5; i++) await Promise.resolve()
 }
 
 describe('serverMap autosave', () => {
@@ -243,6 +269,143 @@ describe('serverMap autosave', () => {
     const { map, calls } = setup()
     map.flush()
     expect(calls).toEqual([])
+  })
+})
+
+describe('serverMap backup in this browser', () => {
+  const ID = 'abcdefghijklmnop'
+
+  it('the happy path never touches it', async () => {
+    const { advance, edit, ok, backup } = setup({ backup: fakeBackup() })
+    edit()
+    advance(DEBOUNCE_MS)
+    await ok(2)
+    expect(backup.ops).toEqual([])
+  })
+
+  it('a failed save keeps what it tried to send, based on the old revision', async () => {
+    const { advance, edit, answer, backup } = setup({ revision: 4, backup: fakeBackup() })
+    edit()
+    advance(DEBOUNCE_MS)
+    await answer({ ok: false, status: 0, error: 'could not reach the server' })
+    const record = backup.records.get(ID)
+    expect(record).toMatchObject({ mapId: ID, name: 'Galaxy', baseRevision: 4, savedAt: 1_700_000_000_000 })
+    expect(record.payload.nodes).toHaveLength(1)
+  })
+
+  it('edits made while offline reach it after the debounce, and a clean save removes it', async () => {
+    const { map, advance, edit, answer, ok, backup } = setup({ backup: fakeBackup() })
+    edit()
+    advance(DEBOUNCE_MS)
+    await answer({ ok: false, status: 0, error: 'down' })
+    edit()
+    advance(DEBOUNCE_MS - 1)
+    expect(backup.records.get(ID).payload.nodes).toHaveLength(1)
+    advance(1)
+    expect(backup.records.get(ID).payload.nodes).toHaveLength(2)
+    // Nothing new: not written again every tick.
+    const puts = backup.ops.length
+    advance(RETRY_MIN_MS * 4)
+    expect(backup.ops.slice(puts)).toEqual([])
+    // The retry already went out (and is still waiting); it lands.
+    await ok(2)
+    await settle()
+    expect(map.isDirty).toBe(false)
+    expect(backup.records.has(ID)).toBe(false)
+  })
+
+  it('after a conflict, edits keep reaching it though nothing is sent', async () => {
+    const { map, calls, advance, edit, answer, backup } = setup({ backup: fakeBackup() })
+    edit()
+    advance(DEBOUNCE_MS)
+    await answer({
+      ok: false,
+      status: 409,
+      data: { revision: 5, updated_at: 1_700_000_100 },
+      error: 'changed',
+    })
+    expect(map.problemKind).toBe('conflict')
+    expect(map.conflictAt).toBe(1_700_000_100)
+    expect(backup.records.get(ID).baseRevision).toBe(1)
+    edit()
+    advance(DEBOUNCE_MS)
+    expect(backup.records.get(ID).payload.nodes).toHaveLength(2)
+    expect(calls).toHaveLength(1)
+  })
+
+  it('flush keeps it even when it cannot send, and even mid-save', async () => {
+    const { map, calls, advance, edit, answer, backup } = setup({ backup: fakeBackup() })
+    edit()
+    map.flush()
+    expect(backup.records.get(ID).payload.nodes).toHaveLength(1)
+    expect(calls).toHaveLength(1)
+    // Mid-save, a second flush keeps it again but doesn't send twice.
+    edit()
+    map.flush()
+    expect(backup.records.get(ID).payload.nodes).toHaveLength(2)
+    expect(calls).toHaveLength(1)
+    await answer({ ok: false, status: 409, data: {}, error: 'changed' })
+    edit()
+    map.flush()
+    expect(backup.records.get(ID).payload.nodes).toHaveLength(3)
+    advance(DEBOUNCE_MS)
+    expect(calls).toHaveLength(1)
+  })
+
+  it('after leave(), nothing is kept or sent', async () => {
+    const { map, calls, advance, edit, answer, backup } = setup({ backup: fakeBackup() })
+    edit()
+    advance(DEBOUNCE_MS)
+    await answer({ ok: false, status: 409, data: {}, error: 'changed' })
+    map.leave()
+    await map.forgetBackup()
+    expect(backup.records.has(ID)).toBe(false)
+    edit()
+    map.flush()
+    advance(DEBOUNCE_MS)
+    expect(backup.records.has(ID)).toBe(false)
+    expect(calls).toHaveLength(1)
+  })
+
+  it('an adopted backup is removed by the next clean save', async () => {
+    const { map, advance, edit, ok, backup } = setup({ backup: fakeBackup() })
+    backup.records.set(ID, { mapId: ID })
+    map.adoptBackup()
+    edit()
+    advance(DEBOUNCE_MS)
+    await ok(2)
+    expect(backup.records.has(ID)).toBe(false)
+  })
+
+  it('a browser that refuses to store gives up asking', async () => {
+    const backup = fakeBackup({ works: false })
+    const { map, advance, edit, answer } = setup({ backup })
+    expect(map.keepsLocally).toBe(true)
+    edit()
+    advance(DEBOUNCE_MS)
+    await answer({ ok: false, status: 0, error: 'down' })
+    await settle()
+    expect(map.keepsLocally).toBe(false)
+    edit()
+    advance(DEBOUNCE_MS)
+    map.flush()
+    expect(backup.ops).toEqual(['put'])
+  })
+
+  it('saveCopy makes a new map from the current state or a given payload', async () => {
+    const { map, calls, edit, answer } = setup()
+    edit()
+    const made = map.saveCopy('Galaxy (conflict copy)')
+    expect(calls[0]).toMatchObject({ path: 'api/maps', method: 'POST' })
+    expect(calls[0].body.name).toBe('Galaxy (conflict copy)')
+    expect(calls[0].body.payload.nodes).toHaveLength(1)
+    await answer({ ok: true, status: 201, data: { id: 'qrstuvwxyzabcdef', name: 'Galaxy (conflict copy)' } })
+    expect(await made).toEqual({ ok: true, id: 'qrstuvwxyzabcdef', name: 'Galaxy (conflict copy)' })
+
+    const full = map.saveCopy('x', { nodes: [], edges: [] })
+    expect(calls[1].body.payload).toEqual({ nodes: [], edges: [] })
+    await answer({ ok: false, status: 409, error: 'You have the most maps this server allows (1).' })
+    expect(await full).toMatchObject({ ok: false, status: 409 })
   })
 })
 
