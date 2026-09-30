@@ -1116,6 +1116,28 @@ export function createInteraction({
 
     if (is('path') && !event.repeat && controls.isLocked && mode === 'idle') pathKey()
 
+    // TEMPORARY, for comparing the tree Balance's shapes (context/BALANCE2.md
+    // §8): T steps disc → cone → off (round 1's layout) and balances with it
+    // straight away, one undo entry like B. Hard-coded on purpose, not in
+    // the keybinds list; remove once a shape is picked.
+    if (
+      event.code === 'KeyT' &&
+      !event.repeat &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      (controls.isLocked || overview.isActive) &&
+      mode !== 'menu'
+    ) {
+      const shapes = ['disc', 'cone', 'off']
+      physics.treeShape = shapes[(shapes.indexOf(physics.treeShape) + 1) % shapes.length]
+      if (physics.isRunning) physics.stop()
+      commands.toggleBalance()
+      status.info(
+        `tree shape: ${physics.treeShape === 'off' ? 'off (round-1 layout)' : physics.treeShape} · T: next`,
+      )
+    }
+
     if (is('heat') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
       view.setHeat(!view.heatOn)
       status.info(`connection heat ${view.heatOn ? 'on' : 'off'}`)

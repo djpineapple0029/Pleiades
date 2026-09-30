@@ -37,7 +37,7 @@ export function createPhysics(graph, view, options = {}) {
   // Off unless asked: the app asks for the tree Balance (`main.js`); suites
   // that build physics on their own keep testing the constellation layout
   // they were written against, while the tree Balance is a prototype.
-  const treeShape = tree ?? 'off'
+  let treeShape = tree ?? 'off'
   let running = false
   let frame = 0
   let from = new Map() // id -> [x, y, z] at the start of the flight
@@ -178,6 +178,13 @@ export function createPhysics(graph, view, options = {}) {
     update,
     get isRunning() {
       return running
+    },
+    /** The tree Balance's shape: 'disc', 'cone' or 'off'. Takes effect on the next run. */
+    get treeShape() {
+      return treeShape
+    },
+    set treeShape(shape) {
+      treeShape = shape
     },
     /** 0 at the start of a run, 1 at the end. */
     get progress() {
