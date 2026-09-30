@@ -242,13 +242,15 @@ function onRenderCrash(error) {
 const removeGlobalHandlers = guard.installGlobalHandlers(interaction.reportError)
 
 // three restores its own state; the two things that only ever lived on the GPU
-// are rebuilt here. The notice covers the gap, which is usually a blink.
+// are rebuilt here, and the dust rivers' tables go back up whole (three would
+// otherwise send only the grains that changed that frame). The notice covers the gap, which is usually a blink.
 const stopWatchingContext = watchContextLoss(canvas, {
   onLost: () => guard.cover(CONTEXT_LOST),
   onRestored: () => {
     if (guard.isFatal) return
     try {
       skybox.rebake()
+      rivers.restore()
       view.invalidateLabels()
       guard.uncover()
     } catch (error) {

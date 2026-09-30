@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { STAR_LAYER } from './bloom.js'
+import { SHOCK_EASE, SHOCK_LIFE, SHOCK_PUSH, SHOCK_REACH } from './shockwave.js'
 
 /**
  * The supernova a star goes out with when it is deleted: a flash where it was,
@@ -21,15 +22,9 @@ const LOBES_MIN = 5
 const LOBES_RANGE = 3
 // Seconds.
 const FLASH_LIFE = 0.45
-const SHOCK_LIFE = 1.0
 const BURST_LIFE = 1.9
-// Shock radius it eases out to, in radii, and the time constant it eases with.
-const SHOCK_REACH = 7
-const SHOCK_EASE = 0.28
 // Flash billboard half-size, in radii.
 const FLASH_EXTENT = 6
-// Push the shell gives the dust, world units per second at its crest.
-const SHOCK_PUSH = 260
 
 const BILLBOARD_VERTEX = /* glsl */ `
 uniform vec3 center;
@@ -186,6 +181,8 @@ export function createSupernova(scene, { rand = Math.random } = {}) {
   const size = new THREE.Vector2()
 
   const slots = []
+  // Counts bursts, so the dust can tell a new shell from one it already knows.
+  let serial = 0
   for (let i = 0; i < SLOTS; i++) {
     const shared = {
       center: { value: new THREE.Vector3() },
@@ -290,6 +287,7 @@ export function createSupernova(scene, { rand = Math.random } = {}) {
     let slot = slots[0]
     for (const s of slots) if (s.age > slot.age) slot = s
     slot.age = 0
+    slot.serial = ++serial
     slot.radius = radius
     slot.shared.center.value.set(position.x, position.y, position.z)
     if (tint) slot.shared.tint.value.setRGB(tint[0], tint[1], tint[2])
@@ -349,6 +347,9 @@ export function createSupernova(scene, { rand = Math.random } = {}) {
       const c = slot.shared.center.value
       const life = slot.age / SHOCK_LIFE
       out.push({
+        id: slot.serial,
+        age: slot.age,
+        starRadius: slot.radius,
         x: c.x,
         y: c.y,
         z: c.z,

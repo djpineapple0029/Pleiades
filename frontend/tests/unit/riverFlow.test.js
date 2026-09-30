@@ -22,8 +22,10 @@ function chain(graph) {
   return { ids, lone }
 }
 
+// Steps, then samples: nothing works out where grains are unless asked.
 function run(flow, seconds, dt = 1 / 30, shocks) {
   for (let s = 0; s < seconds; s += dt) flow.step(dt, shocks)
+  flow.sample()
 }
 
 function linked(graph, a, b) {
@@ -166,7 +168,8 @@ describe('riverFlow', () => {
     const before = []
     for (let g = 0; g < flow.count; g++) before.push(Math.hypot(...flow.positions.subarray(g * 3, g * 3 + 3)))
     const mean = (xs) => xs.reduce((s, v) => s + v, 0) / xs.length
-    const shock = { x: 0, y: 0, z: 0, radius: 15, width: 10, strength: 400 }
+    // As `supernova.shocks()` hands it over: the rivers work out the shell.
+    const shock = { id: 1, x: 0, y: 0, z: 0, age: 0, starRadius: RADIUS }
     run(flow, 0.3, 1 / 30, [shock])
     const pushed = []
     for (let g = 0; g < flow.count; g++) pushed.push(Math.hypot(...flow.positions.subarray(g * 3, g * 3 + 3)))
@@ -255,6 +258,36 @@ describe('riverFlow', () => {
       }
     }
     expect(checked).toBeGreaterThan(20)
+  })
+
+  it('moves smoothly through every hand-off, orbit to river to orbit', () => {
+    const { flow } = setup(chain)
+    run(flow, 12)
+    const out = new Float64Array(4)
+    let checked = 0
+    for (let g = 0; g < flow.count; g++) {
+      if (flow.light[g] === 0) continue
+      // Back along the tail in 5 ms steps: far finer than any move in it.
+      flow.positionAt(g, 0, out)
+      let [px, py, pz] = out
+      for (let ago = 0.005; ago <= 1.6; ago += 0.005) {
+        flow.positionAt(g, ago, out)
+        expect(Math.hypot(out[0] - px, out[1] - py, out[2] - pz)).toBeLessThan(1)
+        ;[px, py, pz] = out
+        checked++
+      }
+    }
+    expect(checked).toBeGreaterThan(1000)
+  })
+
+  it('moving the epoch up moves nothing', () => {
+    const { flow } = setup(chain)
+    run(flow, 7)
+    const before = [...flow.positions.subarray(0, flow.count * 3)]
+    flow.rebase()
+    flow.sample()
+    const after = [...flow.positions.subarray(0, flow.count * 3)]
+    for (let i = 0; i < before.length; i++) expect(Math.abs(after[i] - before[i])).toBeLessThan(0.01)
   })
 
   it('is the same every run for the same seed', () => {
