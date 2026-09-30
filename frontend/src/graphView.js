@@ -404,10 +404,15 @@ void main() {
   // with G (more rays, each capped thinner by the cell size), so the dense
   // ones are weighted down or they add up to a grey haze around the core.
   float reach = STAR_EXTENT * (0.8 + 0.15 * swell);
-  float light =
-      2.4 * rayFamily(r, u, w, n, pxPerRadius, 4.0, reach, 0.045, 0.5, seed)
-    + 1.3 * rayFamily(r, u, w, n, pxPerRadius, 7.0, reach * 0.85, 0.03, 1.0, seed + 31.0)
+  float light = 2.4 * rayFamily(r, u, w, n, pxPerRadius, 4.0, reach, 0.045, 0.5, seed);
+  #if RAY_FAMILIES > 1
+  light += 1.3 * rayFamily(r, u, w, n, pxPerRadius, 7.0, reach * 0.85, 0.03, 1.0, seed + 31.0)
     + 0.5 * rayFamily(r, u, w, n, pxPerRadius, 11.0, reach * 0.65, 0.02, 1.5, seed + 59.0);
+  #else
+  // Calm stars (Shallow Space): the few long rays alone, shorter and softer,
+  // with no fine ones filling in round the core.
+  light *= 0.55;
+  #endif
 
   // Saturated ball of light, a bright Gaussian skirt that carries it into the
   // rays, then a faint wider glow forced to zero well inside the billboard.
@@ -446,7 +451,7 @@ void main() {
 function createStarMaterial(uniforms) {
   return new THREE.ShaderMaterial({
     uniforms,
-    defines: { STAR_EXTENT: STAR_EXTENT.toFixed(1), STAR_STYLE: STAR_STYLES.rays },
+    defines: { STAR_EXTENT: STAR_EXTENT.toFixed(1), STAR_STYLE: STAR_STYLES.rays, RAY_FAMILIES: 3 },
     vertexShader: STAR_VERTEX,
     fragmentShader: STAR_FRAGMENT,
     transparent: true,
@@ -1137,13 +1142,18 @@ export function createGraphView(graph, scene, renderer) {
      * A look's appearance (`looks.js`), all parts optional:
      * - `stars`: 'rays' (the star), 'orbs' (plain lit balls, opaque, no glow)
      *   or 'jelly' (Deep Sea). Recompiles the one star shader.
+     * - `rays`: 3 ray families (the full star) or 1 (calm: the long rays only).
      * - `tints`: three sRGB triples, the blue/white/warm stops of an
      *   unclustered star; a clustered one keeps its cluster's hue.
      * - `murk`: light lost per world unit to underwater fog (jelly only).
      * - `voidColor`: the background, which a dimmed orb fades toward.
      * - `edges`: `edges.setColors` input; `drift`: motes along links on/off.
      */
-    setStyle({ stars, tints, murk, voidColor, edges: edgeColors, drift } = {}) {
+    setStyle({ stars, rays, tints, murk, voidColor, edges: edgeColors, drift } = {}) {
+      if (rays !== undefined && rays !== nodeMaterial.defines.RAY_FAMILIES) {
+        nodeMaterial.defines.RAY_FAMILIES = rays
+        nodeMaterial.needsUpdate = true
+      }
       if (stars !== undefined && stars !== starStyle) {
         starStyle = stars
         const opaque = stars === 'orbs'

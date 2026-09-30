@@ -67,17 +67,15 @@ const MAP_MENU = [
   { key: 'more', label: 'More…' },
 ]
 
-// "Look…" takes the top wedge, which has the most horizontal room;
-// "Overview" is short enough to sit comfortably in the tighter side slot.
+// Overview up, Back down. Looks are not here on purpose: they change only
+// from their own key (V), so the right-button menus stay about the map.
 const MORE_MENU = [
-  { key: 'look', label: 'Look…' },
   { key: 'overview', label: 'Overview' },
   { key: 'back', label: 'Back' },
 ]
 
 // The looks (`looks.js`), clockwise from the top, the current one ticked.
-// Held open by the look key (V) and picked on its release, or reached from
-// More… with the right button like any other ring.
+// Held open by the look key (V) and picked on its release.
 const LOOK_MENU = (current) =>
   LOOKS.map((look) => ({ key: look.id, label: look.id === current?.id ? `${look.name} ✓` : look.name }))
 
@@ -946,10 +944,10 @@ export function createInteraction({
     menu.open(ring === 'top' ? MAP_MENU : MORE_MENU)
   }
 
-  /** The look ring. `byKey`: held open by the look key, picked on its release. */
-  function openLookMenu({ byKey = false } = {}) {
+  /** The look ring, held open by the look key and picked on its release. */
+  function openLookMenu() {
     menuTarget = LOOK_TARGET
-    lookKeyHeld = byKey
+    lookKeyHeld = true
     mode = 'menu'
     beginModal()
     menu.open(LOOK_MENU(renderSettings.looks.current))
@@ -984,7 +982,6 @@ export function createInteraction({
       }
       if (key === 'back') return openMapMenu('top')
       if (key === 'overview') overview.toggle()
-      else if (key === 'look') openLookMenu()
       return
     }
 
@@ -1169,7 +1166,7 @@ export function createInteraction({
     // Hold to open the look ring, move the mouse onto one, let go.
     if (is('look') && !event.repeat && (controls.isLocked || overview.isActive) && mode === 'idle') {
       event.preventDefault()
-      openLookMenu({ byKey: true })
+      openLookMenu()
       return
     }
 

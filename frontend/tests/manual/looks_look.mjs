@@ -123,6 +123,11 @@ for (const id of ['deep-space', 'deep-sea', 'minimal', 'shallow-space']) {
   await page.evaluate(() => fx.advance(0.5))
   await page.locator('canvas').screenshot({ path: `${DIR}/looks_${id}_inside.png` })
   const insideMs = await page.evaluate(() => fx.cost())
+  // Out past the map toward the sun (Shallow Space's planet and its day/night line).
+  const out = [centre[0] + extent * 2.5, centre[1], centre[2] - extent * 2]
+  await page.evaluate(([from]) => fx.look(from, [from[0] + 0.9, from[1] - 0.3, from[2] + 0.25]), [out])
+  await page.evaluate(() => fx.advance(0.5))
+  await page.locator('canvas').screenshot({ path: `${DIR}/looks_${id}_horizon.png` })
   report[id] = { overviewMs: +overviewMs.toFixed(2), insideMs: +insideMs.toFixed(2) }
 }
 

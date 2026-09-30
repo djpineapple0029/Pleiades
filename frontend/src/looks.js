@@ -1,12 +1,14 @@
 /**
- * Looks: whole-scene presets, picked from a radial menu (hold V) or the More
- * menu. Each one decides which layers are drawn at all, how the stars are
+ * Looks: whole-scene presets, picked from their own radial ring: hold V, move
+ * the mouse onto one, let go. Each one decides which layers are drawn at all, how the stars are
  * drawn, whether anything moves, and the colours.
  *
  * - Deep Space: everything. Pulsing stars, dust rivers, drift along links,
  *   supernovas, the nebula and bloom. What "Motion: on" used to be.
- * - Shallow Space: the same stars and sky, standing still. No rivers, drift,
- *   supernovas or floating dust. What "Motion: off" used to be, and quieter.
+ * - Shallow Space: near a planet rather than out in deep space. A world
+ *   below the map with a thin blue atmosphere flaring at sunrise, a clean
+ *   black sky with few stars, calm stars (the long rays only, softer glow),
+ *   and nothing moving: no rivers, drift, supernovas or floating dust.
  * - Deep Sea: the same pipeline dressed as the deep ocean. A water column lit
  *   from above instead of a sky, jellies instead of stars, sinking marine
  *   snow instead of dust, and teal and violet colours.
@@ -75,6 +77,7 @@ export const LOOKS = [
     drift: true,
     bloom: 1,
     stars: 'rays',
+    rays: 3,
     palette: SPACE,
   },
   {
@@ -88,6 +91,7 @@ export const LOOKS = [
     drift: true,
     bloom: 1.6,
     stars: 'jelly',
+    rays: 3,
     palette: SEA,
   },
   {
@@ -101,19 +105,21 @@ export const LOOKS = [
     drift: false,
     bloom: 0,
     stars: 'orbs',
+    rays: 3,
     palette: MINIMAL,
   },
   {
     id: 'shallow-space',
     name: 'Shallow Space',
     motion: false,
-    sky: 'space',
+    sky: 'orbit',
     dust: null,
     rivers: false,
     supernova: false,
     drift: false,
-    bloom: 1,
+    bloom: 0.6,
     stars: 'rays',
+    rays: 1,
     palette: SPACE,
   },
 ]
@@ -182,6 +188,7 @@ export function createLooks({
     bloom.setStrength(Math.min(1, bloomStrength * look.bloom))
     view.setStyle({
       stars: look.stars,
+      rays: look.rays,
       tints: palette.tints,
       murk: palette.murk,
       voidColor: palette.clear,
