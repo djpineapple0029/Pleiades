@@ -184,13 +184,15 @@ function onRenderCrash(error) {
 guard.installGlobalHandlers(interaction.reportError)
 
 // three restores its own state; the two things that only ever lived on the GPU
-// are rebuilt here.
+// are rebuilt here, and the dust rivers' tables go back up whole (three would
+// otherwise send only the grains that changed that frame).
 watchContextLoss(canvas, {
   onLost: () => guard.cover(CONTEXT_LOST),
   onRestored: () => {
     if (guard.isFatal) return
     try {
       skybox.rebake()
+      rivers.restore()
       view.invalidateLabels()
       guard.uncover()
     } catch (error) {
@@ -209,7 +211,7 @@ function frame() {
   overview.update(delta)
   interaction.update()
   view.update(clock.elapsedTime, camera) // getDelta above has just advanced it
-  if (settings.visuals.dust_rivers) rivers.update(delta, undefined, camera)
+  if (settings.visuals.dust_rivers) rivers.update(delta)
   else rivers.hide()
   bloom.render() // the whole frame, stars and bloom included
 }

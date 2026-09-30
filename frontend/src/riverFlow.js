@@ -1,20 +1,33 @@
 /**
  * Dust rivers: grains that swirl around stars and flow along the links between
- * them. Plain data, no Three.js — `dustRivers.js` draws what this computes.
+ * them. Plain data, no Three.js — `dustRivers.js` draws what this describes.
  *
- * Each grain carries its own state, so it takes a real route through the map:
- * it orbits a star for a while, slings out along one of its links, rides the
- * river to the star at the other end, is caught into that star's swirl, and so
- * on. Follow one with your eye and it wanders the graph at random.
+ * Each grain takes a real route through the map: it orbits a star for a while,
+ * slings out along one of its links, rides the river to the star at the other
+ * end, is caught into that star's swirl, and so on. Follow one with your eye
+ * and it wanders the graph at random.
+ *
+ * Nothing here moves a grain frame by frame. A grain is always in one
+ * *segment* — an orbit of a star, or a transit down a link — written down as a
+ * handful of numbers and a start and end time, and where the grain is at any
+ * moment is a formula of those numbers, the stars' current positions, and the
+ * time. The GPU evaluates that formula for every grain every frame
+ * (`dustRivers.js`, GRAIN_GLSL); the CPU only writes a grain's next segment
+ * when its current one ends, a few grains a frame. A grain's tail is the same
+ * formula at earlier times, so it needs no history, and it follows its star
+ * when the star is moved because it is always worked out from where the star
+ * is now. `positionAt` is the same formula in JS, for freezing grains on a
+ * delete and for the tests; it and the GLSL must stay step for step the same
+ * (`dustParity.spec.js` checks them against each other).
  *
  * - Orbit: every star has a fixed disc plane (hashed from its id) and spin.
  *   Each grain tilts off that plane by its own amount and keeps its own radius,
  *   so a swirl is a thick, lumpy disc rather than a ring. Grains linger longer
  *   around cores and busy stars — that, and cores pulling more grains their way
  *   when one picks a link, is the "gravity".
- * - Leaving: once a grain's dwell runs out it picks a link, then keeps orbiting
- *   to the point on its orbit where it is already heading down that link, and
- *   leaves there on a tangent.
+ * - Leaving: when a grain is caught into an orbit it picks how long to dwell
+ *   and which link it will leave by, and orbits on to the point where it is
+ *   already heading down that link; the orbit segment ends exactly there.
  * - Transit: a Hermite curve from that exit point to the matching entry point
  *   on the far star's orbit, with the orbit tangents as its own, so the hand-off
  *   at each end is smooth. On top of it, a bend the whole river shares (hashed
@@ -25,11 +38,12 @@
  * cores and long links get more — shape where dust gathers, not only the walk.
  * Grains on something deleted freeze where they are and fade.
  *
- * `shocks` (from `supernova.js`) push grains near an expanding shell outward;
- * the push dies away by itself.
+ * Shocks (from `supernova.js`) push grains near an expanding shell outward;
+ * the push, too, is a formula of the shell's age (`shockPush`).
  */
 
 import { hash32, seededRandom } from './random.js'
+import { SHOCK_EASE, SHOCK_LIFE, SHOCK_PUSH, SHOCK_REACH } from './shockwave.js'
 
 export const MAX_GRAINS = 7000
 // Grain budget: a floor, a share per star, and one per EDGE_SPACING world
@@ -46,44 +60,104 @@ const ORBIT_SPEED = 15
 const RIVER_SPEED = 11
 // Hermite tangent length, as a share of the chord. About 1 keeps the speed
 // through a hand-off roughly continuous.
-const TANGENT_SCALE = 0.7
+export const TANGENT_SCALE = 0.7
 // How far each end tangent is bent from the orbit toward the link (0..1).
-const AIM = 0.6
+export const AIM = 0.6
+// A transit runs at 1 - TRANSIT_EASE at its ends and 1 + TRANSIT_EASE
+// mid-way, times its average speed: it slings out and slows to be caught.
+export const TRANSIT_EASE = 0.25
 // River shape, as shares of a link's length, capped in world units.
-const BEND_SHARE = 0.14
-const BEND_MAX = 40
-const LANE_SHARE = 0.035
-const LANE_MAX = 6
+export const BEND_SHARE = 0.14
+export const BEND_MAX = 40
+export const LANE_SHARE = 0.035
+export const LANE_MAX = 6
 // Heat: 1 within HEAT_FULL radii of a star, 0 beyond HEAT_NONE.
-const HEAT_FULL = 1.5
-const HEAT_NONE = 8
+export const HEAT_FULL = 1.5
+export const HEAT_NONE = 8
 // Lifetimes and fades, seconds.
 const LIFE_MIN = 25
 const LIFE_RANGE = 45
-const FADE_IN = 1.2
-const FADE_OUT = 0.9
-// Shock push: speed in world units per second at the shell, and the time
-// constant it decays with.
-const PUSH_DECAY = 0.8
-const PUSH_MAX = 60
-// Trails: each grain remembers where it was, TRAIL_POINTS samples at one per
-// TRAIL_INTERVAL seconds, so it can be drawn with a curved tail following the
-// path it actually took — a swirl leaves an arc, a river a long strand.
+export const FADE_IN = 1.2
+export const FADE_OUT = 0.9
+// Shock push: the time constant it dies away with, and the most it moves a
+// grain, world units.
+export const PUSH_DECAY = 0.8
+export const PUSH_MAX = 60
+// Shells the dust feels at once, and how long one is kept after the supernova
+// lets it go, so its push can die away rather than snap back.
+export const MAX_SHOCKS = 4
+const SHOCK_KEEP = SHOCK_LIFE + 6 * PUSH_DECAY
+// Tails: TRAIL_POINTS points back from the grain, TRAIL_STEP seconds apart —
+// a swirl leaves an arc, a river a long strand.
 export const TRAIL_POINTS = 16
-const TRAIL_INTERVAL = 0.1
+export const TRAIL_STEP = 0.1
 // Share of grains on an undirected link that run with its current, one way,
 // rather than against it. The rest keep it from looking like a conveyor.
 const CURRENT = 0.8
+// Times are kept relative to an epoch that moves up every EPOCH_SPAN seconds,
+// so they stay small enough for a float32 to hold to well under a frame.
+const EPOCH_SPAN = 600
+
+// --- Layout of the data `dustRivers.js` uploads as float RGBA textures ---
+// Every table is TEX_WIDTH texels (4 floats) wide.
+export const TEX_WIDTH = 1024
+// Per grain, GRAIN_TEXELS texels, so 64 grains fill a row exactly and none
+// spans two: a header (spawn time, death time, brightness), then the current
+// segment at SEG_NOW and the one before it at SEG_BEFORE, SEG_TEXELS each.
+export const GRAIN_TEXELS = 16
+export const SEG_NOW = 1
+export const SEG_BEFORE = 7
+const SEG_TEXELS = 6
+// Per star: STAR_TEXELS in the star table (x, y, z, drawn radius), written
+// every step, and FRAME_TEXELS in the frame table (U + spin, V, N), written
+// when the map changes. Per edge, EDGE_TEXELS (from, to, bend waves, bend
+// phase; bend angle, bend drift).
+export const FRAME_TEXELS = 3
+export const EDGE_TEXELS = 2
+// Segment kinds, the first float of a segment.
+export const NONE = 0
+export const ORBIT = 1
+export const TRANSIT = 2
+export const FROZEN = 3
+// Float offsets inside a segment. An orbit uses A (star, phi, tilt, r) and A2
+// (lift, wobble, theta at t0, signed angular speed); a transit uses A and A2
+// for the star it left (A2's theta: where it left) and B and B2 for the star
+// it's bound for (B2's theta: where it's caught), plus its edge and lane. A
+// frozen grain keeps x, y, z and heat in A.
+const KIND = 0
+const T0 = 1
+const T1 = 2
+const EDGE = 3
+const A = 4
+const A2 = 8
+const B = 12
+const B2 = 16
+const LANE = 20
+// Header floats.
+const SPAWN = 0
+const DEATH = 1
+const BRIGHT = 2
+const NEVER = 1e9
 
 const TAU = Math.PI * 2
 
 // Math.hypot is several times slower than this in V8, and it runs per grain.
 const len3 = (x, y, z) => Math.sqrt(x * x + y * y + z * z)
 
-// Grain phases.
+const rowsFor = (texels) => Math.max(1, Math.ceil(texels / TEX_WIDTH))
+/** A table of `texels` texels, padded to whole TEX_WIDTH rows. */
+const table = (texels) => new Float32Array(rowsFor(texels) * TEX_WIDTH * 4)
+
+const clamp01 = (x) => Math.min(1, Math.max(0, x))
+function smoothstep(e0, e1, x) {
+  const t = clamp01((x - e0) / (e1 - e0))
+  return t * t * (3 - 2 * t)
+}
+
+// Grain phases, as the route sees it.
 const DEAD = 0
-const ORBIT = 1
-const TRANSIT = 2
+const ORBITING = 1
+const RIDING = 2
 
 /** A unit vector and two more square to it and each other, from a hash. */
 function frameFromHash(h, out) {
@@ -123,27 +197,35 @@ function frameFromHash(h, out) {
 
 /**
  * `graph` is a `createGraph()` model; only `nodes`, `edges`, `revision` and
- * `sizeOf`-derived `radiusOf(id)` are read. Returns the simulation and its
- * output buffers, filled for grains `0..count-1` after every `step`.
+ * `sizeOf`-derived `radiusOf(id)` are read.
  */
 export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_GRAINS } = {}) {
   const rand = seededRandom(seed)
 
-  // --- Output ---
+  // --- What the GPU reads ---
+  const records = table(max * GRAIN_TEXELS)
+  let stars = table(0)
+  let frames = table(0)
+  let edges = table(0)
+  // Bumped when the frame or edge tables change (or are reallocated).
+  let tablesVersion = 0
+  // Grains whose record changed in the last step; all of them if `allDirty`.
+  const dirty = new Int32Array(max)
+  const isDirty = new Uint8Array(max)
+  let dirtyCount = 0
+  let allDirty = true
+  // Live shells: x, y, z, star radius; then birth time (epoch-relative).
+  const shockData = new Float32Array(MAX_SHOCKS * 8)
+  let shocks = []
+
+  // --- Sampled on demand (`sample`), for tests and debugging ---
   const positions = new Float32Array(max * 3)
   const light = new Float32Array(max)
   const heat = new Float32Array(max)
-  // Past positions: a ring of TRAIL_POINTS per grain, all grains sampled on the
-  // same tick, `trailHead` the slot the newest sample went into. `trailValid`
-  // counts the samples since the grain last (re)spawned, so no tail ever
-  // spans a jump.
-  const trail = new Float32Array(max * TRAIL_POINTS * 3)
-  const trailValid = new Uint8Array(max)
-  let trailHead = 0
-  let sinceSample = 0
 
-  // --- Per grain ---
+  // --- Per grain, the route: where it is, and where it has chosen to go ---
   const phase = new Uint8Array(max)
+  const frozen = new Uint8Array(max)
   const at = new Int32Array(max) // node orbited, or node left in transit
   const to = new Int32Array(max) // node heading for, or -1
   const via = new Int32Array(max) // edge heading down or riding, or -1
@@ -152,45 +234,15 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
   const toId = new Array(max).fill(null)
   const viaId = new Array(max).fill(null)
   const cameId = new Array(max).fill(null)
-  const theta = new Float64Array(max)
-  const arc = new Float64Array(max) // radians left before the next decision
-  const orbitR = new Float32Array(max) // in radii
-  const wobble = new Float32Array(max)
-  const lift = new Float32Array(max) // off the disc plane, in radii
-  const basis = new Float32Array(max * 6) // U, V of the current orbit
-  // Transit: the far star's orbit, ready to be caught into.
-  const nextBasis = new Float32Array(max * 6)
-  const nextR = new Float32Array(max)
-  const nextLift = new Float32Array(max)
-  const nextWobble = new Float32Array(max)
-  const exitTheta = new Float64Array(max)
-  const entryTheta = new Float64Array(max)
-  const t = new Float64Array(max)
-  // Transit ends, fixed when the grain leaves: exit offset from the star left
-  // and its tangent, then the same for the entry into the far star's orbit.
-  // Offsets, not points, so the river still follows stars that move.
-  const ends = new Float32Array(max * 12)
-  const lane = new Float32Array(max * 2)
   const pace = new Float32Array(max) // speed multiplier
-  const life = new Float32Array(max)
-  const fade = new Float32Array(max)
-  const bright = new Float32Array(max)
-  const dying = new Uint8Array(max)
-  const push = new Float32Array(max * 3)
 
   // --- Per node / edge, rebuilt when the graph's structure changes ---
   let nodeIds = []
   let nodeObjs = []
   let nodeIndex = new Map()
-  let nodeFrame = new Float32Array(0) // U, V, N per node
   let nodeSpin = new Int8Array(0)
   let nodeCore = new Uint8Array(0)
   let nodeDegree = new Int32Array(0)
-  let nodeRadius = new Float32Array(0)
-  // Where each star was last step, and how far it has moved since: a star
-  // carried by hand or by Balance takes its grains' tails along with it.
-  let nodeLast = new Float64Array(0)
-  let nodeDelta = new Float64Array(0)
   let edgeIds = []
   let edgeFrom = new Int32Array(0)
   let edgeTo = new Int32Array(0)
@@ -198,58 +250,105 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
   let edgeIndex = new Map()
   let edgeShape = new Float32Array(0) // bend waves, bend phase, bend angle, drift
   let edgeFlow = new Int8Array(0) // +1: the current runs from -> to, -1: back
-  let edgeFrame = new Float32Array(0) // per step: length, e1, e2
   let incidentList = [] // per node: edge indices
   let spawnCumulative = new Float64Array(0) // nodes then edges
   let budget = 0
   let count = 0
   let builtRevision = -1
+  // Seconds since creation, and the epoch record times are relative to.
   let clock = 0
+  let epoch = 0
 
   const scratch = new Float32Array(9)
+  const basisOut = new Float64Array(6)
+  const orbitOut = new Float64Array(6)
+  const orbitOut2 = new Float64Array(6)
+  const pointOut = new Float64Array(4)
+  const pushOut = new Float64Array(3)
+
+  const now = () => clock - epoch
+  const headOf = (g) => g * GRAIN_TEXELS * 4
+  const segOf = (g, seg) => (g * GRAIN_TEXELS + seg) * 4
+
+  function markDirty(g) {
+    if (isDirty[g]) return
+    isDirty[g] = 1
+    dirty[dirtyCount++] = g
+  }
 
   function rebuild() {
     builtRevision = graph.revision
-    // Last step's star positions, by id, so a move that lands in the same step
-    // as a rebuild (a Balance ending, an undone Balance) still carries tails.
-    const lastById = new Map()
-    for (let i = 0; i < nodeIds.length; i++) lastById.set(nodeIds[i], i)
-    const previousLast = nodeLast
-    nodeIds = [...graph.nodes.keys()]
+    const t = now()
+    const newIds = [...graph.nodes.keys()]
+    const newIndex = new Map(newIds.map((id, i) => [id, i]))
+    const newEdgeIds = [...graph.edges.keys()]
+    const newEdgeIndex = new Map(newEdgeIds.map((id, i) => [id, i]))
+
+    // With the old tables still in place: freeze every grain whose route runs
+    // over something gone, where it is right now, and cut every tail that
+    // reaches back onto something gone.
+    const starGone = new Uint8Array(nodeIds.length)
+    for (let i = 0; i < nodeIds.length; i++) starGone[i] = newIndex.has(nodeIds[i]) ? 0 : 1
+    const edgeGone = new Uint8Array(edgeIds.length)
+    for (let i = 0; i < edgeIds.length; i++) edgeGone[i] = newEdgeIndex.has(edgeIds[i]) ? 0 : 1
+    for (let g = 0; g < count; g++) {
+      if (phase[g] === DEAD) continue
+      const s = segOf(g, SEG_NOW)
+      if (records[s + KIND] !== FROZEN) {
+        const lost =
+          !newIndex.has(atId[g]) ||
+          (toId[g] !== null && !newIndex.has(toId[g])) ||
+          (viaId[g] !== null && !newEdgeIndex.has(viaId[g]))
+        if (lost) freeze(g, t)
+      }
+      const p = segOf(g, SEG_BEFORE)
+      if (records[p + KIND] !== NONE && records[p + KIND] !== FROZEN && segmentLost(p, starGone, edgeGone)) {
+        records[p + KIND] = NONE
+        markDirty(g)
+      }
+    }
+    // Old index -> new, for re-pointing the records.
+    const starMap = Int32Array.from(nodeIds, (id) => newIndex.get(id) ?? -1)
+    const edgeMap = Int32Array.from(edgeIds, (id) => newEdgeIndex.get(id) ?? -1)
+
+    nodeIds = newIds
     nodeObjs = nodeIds.map((id) => graph.nodes.get(id))
-    nodeIndex = new Map(nodeIds.map((id, i) => [id, i]))
+    nodeIndex = newIndex
     const n = nodeIds.length
-    nodeFrame = new Float32Array(n * 9)
     nodeSpin = new Int8Array(n)
     nodeCore = new Uint8Array(n)
     nodeDegree = new Int32Array(n)
-    nodeRadius = new Float32Array(n)
-    nodeLast = new Float64Array(n * 3)
-    nodeDelta = new Float64Array(n * 3)
-    for (let i = 0; i < n; i++) {
-      const old = lastById.get(nodeIds[i])
-      const from = old === undefined ? null : old * 3
-      nodeLast[i * 3] = from === null ? nodeObjs[i].x : previousLast[from]
-      nodeLast[i * 3 + 1] = from === null ? nodeObjs[i].y : previousLast[from + 1]
-      nodeLast[i * 3 + 2] = from === null ? nodeObjs[i].z : previousLast[from + 2]
-    }
+    if (stars.length < n * 4) stars = table(n)
+    if (frames.length < n * FRAME_TEXELS * 4) frames = table(n * FRAME_TEXELS)
     for (let i = 0; i < n; i++) {
       const h = hash32(nodeIds[i], 0x5eed0d15)
       const r = frameFromHash(h, scratch)
-      nodeFrame.set(scratch, i * 9)
       nodeSpin[i] = r() < 0.5 ? -1 : 1
       nodeCore[i] = nodeObjs[i].is_core ? 1 : 0
+      const f = i * FRAME_TEXELS * 4
+      frames[f] = scratch[0]
+      frames[f + 1] = scratch[1]
+      frames[f + 2] = scratch[2]
+      frames[f + 3] = nodeSpin[i]
+      frames[f + 4] = scratch[3]
+      frames[f + 5] = scratch[4]
+      frames[f + 6] = scratch[5]
+      frames[f + 7] = nodeCore[i]
+      frames[f + 8] = scratch[6]
+      frames[f + 9] = scratch[7]
+      frames[f + 10] = scratch[8]
+      frames[f + 11] = 0
     }
 
-    edgeIds = [...graph.edges.keys()]
+    edgeIds = newEdgeIds
     const m = edgeIds.length
     edgeFrom = new Int32Array(m)
     edgeTo = new Int32Array(m)
     edgeDirected = new Uint8Array(m)
-    edgeIndex = new Map(edgeIds.map((id, i) => [id, i]))
+    edgeIndex = newEdgeIndex
     edgeShape = new Float32Array(m * 4)
     edgeFlow = new Int8Array(m)
-    edgeFrame = new Float32Array(m * 7)
+    if (edges.length < m * EDGE_TEXELS * 4) edges = table(m * EDGE_TEXELS)
     incidentList = nodeIds.map(() => [])
     for (let i = 0; i < m; i++) {
       const edge = graph.edges.get(edgeIds[i])
@@ -269,8 +368,28 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
       edgeShape[i * 4 + 3] = (r() - 0.5) * 0.12 // slow drift of the bend
       edgeFlow[i] = r() < 0.5 ? 1 : -1
     }
+    writeEdges()
+    writeStars()
+    tablesVersion++
 
-    readRadii()
+    // Re-point every record at its stars' and edges' new indices.
+    for (let g = 0; g < count; g++) {
+      for (const seg of [SEG_NOW, SEG_BEFORE]) {
+        const s = segOf(g, seg)
+        const kind = records[s + KIND]
+        if (kind === ORBIT || kind === TRANSIT) records[s + A] = starMap[records[s + A]]
+        if (kind === TRANSIT) {
+          records[s + B] = starMap[records[s + B]]
+          records[s + EDGE] = edgeMap[records[s + EDGE]]
+        }
+      }
+      if (phase[g] === DEAD || frozen[g]) continue
+      at[g] = nodeIndex.get(atId[g])
+      to[g] = toId[g] === null ? -1 : nodeIndex.get(toId[g])
+      via[g] = viaId[g] === null ? -1 : edgeIndex.get(viaId[g])
+      came[g] = cameId[g] === null ? -1 : (nodeIndex.get(cameId[g]) ?? -1)
+    }
+
     let totalLength = 0
     spawnCumulative = new Float64Array(n + m)
     let sum = 0
@@ -287,30 +406,70 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
     budget =
       n === 0 ? 0 : Math.min(max, Math.round(BASE_GRAINS + GRAINS_PER_NODE * n + totalLength / EDGE_SPACING))
 
-    // Re-point every grain at its node and edge's new index; anything whose
-    // node or edge is gone freezes and fades.
-    for (let g = 0; g < count; g++) {
-      if (phase[g] === DEAD) continue
-      const a = nodeIndex.get(atId[g])
-      const b = toId[g] === null ? -1 : (nodeIndex.get(toId[g]) ?? null)
-      const e = viaId[g] === null ? -1 : (edgeIndex.get(viaId[g]) ?? null)
-      if (a === undefined || b === null || e === null) {
-        dying[g] = 2 // frozen: no node to follow any more
-        continue
-      }
-      at[g] = a
-      to[g] = b
-      via[g] = e
-      came[g] = cameId[g] === null ? -1 : (nodeIndex.get(cameId[g]) ?? -1)
-    }
     // A shrunk budget retires the grains past it; a grown one fills in.
-    for (let g = budget; g < count; g++) if (phase[g] !== DEAD && !dying[g]) dying[g] = 1
-    for (let g = 0; g < budget; g++) if (g >= count || phase[g] === DEAD) spawn(g)
+    for (let g = budget; g < count; g++) {
+      if (phase[g] === DEAD) continue
+      const h = headOf(g)
+      if (records[h + DEATH] > t) {
+        records[h + DEATH] = t
+        markDirty(g)
+      }
+    }
+    for (let g = 0; g < budget; g++) if (g >= count || phase[g] === DEAD) spawn(g, t)
     count = Math.max(count, budget)
+    allDirty = true
   }
 
-  function readRadii() {
-    for (let i = 0; i < nodeIds.length; i++) nodeRadius[i] = radiusOf(nodeIds[i])
+  /** Whether segment `s`, still in the old indices, runs over anything gone. */
+  function segmentLost(s, starGone, edgeGone) {
+    if (starGone[records[s + A]]) return true
+    if (records[s + KIND] !== TRANSIT) return false
+    return starGone[records[s + B]] === 1 || edgeGone[records[s + EDGE]] === 1
+  }
+
+  /** Grain `g` stops where it is at time `t` and fades; its tail goes. */
+  function freeze(g, t) {
+    positionAt(g, t, pointOut)
+    const s = segOf(g, SEG_NOW)
+    records[s + KIND] = FROZEN
+    records[s + T0] = t
+    records[s + T1] = NEVER
+    records[s + A] = pointOut[0]
+    records[s + A + 1] = pointOut[1]
+    records[s + A + 2] = pointOut[2]
+    records[s + A + 3] = pointOut[3]
+    records[segOf(g, SEG_BEFORE) + KIND] = NONE
+    const h = headOf(g)
+    records[h + DEATH] = Math.min(records[h + DEATH], t)
+    frozen[g] = 1
+    markDirty(g)
+  }
+
+  function writeStars() {
+    for (let i = 0; i < nodeObjs.length; i++) {
+      const node = nodeObjs[i]
+      const o = i * 4
+      stars[o] = node.x
+      stars[o + 1] = node.y
+      stars[o + 2] = node.z
+      stars[o + 3] = radiusOf(nodeIds[i])
+    }
+  }
+
+  function writeEdges() {
+    for (let i = 0; i < edgeIds.length; i++) {
+      const o = i * EDGE_TEXELS * 4
+      edges[o] = edgeFrom[i]
+      edges[o + 1] = edgeTo[i]
+      edges[o + 2] = edgeShape[i * 4]
+      // The drift is applied to epoch-relative time; this keeps the bend where
+      // it was when the epoch moves.
+      edges[o + 3] = (edgeShape[i * 4 + 1] + epoch * edgeShape[i * 4 + 3]) % TAU
+      edges[o + 4] = edgeShape[i * 4 + 2]
+      edges[o + 5] = edgeShape[i * 4 + 3]
+      edges[o + 6] = 0
+      edges[o + 7] = 0
+    }
   }
 
   function distance(a, b) {
@@ -319,23 +478,19 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
     return len3(q.x - p.x, q.y - p.y, q.z - p.z)
   }
 
-  /** A fresh orbit basis for grain `g` around node `k`, into `out` at `o`. */
-  function makeBasis(k, out, o) {
-    const f = k * 9
-    const phi = TAU * rand()
-    const tilt = (rand() - 0.5) * 0.3
+  /** Orbit basis U, V (into `basisOut`) of star `k` turned by `phi` and tilted by `tilt`. */
+  function basisOf(k, phi, tilt) {
+    const f = k * FRAME_TEXELS * 4
     const c = Math.cos(phi)
     const s = Math.sin(phi)
     const ct = Math.cos(tilt)
     const st = Math.sin(tilt)
     for (let a = 0; a < 3; a++) {
-      const u = nodeFrame[f + a]
-      const v = nodeFrame[f + 3 + a]
-      const nrm = nodeFrame[f + 6 + a]
-      const u1 = c * u + s * v
-      const v1 = -s * u + c * v
-      out[o + a] = u1
-      out[o + 3 + a] = ct * v1 + st * nrm
+      const u = frames[f + a]
+      const v = frames[f + 4 + a]
+      const n = frames[f + 8 + a]
+      basisOut[a] = c * u + s * v
+      basisOut[3 + a] = ct * (-s * u + c * v) + st * n
     }
   }
 
@@ -347,12 +502,14 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
   }
 
   /**
-   * Angle on grain `g`'s orbit (basis at `b`, `o`) where the orbit is heading
-   * most nearly along the unit direction (dx, dy, dz).
+   * Angle on an orbit of star `k` (basis from `phi`, `tilt`) where the orbit is
+   * heading most nearly along the unit direction (dx, dy, dz).
    */
-  function headingAngle(b, o, spin, dx, dy, dz) {
-    const du = dx * b[o] + dy * b[o + 1] + dz * b[o + 2]
-    const dv = dx * b[o + 3] + dy * b[o + 4] + dz * b[o + 5]
+  function headingAngle(k, phi, tilt, dx, dy, dz) {
+    basisOf(k, phi, tilt)
+    const spin = nodeSpin[k]
+    const du = dx * basisOut[0] + dy * basisOut[1] + dz * basisOut[2]
+    const dv = dx * basisOut[3] + dy * basisOut[4] + dz * basisOut[5]
     return Math.atan2(-spin * du, spin * dv)
   }
 
@@ -369,43 +526,47 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
     return lo
   }
 
-  function spawn(g) {
-    dying[g] = 0
-    // No tail from before: a grain respawned by `rebuild` (a map that grew
-    // back after shrinking) would otherwise draw one to where it last died.
-    trailValid[g] = 0
-    push[g * 3] = push[g * 3 + 1] = push[g * 3 + 2] = 0
+  function spawn(g, t) {
+    markDirty(g)
+    frozen[g] = 0
+    const h = headOf(g)
+    records[segOf(g, SEG_BEFORE) + KIND] = NONE
     if (g >= budget || nodeIds.length === 0) {
       phase[g] = DEAD
-      light[g] = 0
+      records[segOf(g, SEG_NOW) + KIND] = NONE
+      records[h + SPAWN] = 0
+      records[h + DEATH] = -NEVER
+      records[h + BRIGHT] = 0
       return
     }
-    life[g] = LIFE_MIN + LIFE_RANGE * rand()
-    fade[g] = 0
+    records[h + SPAWN] = t
+    records[h + DEATH] = t + LIFE_MIN + LIFE_RANGE * rand()
     // Mostly faint, a few bright: the eye picks out the bright ones to follow.
-    bright[g] = 0.3 + 0.7 * rand() ** 2
+    records[h + BRIGHT] = 0.3 + 0.7 * rand() ** 2
     pace[g] = 0.7 + 0.6 * rand()
     const pick = pickSpawn()
     const n = nodeIds.length
+    const phi = TAU * rand()
+    const tilt = (rand() - 0.5) * 0.3
+    const r = randomRadius()
+    const lift = (rand() - 0.5) * 0.3
+    const wob = TAU * rand()
     if (pick < n) {
-      enterOrbit(g, pick, -1)
-      makeBasis(pick, basis, g * 6)
-      orbitR[g] = randomRadius()
-      lift[g] = (rand() - 0.5) * 0.3
-      wobble[g] = TAU * rand()
-      theta[g] = TAU * rand()
+      startOrbit(g, pick, -1, t, phi, tilt, r, lift, wob, TAU * rand())
     } else {
       const e = pick - n
       const reverse = edgeDirected[e] ? false : rand() < (edgeFlow[e] > 0 ? 1 - CURRENT : CURRENT)
       const a = reverse ? edgeTo[e] : edgeFrom[e]
       const b = reverse ? edgeFrom[e] : edgeTo[e]
       setNode(g, a)
-      makeBasis(a, basis, g * 6)
-      orbitR[g] = randomRadius()
-      lift[g] = (rand() - 0.5) * 0.3
-      wobble[g] = TAU * rand()
-      startTransit(g, e, b)
-      t[g] = rand()
+      came[g] = -1
+      cameId[g] = null
+      startTransit(g, e, b, t, a, phi, tilt, r, lift, wob, NaN)
+      // Already partway down the river.
+      const s = segOf(g, SEG_NOW)
+      const shift = rand() * (records[s + T1] - records[s + T0])
+      records[s + T0] -= shift
+      records[s + T1] -= shift
     }
   }
 
@@ -414,50 +575,63 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
     atId[g] = nodeIds[k]
   }
 
-  function enterOrbit(g, k, from) {
-    phase[g] = ORBIT
+  /**
+   * Grain `g` is caught into an orbit of star `k` at time `t0` and angle
+   * `theta`, having come from star `from` (or -1). It picks how long to dwell
+   * and the link it will leave by, and the orbit runs until it's heading
+   * down that link.
+   */
+  function startOrbit(g, k, from, t0, phi, tilt, r, lift, wob, theta) {
+    phase[g] = ORBITING
     setNode(g, k)
     came[g] = from
     cameId[g] = from < 0 ? null : nodeIds[from]
+    const spin = nodeSpin[k]
+    const speed = (ORBIT_SPEED * pace[g] * Math.sqrt(ORBIT_MIN / r)) / (r * stars[k * 4 + 3])
+    let arc = dwell(k)
+    const e = chooseLink(g)
+    if (e >= 0) {
+      const other = to[g]
+      const p = nodeObjs[k]
+      const q = nodeObjs[other]
+      const len = len3(q.x - p.x, q.y - p.y, q.z - p.z) || 1
+      const target = headingAngle(k, phi, tilt, (q.x - p.x) / len, (q.y - p.y) / len, (q.z - p.z) / len)
+      const end = theta + spin * arc
+      arc += ((((target - end) * spin) % TAU) + TAU) % TAU
+    }
+    const s = segOf(g, SEG_NOW)
+    records[s + KIND] = ORBIT
+    records[s + T0] = t0
+    records[s + T1] = t0 + arc / speed
+    records[s + EDGE] = -1
+    records[s + A] = k
+    records[s + A + 1] = phi
+    records[s + A + 2] = tilt
+    records[s + A + 3] = r
+    records[s + A2] = lift
+    records[s + A2 + 1] = wob
+    records[s + A2 + 2] = theta
+    records[s + A2 + 3] = spin * speed
+    markDirty(g)
+  }
+
+  /** Picks a link out of grain `g`'s star; sets `to`/`via` and returns it, or -1. */
+  function chooseLink(g) {
+    const k = at[g]
     to[g] = -1
     toId[g] = null
     via[g] = -1
     viaId[g] = null
-    arc[g] = dwell(k)
-  }
-
-  /** Picks a link out of grain `g`'s star and sets it heading for its exit point. */
-  function chooseLink(g) {
-    const k = at[g]
     const links = incidentList[k]
     let total = 0
-    const weights = []
-    for (const e of links) {
-      const other = edgeFrom[e] === k ? edgeTo[e] : edgeFrom[e]
-      // A directed link carries dust one way only.
-      // Undirected links still have a current: most grains go the way it runs.
-      const downstream = edgeFlow[e] > 0 === (edgeFrom[e] === k)
-      const w = edgeDirected[e]
-        ? edgeFrom[e] === k
-          ? 1 + 2 * nodeCore[other]
-          : 0
-        : (1 + 2 * nodeCore[other]) *
-          (other === came[g] ? 0.15 : 1) *
-          (downstream ? CURRENT : 1 - CURRENT) *
-          2
-      weights.push(w)
-      total += w
-    }
-    if (total <= 0) {
-      arc[g] = dwell(k)
-      return
-    }
+    for (const e of links) total += linkWeight(g, k, e)
+    if (total <= 0) return -1
     let x = rand() * total
     let chosen = links[links.length - 1]
-    for (let i = 0; i < links.length; i++) {
-      x -= weights[i]
+    for (const e of links) {
+      x -= linkWeight(g, k, e)
       if (x < 0) {
-        chosen = links[i]
+        chosen = e
         break
       }
     }
@@ -466,424 +640,501 @@ export function createRiverFlow(graph, { radiusOf, seed = 0x72697672, max = MAX_
     viaId[g] = edgeIds[chosen]
     to[g] = other
     toId[g] = nodeIds[other]
-    const p = nodeObjs[k]
-    const q = nodeObjs[other]
-    const len = len3(q.x - p.x, q.y - p.y, q.z - p.z) || 1
-    const spin = nodeSpin[k]
-    const target = headingAngle(basis, g * 6, spin, (q.x - p.x) / len, (q.y - p.y) / len, (q.z - p.z) / len)
-    exitTheta[g] = target
-    arc[g] = ((((target - theta[g]) * spin) % TAU) + TAU) % TAU
+    return chosen
   }
 
-  /** `keepExit`: the grain is already at the exit point `chooseLink` set. */
-  function startTransit(g, e, b, keepExit = false) {
-    const a = at[g]
-    phase[g] = TRANSIT
+  function linkWeight(g, k, e) {
+    const other = edgeFrom[e] === k ? edgeTo[e] : edgeFrom[e]
+    // A directed link carries dust one way only.
+    if (edgeDirected[e]) return edgeFrom[e] === k ? 1 + 2 * nodeCore[other] : 0
+    // Undirected links still have a current: most grains go the way it runs.
+    const downstream = edgeFlow[e] > 0 === (edgeFrom[e] === k)
+    return (
+      (1 + 2 * nodeCore[other]) * (other === came[g] ? 0.15 : 1) * (downstream ? CURRENT : 1 - CURRENT) * 2
+    )
+  }
+
+  /**
+   * Grain `g` leaves star `a` (orbit `phi`..`wob`) down edge `e` for star `b`
+   * at time `t0`, from angle `exitTheta` — or, if NaN, from wherever on that
+   * orbit is heading down the link.
+   */
+  function startTransit(g, e, b, t0, a, phi, tilt, r, lift, wob, exitTheta) {
+    phase[g] = RIDING
     via[g] = e
     viaId[g] = edgeIds[e]
     to[g] = b
     toId[g] = nodeIds[b]
-    t[g] = 0
     const p = nodeObjs[a]
     const q = nodeObjs[b]
     const len = len3(q.x - p.x, q.y - p.y, q.z - p.z) || 1
     const dx = (q.x - p.x) / len
     const dy = (q.y - p.y) / len
     const dz = (q.z - p.z) / len
-    if (!keepExit) exitTheta[g] = headingAngle(basis, g * 6, nodeSpin[a], dx, dy, dz)
-    makeBasis(b, nextBasis, g * 6)
-    nextR[g] = randomRadius()
-    nextLift[g] = (rand() - 0.5) * 0.3
-    nextWobble[g] = TAU * rand()
-    entryTheta[g] = headingAngle(nextBasis, g * 6, nodeSpin[b], dx, dy, dz)
-    const o = g * 12
-    orbitPoint(a, basis, g * 6, orbitR[g], lift[g], wobble[g], exitTheta[g])
-    ends[o] = orbitOut[0] - p.x
-    ends[o + 1] = orbitOut[1] - p.y
-    ends[o + 2] = orbitOut[2] - p.z
-    aimTangent(o + 3, dx, dy, dz)
-    orbitPoint(b, nextBasis, g * 6, nextR[g], nextLift[g], nextWobble[g], entryTheta[g])
-    ends[o + 6] = orbitOut[0] - q.x
-    ends[o + 7] = orbitOut[1] - q.y
-    ends[o + 8] = orbitOut[2] - q.z
-    aimTangent(o + 9, dx, dy, dz)
+    if (Number.isNaN(exitTheta)) exitTheta = headingAngle(a, phi, tilt, dx, dy, dz)
+    const phiB = TAU * rand()
+    const tiltB = (rand() - 0.5) * 0.3
+    const rB = randomRadius()
+    const liftB = (rand() - 0.5) * 0.3
+    const wobB = TAU * rand()
+    const entryTheta = headingAngle(b, phiB, tiltB, dx, dy, dz)
+    orbitPoint(a, phi, tilt, r, lift, wob, exitTheta, orbitOut)
+    orbitPoint(b, phiB, tiltB, rB, liftB, wobB, entryTheta, orbitOut2)
+    const chord = len3(orbitOut2[0] - orbitOut[0], orbitOut2[1] - orbitOut[1], orbitOut2[2] - orbitOut[2])
+    const duration = Math.max(0.1, chord / (RIVER_SPEED * pace[g]))
     const s = Math.sqrt(-2 * Math.log(1 - rand())) // Rayleigh: most near the middle
     const w = TAU * rand()
-    lane[g * 2] = 0.5 * s * Math.cos(w)
-    lane[g * 2 + 1] = 0.5 * s * Math.sin(w)
+    const o = segOf(g, SEG_NOW)
+    records[o + KIND] = TRANSIT
+    records[o + T0] = t0
+    records[o + T1] = t0 + duration
+    records[o + EDGE] = e
+    records[o + A] = a
+    records[o + A + 1] = phi
+    records[o + A + 2] = tilt
+    records[o + A + 3] = r
+    records[o + A2] = lift
+    records[o + A2 + 1] = wob
+    records[o + A2 + 2] = exitTheta
+    records[o + A2 + 3] = 0
+    records[o + B] = b
+    records[o + B + 1] = phiB
+    records[o + B + 2] = tiltB
+    records[o + B + 3] = rB
+    records[o + B2] = liftB
+    records[o + B2 + 1] = wobB
+    records[o + B2 + 2] = entryTheta
+    records[o + B2 + 3] = 0
+    records[o + LANE] = 0.5 * s * Math.cos(w)
+    records[o + LANE + 1] = 0.5 * s * Math.sin(w)
+    records[o + LANE + 2] = 0
+    records[o + LANE + 3] = 0
+    markDirty(g)
   }
 
-  /**
-   * The orbit tangent in `orbitOut`, bent toward the link's direction and
-   * stored at `ends[at]`. Straight off an orbit tilted across the link, the
-   * curve would throw a wide loop out into empty space before turning for
-   * the far star; bent, it leaves and arrives along the river.
-   */
-  function aimTangent(at, dx, dy, dz) {
-    let x = orbitOut[3] * (1 - AIM) + dx * AIM
-    let y = orbitOut[4] * (1 - AIM) + dy * AIM
-    let z = orbitOut[5] * (1 - AIM) + dz * AIM
-    const l = len3(x, y, z) || 1
-    ends[at] = x / l
-    ends[at + 1] = y / l
-    ends[at + 2] = z / l
+  /** Grain `g`'s current segment has ended: on to the next. */
+  function advance(g) {
+    const s = segOf(g, SEG_NOW)
+    records.copyWithin(segOf(g, SEG_BEFORE), s, s + SEG_TEXELS * 4)
+    const t1 = records[s + T1]
+    if (records[s + KIND] === ORBIT) {
+      const k = records[s + A]
+      const phi = records[s + A + 1]
+      const tilt = records[s + A + 2]
+      const r = records[s + A + 3]
+      const lift = records[s + A2]
+      const wob = records[s + A2 + 1]
+      // Where the orbit has got to, from the numbers the GPU has.
+      const theta = records[s + A2 + 2] + records[s + A2 + 3] * (t1 - records[s + T0])
+      if (to[g] < 0) startOrbit(g, k, came[g], t1, phi, tilt, r, lift, wob, theta)
+      else startTransit(g, via[g], to[g], t1, k, phi, tilt, r, lift, wob, theta)
+    } else {
+      // Caught into the far star's swirl, right where the curve ends.
+      startOrbit(
+        g,
+        records[s + B],
+        at[g],
+        t1,
+        records[s + B + 1],
+        records[s + B + 2],
+        records[s + B + 3],
+        records[s + B2],
+        records[s + B2 + 1],
+        records[s + B2 + 2],
+      )
+    }
   }
 
-  // Orbit point and unit tangent of a grain's orbit around node k at angle th.
-  const orbitOut = new Float64Array(6)
-  function orbitPoint(k, b, o, r, lft, wob, th) {
-    const radius = nodeRadius[k]
+  // --- The formula: the JS twin of GRAIN_GLSL in dustRivers.js ---
+
+  /** Point and unit tangent (into `out`) of an orbit of star `k` at angle `th`. */
+  function orbitPoint(k, phi, tilt, r, lift, wob, th, out) {
+    basisOf(k, phi, tilt)
+    const f = k * FRAME_TEXELS * 4
+    const o = k * 4
+    const radius = stars[o + 3]
+    const spin = frames[f + 3]
     const rr = r * radius * (1 + 0.12 * Math.sin(3 * th + wob))
     const c = Math.cos(th)
     const s = Math.sin(th)
-    const f = k * 9
-    const node = nodeObjs[k]
-    const h = lft * radius
-    const spin = nodeSpin[k]
+    const h = lift * radius
     for (let a = 0; a < 3; a++) {
-      orbitOut[a] = rr * (c * b[o + a] + s * b[o + 3 + a]) + h * nodeFrame[f + 6 + a]
-      orbitOut[3 + a] = spin * (-s * b[o + a] + c * b[o + 3 + a])
+      out[a] = stars[o + a] + rr * (c * basisOut[a] + s * basisOut[3 + a]) + h * frames[f + 8 + a]
+      out[3 + a] = spin * (-s * basisOut[a] + c * basisOut[3 + a])
     }
-    orbitOut[0] += node.x
-    orbitOut[1] += node.y
-    orbitOut[2] += node.z
   }
 
   const heatFrom = (d) => {
-    const x = Math.min(1, Math.max(0, (HEAT_NONE - d) / (HEAT_NONE - HEAT_FULL)))
+    const x = clamp01((HEAT_NONE - d) / (HEAT_NONE - HEAT_FULL))
     return x * x
   }
 
-  /**
-   * Advances every grain by `dt` seconds and fills the output buffers. `shocks`
-   * is a list of `{ x, y, z, radius, width, strength }` shells.
-   */
-  function step(dt, shocks = []) {
-    if (graph.revision !== builtRevision) rebuild()
-    readRadii()
-    clock += dt
-    const decay = Math.exp(-dt / PUSH_DECAY)
-    writeEdgeFrames()
-    const starsMoved = trackStars()
+  /** Bends tangent (tx, ty, tz) toward direction d by AIM, into out[3..5]. */
+  function aim(out, dx, dy, dz) {
+    const x = out[3] * (1 - AIM) + dx * AIM
+    const y = out[4] * (1 - AIM) + dy * AIM
+    const z = out[5] * (1 - AIM) + dz * AIM
+    const l = len3(x, y, z) || 1
+    out[3] = x / l
+    out[4] = y / l
+    out[5] = z / l
+  }
 
+  /** Where segment `s` of grain `g` is at time `t`: x, y, z, heat into `out`. */
+  function segmentAt(g, s, t, out) {
+    const kind = records[s + KIND]
+    if (kind === FROZEN) {
+      out[0] = records[s + A]
+      out[1] = records[s + A + 1]
+      out[2] = records[s + A + 2]
+      out[3] = records[s + A + 3]
+      return
+    }
+    if (kind === NONE) {
+      out[0] = out[1] = out[2] = out[3] = 0
+      return
+    }
+    const k = records[s + A]
+    if (kind === ORBIT) {
+      const th = records[s + A2 + 2] + records[s + A2 + 3] * (t - records[s + T0])
+      orbitPoint(
+        k,
+        records[s + A + 1],
+        records[s + A + 2],
+        records[s + A + 3],
+        records[s + A2],
+        records[s + A2 + 1],
+        th,
+        orbitOut,
+      )
+      out[0] = orbitOut[0]
+      out[1] = orbitOut[1]
+      out[2] = orbitOut[2]
+      out[3] = heatFrom(records[s + A + 3])
+      return
+    }
+    const b = records[s + B]
+    const pa = k * 4
+    const pb = b * 4
+    orbitPoint(
+      k,
+      records[s + A + 1],
+      records[s + A + 2],
+      records[s + A + 3],
+      records[s + A2],
+      records[s + A2 + 1],
+      records[s + A2 + 2],
+      orbitOut,
+    )
+    orbitPoint(
+      b,
+      records[s + B + 1],
+      records[s + B + 2],
+      records[s + B + 3],
+      records[s + B2],
+      records[s + B2 + 1],
+      records[s + B2 + 2],
+      orbitOut2,
+    )
+    let dx = stars[pb] - stars[pa]
+    let dy = stars[pb + 1] - stars[pa + 1]
+    let dz = stars[pb + 2] - stars[pa + 2]
+    const dl = len3(dx, dy, dz) || 1
+    dx /= dl
+    dy /= dl
+    dz /= dl
+    aim(orbitOut, dx, dy, dz)
+    aim(orbitOut2, dx, dy, dz)
+    const chord =
+      len3(orbitOut2[0] - orbitOut[0], orbitOut2[1] - orbitOut[1], orbitOut2[2] - orbitOut[2]) || 1
+    const tau = clamp01((t - records[s + T0]) / Math.max(records[s + T1] - records[s + T0], 1e-4))
+    const u = tau - (TRANSIT_EASE * Math.sin(TAU * tau)) / TAU
+    const u2 = u * u
+    const u3 = u2 * u
+    const h00 = 2 * u3 - 3 * u2 + 1
+    const h10 = u3 - 2 * u2 + u
+    const h01 = -2 * u3 + 3 * u2
+    const h11 = u3 - u2
+    const m = chord * TANGENT_SCALE
+    let x = h00 * orbitOut[0] + h10 * m * orbitOut[3] + h01 * orbitOut2[0] + h11 * m * orbitOut2[3]
+    let y = h00 * orbitOut[1] + h10 * m * orbitOut[4] + h01 * orbitOut2[1] + h11 * m * orbitOut2[4]
+    let z = h00 * orbitOut[2] + h10 * m * orbitOut[5] + h01 * orbitOut2[2] + h11 * m * orbitOut2[5]
+
+    // The river's banks: a bend the whole link shares, and this grain's lane
+    // in it, both zero at the ends. The link's own axes, from its own `from`.
+    const e = records[s + EDGE] * EDGE_TEXELS * 4
+    const forward = edges[e] === k
+    let ex = forward ? dx : -dx
+    let ey = forward ? dy : -dy
+    let ez = forward ? dz : -dz
+    let f1x = ey
+    let f1y = -ex
+    let f1z = 0
+    if (Math.abs(ez) > 0.9) {
+      f1x = 0
+      f1y = ez
+      f1z = -ey
+    }
+    const l1 = len3(f1x, f1y, f1z) || 1
+    f1x /= l1
+    f1y /= l1
+    f1z /= l1
+    const f2x = ey * f1z - ez * f1y
+    const f2y = ez * f1x - ex * f1z
+    const f2z = ex * f1y - ey * f1x
+    const along = forward ? u : 1 - u
+    const envelope = Math.sin(Math.PI * u)
+    const bend =
+      Math.min(BEND_SHARE * dl, BEND_MAX) *
+      Math.sin(Math.PI * edges[e + 2] * along + edges[e + 3] + t * edges[e + 5])
+    const width = Math.min(LANE_SHARE * dl, LANE_MAX) * (1 + 0.25 * Math.sin(5 * along + g))
+    const ang = edges[e + 4]
+    const la = bend * Math.cos(ang) + width * records[s + LANE]
+    const lb = bend * Math.sin(ang) + width * records[s + LANE + 1]
+    x += envelope * (la * f1x + lb * f2x)
+    y += envelope * (la * f1y + lb * f2y)
+    z += envelope * (la * f1z + lb * f2z)
+    out[0] = x
+    out[1] = y
+    out[2] = z
+    const dA = len3(x - stars[pa], y - stars[pa + 1], z - stars[pa + 2]) / stars[pa + 3]
+    const dB = len3(x - stars[pb], y - stars[pb + 1], z - stars[pb + 2]) / stars[pb + 3]
+    out[3] = heatFrom(Math.min(dA, dB))
+  }
+
+  /** The earliest time grain `g`'s tail can reach back to. */
+  function earliest(g) {
+    const s = segOf(g, SEG_NOW)
+    const p = segOf(g, SEG_BEFORE)
+    const from = records[p + KIND] !== NONE ? records[p + T0] : records[s + T0]
+    return Math.max(from, records[headOf(g) + SPAWN])
+  }
+
+  /** Where grain `g` is at (epoch-relative) time `t`: x, y, z, heat into `out`. */
+  function positionAt(g, t, out) {
+    const s = segOf(g, SEG_NOW)
+    const p = segOf(g, SEG_BEFORE)
+    t = Math.max(t, earliest(g))
+    segmentAt(g, t >= records[s + T0] || records[p + KIND] === NONE ? s : p, t, out)
+    shockPush(out[0], out[1], out[2], t, pushOut)
+    out[0] += pushOut[0]
+    out[1] += pushOut[1]
+    out[2] += pushOut[2]
+  }
+
+  /**
+   * How far the live shells have pushed a grain at (x, y, z) by time `t`: the
+   * shell reaches it at `reached`, shoves it out by what the shell's push
+   * integrates to over its width, and the shove dies away.
+   */
+  function shockPush(x, y, z, t, out) {
+    out[0] = out[1] = out[2] = 0
+    for (let i = 0; i < MAX_SHOCKS; i++) {
+      const o = i * 8
+      const r0 = shockData[o + 3]
+      if (r0 <= 0) continue
+      const age = t - shockData[o + 4]
+      if (age <= 0) continue
+      const rx = x - shockData[o]
+      const ry = y - shockData[o + 1]
+      const rz = z - shockData[o + 2]
+      const d = len3(rx, ry, rz)
+      if (d < 1e-3) continue
+      const reach = r0 * SHOCK_REACH
+      if (d >= reach) continue
+      const reached = -SHOCK_EASE * Math.log(1 - d / reach)
+      if (reached >= SHOCK_LIFE) continue
+      const life = reached / SHOCK_LIFE
+      const strength = SHOCK_PUSH * (r0 / 5) * (1 - life) * (1 - life)
+      const width = Math.max(0.35 * d, 2)
+      const rate = (reach - d) / SHOCK_EASE
+      const amount = Math.min(PUSH_MAX, (strength * width * 1.7724539) / Math.max(rate, 1e-3))
+      const radius = reach * (1 - Math.exp(-age / SHOCK_EASE))
+      const rise = 1 - smoothstep(-1.5, 1.5, (d - radius) / width)
+      const decay = Math.exp(-Math.max(0, age - reached) / PUSH_DECAY)
+      const k = (amount * rise * decay) / d
+      out[0] += rx * k
+      out[1] += ry * k
+      out[2] += rz * k
+    }
+    const l = len3(out[0], out[1], out[2])
+    if (l > PUSH_MAX) {
+      out[0] *= PUSH_MAX / l
+      out[1] *= PUSH_MAX / l
+      out[2] *= PUSH_MAX / l
+    }
+  }
+
+  /** Grain `g`'s brightness at time `t`: faded in after spawn, out after death. */
+  function lightAt(g, t) {
+    if (records[segOf(g, SEG_NOW) + KIND] === NONE) return 0
+    const h = headOf(g)
+    const f = clamp01(Math.min((t - records[h + SPAWN]) / FADE_IN, 1 - (t - records[h + DEATH]) / FADE_OUT))
+    return records[h + BRIGHT] * f * f * (3 - 2 * f)
+  }
+
+  /** Takes in `list` from `supernova.shocks()`; keeps each until its push is gone. */
+  function noteShocks(list) {
+    for (const shock of list) {
+      if (shocks.some((s) => s.id === shock.id)) continue
+      shocks.push({
+        id: shock.id,
+        x: shock.x,
+        y: shock.y,
+        z: shock.z,
+        r0: shock.starRadius,
+        birth: clock - shock.age,
+      })
+    }
+    shocks = shocks.filter((s) => clock - s.birth < SHOCK_KEEP).slice(-MAX_SHOCKS)
+    shockData.fill(0)
+    shocks.forEach((s, i) => {
+      shockData.set([s.x, s.y, s.z, s.r0, s.birth - epoch], i * 8)
+    })
+  }
+
+  /** Moves the epoch up to now, keeping every record time where it was. */
+  function rebase() {
+    const shift = clock - epoch
+    epoch = clock
+    for (let g = 0; g < count; g++) {
+      const h = headOf(g)
+      if (Math.abs(records[h + SPAWN]) < NEVER / 2) records[h + SPAWN] -= shift
+      if (Math.abs(records[h + DEATH]) < NEVER / 2) records[h + DEATH] -= shift
+      for (const seg of [SEG_NOW, SEG_BEFORE]) {
+        const s = segOf(g, seg)
+        records[s + T0] -= shift
+        if (records[s + T1] < NEVER / 2) records[s + T1] -= shift
+      }
+    }
+    writeEdges()
+    tablesVersion++
+    allDirty = true
+  }
+
+  /**
+   * Advances the rivers by `dt` seconds: new segments for the grains whose
+   * last one ended, and the stars' positions and radii for the GPU. `shocks`
+   * is `supernova.shocks()`.
+   */
+  function step(dt, shockList = []) {
+    for (let i = 0; i < dirtyCount; i++) isDirty[dirty[i]] = 0
+    dirtyCount = 0
+    allDirty = false
+    clock += dt
+    if (clock - epoch > EPOCH_SPAN) rebase()
+    if (graph.revision !== builtRevision) rebuild()
+    writeStars()
+    noteShocks(shockList)
+    const t = now()
+    for (let g = 0; g < count; g++) {
+      if (phase[g] === DEAD) continue
+      const h = headOf(g)
+      const s = segOf(g, SEG_NOW)
+      // A long frame can end several segments at once.
+      for (let guard = 0; guard < 16; guard++) {
+        if (t >= records[h + DEATH] + FADE_OUT) {
+          spawn(g, t)
+          break
+        }
+        if (records[s + KIND] === FROZEN || t < records[s + T1]) break
+        advance(g)
+      }
+    }
+    // Trailing grains that have retired need not be drawn.
+    while (count > 0 && phase[count - 1] === DEAD) count--
+  }
+
+  /** Fills `positions`, `light` and `heat` for now. Not needed to draw. */
+  function sample() {
+    const t = now()
     for (let g = 0; g < count; g++) {
       if (phase[g] === DEAD) {
         light[g] = 0
         continue
       }
-      if (starsMoved && dying[g] !== 2) carryTrail(g)
-      const o = g * 3
-
-      if (dying[g]) {
-        fade[g] -= dt / FADE_OUT
-        if (fade[g] <= 0) {
-          spawn(g)
-          if (phase[g] === DEAD) continue
-        }
-      } else {
-        fade[g] = Math.min(1, fade[g] + dt / FADE_IN)
-        life[g] -= dt
-        if (life[g] <= 0) dying[g] = 1
-      }
-
-      let x, y, z, near
-      if (dying[g] === 2) {
-        // Frozen where it was; only the push still moves it.
-        x = positions[o] - push[o]
-        y = positions[o + 1] - push[o + 1]
-        z = positions[o + 2] - push[o + 2]
-        near = heat[g]
-      } else if (phase[g] === ORBIT) {
-        const k = at[g]
-        const r = orbitR[g]
-        const radius = nodeRadius[k]
-        const omega = (ORBIT_SPEED * pace[g] * Math.sqrt(ORBIT_MIN / r)) / (r * radius)
-        const turn = omega * dt
-        theta[g] += nodeSpin[k] * turn
-        arc[g] -= turn
-        if (arc[g] <= 0) {
-          if (to[g] < 0) chooseLink(g)
-          else {
-            // At the exit point: snap exactly onto it and leave.
-            theta[g] = exitTheta[g]
-            startTransit(g, via[g], to[g], true)
-          }
-        }
-        if (phase[g] === ORBIT) {
-          orbitPoint(k, basis, g * 6, r, lift[g], wobble[g], theta[g])
-          x = orbitOut[0]
-          y = orbitOut[1]
-          z = orbitOut[2]
-          near = heatFrom(r)
-        }
-      }
-
-      if (phase[g] === TRANSIT && dying[g] !== 2) {
-        const a = at[g]
-        const b = to[g]
-        const pa = nodeObjs[a]
-        const pb = nodeObjs[b]
-        const eo = g * 12
-        const p0x = pa.x + ends[eo],
-          p0y = pa.y + ends[eo + 1],
-          p0z = pa.z + ends[eo + 2]
-        const t0x = ends[eo + 3],
-          t0y = ends[eo + 4],
-          t0z = ends[eo + 5]
-        const p1x = pb.x + ends[eo + 6],
-          p1y = pb.y + ends[eo + 7],
-          p1z = pb.z + ends[eo + 8]
-        const t1x = ends[eo + 9],
-          t1y = ends[eo + 10],
-          t1z = ends[eo + 11]
-        const chord = len3(p1x - p0x, p1y - p0y, p1z - p0z) || 1
-
-        let u = t[g]
-        const speed = RIVER_SPEED * pace[g] * (0.75 + 0.5 * Math.sin(Math.PI * u))
-        u += (dt * speed) / chord
-        if (u >= 1) {
-          // Caught into the far star's swirl, right where the curve ends.
-          const from = a
-          copyNextOrbit(g)
-          enterOrbit(g, b, from)
-          theta[g] = entryTheta[g]
-          orbitPoint(b, basis, g * 6, orbitR[g], lift[g], wobble[g], theta[g])
-          x = orbitOut[0]
-          y = orbitOut[1]
-          z = orbitOut[2]
-          near = heatFrom(orbitR[g])
-        } else {
-          t[g] = u
-          const u2 = u * u
-          const u3 = u2 * u
-          const h00 = 2 * u3 - 3 * u2 + 1
-          const h10 = u3 - 2 * u2 + u
-          const h01 = -2 * u3 + 3 * u2
-          const h11 = u3 - u2
-          const m = chord * TANGENT_SCALE
-          x = h00 * p0x + h10 * m * t0x + h01 * p1x + h11 * m * t1x
-          y = h00 * p0y + h10 * m * t0y + h01 * p1y + h11 * m * t1y
-          z = h00 * p0z + h10 * m * t0z + h01 * p1z + h11 * m * t1z
-
-          // The river's banks: a bend the whole link shares, and this grain's
-          // lane in it, both zero at the ends.
-          const e = via[g]
-          const f7 = e * 7
-          const len = edgeFrame[f7]
-          const e1x = edgeFrame[f7 + 1],
-            e1y = edgeFrame[f7 + 2],
-            e1z = edgeFrame[f7 + 3]
-          const e2x = edgeFrame[f7 + 4],
-            e2y = edgeFrame[f7 + 5],
-            e2z = edgeFrame[f7 + 6]
-
-          const along = edgeFrom[e] === a ? u : 1 - u // the link's own direction
-          const envelope = Math.sin(Math.PI * u)
-          const s = e * 4
-          const bend =
-            Math.min(BEND_SHARE * len, BEND_MAX) *
-            Math.sin(Math.PI * edgeShape[s] * along + edgeShape[s + 1] + clock * edgeShape[s + 3])
-          const width = Math.min(LANE_SHARE * len, LANE_MAX) * (1 + 0.25 * Math.sin(5 * along + g))
-          const ang = edgeShape[s + 2]
-          const bx = Math.cos(ang)
-          const by = Math.sin(ang)
-          const la = bend * bx + width * lane[g * 2]
-          const lb = bend * by + width * lane[g * 2 + 1]
-          x += envelope * (la * e1x + lb * e2x)
-          y += envelope * (la * e1y + lb * e2y)
-          z += envelope * (la * e1z + lb * e2z)
-
-          const dA = len3(x - pa.x, y - pa.y, z - pa.z) / nodeRadius[a]
-          const dB = len3(x - pb.x, y - pb.y, z - pb.z) / nodeRadius[b]
-          near = heatFrom(Math.min(dA, dB))
-        }
-      }
-
-      // Shock push: an outward shove from any shell passing over the grain.
-      push[o] *= decay
-      push[o + 1] *= decay
-      push[o + 2] *= decay
-      for (const shock of shocks) {
-        const rx = x + push[o] - shock.x
-        const ry = y + push[o + 1] - shock.y
-        const rz = z + push[o + 2] - shock.z
-        const r = len3(rx, ry, rz)
-        if (r < 1e-3) continue
-        const off = (r - shock.radius) / shock.width
-        if (off > 3 || off < -3) continue
-        const shove = (shock.strength * Math.exp(-off * off) * dt) / r
-        push[o] += rx * shove
-        push[o + 1] += ry * shove
-        push[o + 2] += rz * shove
-      }
-      const pl = len3(push[o], push[o + 1], push[o + 2])
-      if (pl > PUSH_MAX) {
-        const k = PUSH_MAX / pl
-        push[o] *= k
-        push[o + 1] *= k
-        push[o + 2] *= k
-      }
-
-      const nx = x + push[o]
-      const ny = y + push[o + 1]
-      const nz = z + push[o + 2]
-      positions[o] = nx
-      positions[o + 1] = ny
-      positions[o + 2] = nz
-      heat[g] = near
-      const f = Math.max(0, fade[g])
-      light[g] = bright[g] * f * f * (3 - 2 * f)
+      positionAt(g, t, pointOut)
+      positions[g * 3] = pointOut[0]
+      positions[g * 3 + 1] = pointOut[1]
+      positions[g * 3 + 2] = pointOut[2]
+      heat[g] = pointOut[3]
+      light[g] = lightAt(g, t)
     }
-
-    // Trailing grains that have retired need not be drawn.
-    while (count > 0 && phase[count - 1] === DEAD) count--
-
-    sinceSample += dt
-    if (sinceSample >= TRAIL_INTERVAL) {
-      sinceSample %= TRAIL_INTERVAL
-      trailHead = (trailHead + 1) % TRAIL_POINTS
-      for (let g = 0; g < count; g++) {
-        const o = (g * TRAIL_POINTS + trailHead) * 3
-        trail[o] = positions[g * 3]
-        trail[o + 1] = positions[g * 3 + 1]
-        trail[o + 2] = positions[g * 3 + 2]
-        if (trailValid[g] < TRAIL_POINTS) trailValid[g]++
-      }
-    }
-  }
-
-  /** Records how far every star moved since the last step. True if any did. */
-  function trackStars() {
-    let moved = false
-    for (let i = 0; i < nodeObjs.length; i++) {
-      const node = nodeObjs[i]
-      const o = i * 3
-      const dx = node.x - nodeLast[o]
-      const dy = node.y - nodeLast[o + 1]
-      const dz = node.z - nodeLast[o + 2]
-      nodeDelta[o] = dx
-      nodeDelta[o + 1] = dy
-      nodeDelta[o + 2] = dz
-      if (dx !== 0 || dy !== 0 || dz !== 0) {
-        moved = true
-        nodeLast[o] = node.x
-        nodeLast[o + 1] = node.y
-        nodeLast[o + 2] = node.z
-      }
-    }
-    return moved
-  }
-
-  /**
-   * Shifts grain `g`'s remembered positions by how far the star it's on moved
-   * (in transit, the blend of both ends it is between). The tail stays a
-   * record of the grain's path *around its stars*; left in world space, a star
-   * dragged across the map would pull a long line of stale tail behind it.
-   */
-  function carryTrail(g) {
-    const n = trailValid[g]
-    if (n === 0) return
-    const a = at[g] * 3
-    let dx = nodeDelta[a]
-    let dy = nodeDelta[a + 1]
-    let dz = nodeDelta[a + 2]
-    if (phase[g] === TRANSIT) {
-      const b = to[g] * 3
-      const u = t[g]
-      dx += (nodeDelta[b] - dx) * u
-      dy += (nodeDelta[b + 1] - dy) * u
-      dz += (nodeDelta[b + 2] - dz) * u
-    }
-    if (dx === 0 && dy === 0 && dz === 0) return
-    for (let i = 0; i < n; i++) {
-      const slot = (trailHead - i + TRAIL_POINTS) % TRAIL_POINTS
-      const o = (g * TRAIL_POINTS + slot) * 3
-      trail[o] += dx
-      trail[o + 1] += dy
-      trail[o + 2] += dz
-    }
-  }
-
-  /** Each link's length and two axes square to it, for this step's node positions. */
-  function writeEdgeFrames() {
-    for (let e = 0; e < edgeIds.length; e++) {
-      const na = nodeObjs[edgeFrom[e]]
-      const nb = nodeObjs[edgeTo[e]]
-      let dx = nb.x - na.x
-      let dy = nb.y - na.y
-      let dz = nb.z - na.z
-      const len = len3(dx, dy, dz) || 1
-      dx /= len
-      dy /= len
-      dz /= len
-      let e1x = dy,
-        e1y = -dx,
-        e1z = 0
-      if (Math.abs(dz) > 0.9) {
-        e1x = 0
-        e1y = dz
-        e1z = -dy
-      }
-      const l1 = len3(e1x, e1y, e1z) || 1
-      e1x /= l1
-      e1y /= l1
-      e1z /= l1
-      const f = e * 7
-      edgeFrame[f] = len
-      edgeFrame[f + 1] = e1x
-      edgeFrame[f + 2] = e1y
-      edgeFrame[f + 3] = e1z
-      edgeFrame[f + 4] = dy * e1z - dz * e1y
-      edgeFrame[f + 5] = dz * e1x - dx * e1z
-      edgeFrame[f + 6] = dx * e1y - dy * e1x
-    }
-  }
-
-  function copyNextOrbit(g) {
-    for (let i = 0; i < 6; i++) basis[g * 6 + i] = nextBasis[g * 6 + i]
-    orbitR[g] = nextR[g]
-    lift[g] = nextLift[g]
-    wobble[g] = nextWobble[g]
   }
 
   return {
     step,
+    sample,
     positions,
     light,
     heat,
+    records,
+    shockData,
+    /** Grain `g`'s position (x, y, z, heat) at `secondsAgo` before now. */
+    positionAt(g, secondsAgo, out) {
+      positionAt(g, now() - secondsAgo, out)
+      return out
+    },
     /**
-     * Grain `g`'s past positions, newest first, into `out` (3 per point).
-     * Returns how many there are — fewer than TRAIL_POINTS for a fresh grain.
+     * Grain `g`'s tail points, newest first, into `out` (3 per point): where
+     * it was TRAIL_STEP, 2·TRAIL_STEP, … seconds ago, as far back as it goes.
+     * Returns how many — fewer than TRAIL_POINTS for a fresh grain.
      */
     trailOf(g, out) {
-      const n = trailValid[g]
-      for (let i = 0; i < n; i++) {
-        const slot = (trailHead - i + TRAIL_POINTS) % TRAIL_POINTS
-        const o = (g * TRAIL_POINTS + slot) * 3
-        out[i * 3] = trail[o]
-        out[i * 3 + 1] = trail[o + 1]
-        out[i * 3 + 2] = trail[o + 2]
+      const t = now()
+      const from = earliest(g)
+      let n = 0
+      for (let i = 1; i <= TRAIL_POINTS; i++) {
+        const ti = t - i * TRAIL_STEP
+        if (ti < from) break
+        positionAt(g, ti, pointOut)
+        out[n * 3] = pointOut[0]
+        out[n * 3 + 1] = pointOut[1]
+        out[n * 3 + 2] = pointOut[2]
+        n++
       }
       return n
     },
-    trail,
-    trailValid,
-    get trailHead() {
-      return trailHead
+    /** Seconds since the epoch: the GPU's clock. */
+    get time() {
+      return now()
     },
-    /** Grains to draw: 0..count-1 (dead ones among them have light 0). */
+    get stars() {
+      return stars
+    },
+    get frames() {
+      return frames
+    },
+    get edges() {
+      return edges
+    },
+    get tablesVersion() {
+      return tablesVersion
+    },
+    /** Grains changed in the last step: `dirty[0..dirtyCount-1]`, or all. */
+    dirty,
+    get dirtyCount() {
+      return dirtyCount
+    },
+    get allDirty() {
+      return allDirty
+    },
+    /** Grains to draw: 0..count-1 (dead ones among them have no light). */
     get count() {
       return count
     },
     /** Test seam: where grain `g` is and which node/edge it is on. */
     grain(g) {
+      const h = headOf(g)
       return {
-        phase: phase[g] === ORBIT ? 'orbit' : phase[g] === TRANSIT ? 'transit' : 'dead',
+        phase: phase[g] === ORBITING ? 'orbit' : phase[g] === RIDING ? 'transit' : 'dead',
         node: atId[g],
         to: toId[g],
         edge: viaId[g],
-        dying: dying[g],
+        dying: frozen[g] ? 2 : now() > records[h + DEATH] ? 1 : 0,
       }
     },
+    /** Moves the epoch up to now (done by itself every EPOCH_SPAN seconds). */
+    rebase,
   }
 }

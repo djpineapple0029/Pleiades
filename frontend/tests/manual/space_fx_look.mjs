@@ -71,7 +71,7 @@ await page.evaluate(async (input) => {
         clock += dt
         view.update(clock, camera)
         supernova.update(dt)
-        rivers.update(dt, supernova.shocks(), camera)
+        rivers.update(dt, supernova.shocks())
       }
       view.update(clock, camera)
       bloom.render()
