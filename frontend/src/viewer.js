@@ -209,7 +209,7 @@ function frame() {
   overview.update(delta)
   interaction.update()
   view.update(clock.elapsedTime, camera) // getDelta above has just advanced it
-  if (settings.visuals.dust_rivers) rivers.update(delta)
+  if (settings.visuals.dust_rivers) rivers.update(delta, undefined, camera)
   else rivers.hide()
   bloom.render() // the whole frame, stars and bloom included
 }

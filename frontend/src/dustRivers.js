@@ -19,6 +19,16 @@ const GAIN = 1.3
 const STREAK_GAIN = 1.15
 // How fast the tail fades toward its end: higher is a shorter-looking tail.
 const TAIL_FALLOFF = 0.9
+// Tails by distance from the camera, which is most of what the rivers cost:
+// every tail vertex is rewritten and uploaded each frame. Out to TAIL_FULL a
+// tail runs through every remembered position; out to TAIL_HALF through every
+// other one, out to TAIL_QUARTER every fourth, then every eighth — the same
+// length, only coarser, where a curve is a few pixels long. (Dropping far
+// tails outright lost the swirls round distant stars in a wide view.) Past
+// FOG_FAR a grain would draw nothing, so it writes nothing.
+const TAIL_FULL = 300
+const TAIL_HALF = 500
+const TAIL_QUARTER = 800
 
 // Warm by a star, cool out in the river. Linear RGB.
 const WARM = new THREE.Color().setRGB(1.0, 0.72, 0.45, THREE.SRGBColorSpace)
@@ -175,49 +185,62 @@ export function createDustRivers(graph, parent, { radiusOf }) {
   streaks.renderOrder = 0.5
   parent.add(streaks)
 
-  /** Every grain's tail, as line segments through its remembered positions. */
-  function writeStreaks(count) {
+  const eye = new THREE.Vector3()
+
+  /**
+   * Tails for the grains `camera` is near enough to see, packed from the
+   * start of the buffers; returns how many vertices were written. Without a
+   * camera every grain gets its full tail.
+   */
+  function writeStreaks(count, camera) {
     const p = flow.positions
     const trail = flow.trail
     const valid = flow.trailValid
     const head = flow.trailHead
+    const near = camera !== undefined
+    if (near) camera.getWorldPosition(eye)
+    let v = 0
     for (let g = 0; g < count; g++) {
-      const n = valid[g]
-      const base = g * perGrain
       const lit = flow.light[g]
-      const warmth = flow.heat[g]
-      // Previous vertex: starts at the grain itself.
+      const n = valid[g]
+      if (lit === 0 || n === 0) continue
       let px = p[g * 3]
       let py = p[g * 3 + 1]
       let pz = p[g * 3 + 2]
-      for (let i = 0; i < TRAIL_POINTS; i++) {
-        const v = base + i * 2
-        let qx = px
-        let qy = py
-        let qz = pz
-        if (i < n) {
-          const slot = (head - i + TRAIL_POINTS) % TRAIL_POINTS
-          const o = (g * TRAIL_POINTS + slot) * 3
-          qx = trail[o]
-          qy = trail[o + 1]
-          qz = trail[o + 2]
-        }
+      // Samples skipped between tail points: 1 is every one.
+      let stride = 1
+      if (near) {
+        const d2 = (px - eye.x) ** 2 + (py - eye.y) ** 2 + (pz - eye.z) ** 2
+        if (d2 > FOG_FAR * FOG_FAR) continue
+        if (d2 > TAIL_QUARTER * TAIL_QUARTER) stride = 8
+        else if (d2 > TAIL_HALF * TAIL_HALF) stride = 4
+        else if (d2 > TAIL_FULL * TAIL_FULL) stride = 2
+      }
+      const warmth = flow.heat[g]
+      // Tail point m is sample m - 1 (0 is the grain itself); light by m.
+      for (let from = 0; from < n; from += stride) {
+        const to = Math.min(from + stride, n)
+        const slot = (head - (to - 1) + TRAIL_POINTS) % TRAIL_POINTS
+        const o = (g * TRAIL_POINTS + slot) * 3
+        const qx = trail[o]
+        const qy = trail[o + 1]
+        const qz = trail[o + 2]
         streakPositions[v * 3] = px
         streakPositions[v * 3 + 1] = py
         streakPositions[v * 3 + 2] = pz
         streakPositions[v * 3 + 3] = qx
         streakPositions[v * 3 + 4] = qy
         streakPositions[v * 3 + 5] = qz
-        // Unsampled segments collapse to a point and carry no light.
-        const on = i < n ? lit : 0
-        streakLight[v] = on * tailLight[i]
-        streakLight[v + 1] = on * tailLight[i + 1]
+        streakLight[v] = lit * tailLight[from]
+        streakLight[v + 1] = lit * tailLight[to]
         streakHeat[v] = streakHeat[v + 1] = warmth
+        v += 2
         px = qx
         py = qy
         pz = qz
       }
     }
+    return v
   }
 
   /**
@@ -231,26 +254,28 @@ export function createDustRivers(graph, parent, { radiusOf }) {
 
   /**
    * Advances the rivers by `dt` seconds and uploads them. `shocks` are shells
-   * pushing grains outward.
+   * pushing grains outward; `camera` sets how much tail each grain draws.
    */
-  function update(dt, shocks) {
+  function update(dt, shocks, camera) {
     flow.step(dt, shocks)
     const count = flow.count
     geometry.setDrawRange(0, count)
-    streakGeometry.setDrawRange(0, count * perGrain)
-    points.visible = streaks.visible = count > 0
+    points.visible = count > 0
+    const written = count === 0 ? 0 : writeStreaks(count, camera)
+    streakGeometry.setDrawRange(0, written)
+    streaks.visible = written > 0
     if (count === 0) return
-    writeStreaks(count)
-    for (const [attribute, itemSize] of [
-      [position, 3],
-      [light, 1],
-      [heat, 1],
-      [streakPosition, perGrain * 3],
-      [streakLit, perGrain],
-      [streakWarm, perGrain],
+    for (const [attribute, items] of [
+      [position, count * 3],
+      [light, count],
+      [heat, count],
+      [streakPosition, written * 3],
+      [streakLit, written],
+      [streakWarm, written],
     ]) {
+      if (items === 0) continue
       attribute.clearUpdateRanges()
-      attribute.addUpdateRange(0, count * itemSize)
+      attribute.addUpdateRange(0, items)
       attribute.needsUpdate = true
     }
   }
@@ -268,5 +293,5 @@ export function createDustRivers(graph, parent, { radiusOf }) {
     material.uniforms.dim.value = level
   }
 
-  return { update, hide, setDim, dispose, object: points }
+  return { update, hide, setDim, dispose, object: points, streaks }
 }

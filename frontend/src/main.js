@@ -285,7 +285,7 @@ function frame() {
   } else {
     supernova.update(delta)
     rivers.setDim(view.mapDim) // a search dims the rivers with the edges
-    rivers.update(delta, supernova.shocks())
+    rivers.update(delta, supernova.shocks(), camera)
   }
   bloom.render() // the whole frame, stars and bloom included
   updateTitle()
