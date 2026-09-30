@@ -474,6 +474,16 @@ test('settings: your own feel and keys reach Help and your maps, and reset to de
   await expect(sensitivity.getByRole('button', { name: 'Reset to default' })).toHaveCount(0)
   await expect(page.locator('#settings-reset-all')).toBeDisabled()
   await expect(page.locator('.savebar'), 'nothing to save yet').toBeHidden()
+  // A change undone by hand leaves nothing to save: the bar goes again.
+  await page.locator('#mine-flight-invert_y').click()
+  await expect(page.locator('.savebar')).toBeVisible()
+  await page.locator('#mine-flight-invert_y').click()
+  await expect(page.locator('.savebar')).toBeHidden()
+  await sensitivity.locator('input[type="number"]').fill('2')
+  await expect(sensitivity.getByRole('button', { name: 'Reset to default' })).toBeVisible()
+  await sensitivity.locator('input[type="number"]').fill('1')
+  await expect(page.locator('.savebar')).toBeHidden()
+  await expect(sensitivity.getByRole('button', { name: 'Reset to default' })).toHaveCount(0)
   await sensitivity.locator('input[type="number"]').fill('2.5')
 
   // Heat on J instead of H.

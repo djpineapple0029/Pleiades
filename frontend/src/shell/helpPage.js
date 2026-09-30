@@ -52,11 +52,20 @@ export function renderHelp(root, settings, { settingsHref = '#settings' } = {}) 
   const keymap = createKeymap(settings.keybinds)
 
   const intro = el(
-    'p',
-    { className: 'note intro' },
-    'Every key in a map, as they are for you right now. ',
-    el('a', { href: settingsHref, textContent: 'Change them in Settings' }),
-    '. Keys marked “also in exported maps” work in a view-only .html too.',
+    'header',
+    { className: 'page-head' },
+    el(
+      'div',
+      {},
+      el('h1', { textContent: 'Help' }),
+      el(
+        'p',
+        {},
+        'Every key in a map, as you have them set. ',
+        el('a', { href: settingsHref, textContent: 'Change them in Settings' }),
+        '.',
+      ),
+    ),
   )
 
   // Mouse and the keys nobody can rebind, as the overlay words them.
@@ -71,7 +80,8 @@ export function renderHelp(root, settings, { settingsHref = '#settings' } = {}) 
       ...fixed.map((r) =>
         row(
           r.caps.map((cap) => el('kbd', { textContent: cap })),
-          r.text,
+          // The overlay's wording, in sentence case for a page of its own.
+          r.text[0].toUpperCase() + r.text.slice(1),
         ),
       ),
     ),

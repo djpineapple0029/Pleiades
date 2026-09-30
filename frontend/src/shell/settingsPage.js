@@ -11,8 +11,6 @@
 import schema from '../../../server/settings_schema.json'
 import { chordCaps, chordFromEvent, parseChord } from '../keymap.js'
 import { LOOKS } from '../looks.js'
-import '@fontsource/jost/400.css'
-import '@fontsource/jost/500.css'
 
 const SECTION_TITLES = { flight: 'Flight', visuals: 'Visuals' }
 const GROUP_TITLES = { Flight: 'Moving', View: 'Viewing', Edit: 'Editing', File: 'Files' }
@@ -58,6 +56,7 @@ const DESCRIPTIONS = {
     'Colour links from cool blue to hot red by how connected their stars are. H switches it in a map.',
 }
 const MAX_BINDINGS = 3
+const SAVED_NOTE_MS = 4000
 const IS_MAC = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || globalThis.navigator?.userAgent || '')
 const CHOICE_NAMES = { look: new Map(LOOKS.map((look) => [look.id, look.name])) }
 
@@ -129,7 +128,17 @@ export function createSettingsPage({ root, request, onSignedOut }) {
     return draft[section]?.[key]
   }
 
+  /** What this key is when not overridden: the admin's value. */
+  function defaultOf(section, key) {
+    return server[section][key]
+  }
+
   function setMine(section, key, value) {
+    // Edited back to how it was saved (or to the default, if it had no value
+    // of its own): exactly the saved state again, so nothing is left to save.
+    const was = saved[section]?.[key]
+    const baseline = was !== undefined ? was : defaultOf(section, key)
+    if (value !== undefined && JSON.stringify(value) === JSON.stringify(baseline)) value = was
     if (value === undefined) {
       if (draft[section]) {
         delete draft[section][key]
@@ -197,6 +206,13 @@ export function createSettingsPage({ root, request, onSignedOut }) {
     take(result.data)
     status = 'Saved. Maps open with these from now on.'
     render()
+    // The bar goes once it has said so, unless something new needs saving.
+    const said = status
+    setTimeout(() => {
+      if (status !== said) return
+      status = ''
+      renderBar()
+    }, SAVED_NOTE_MS)
   }
 
   function discard() {
@@ -350,9 +366,10 @@ export function createSettingsPage({ root, request, onSignedOut }) {
     const setInPlace = (v) => {
       set(v, { rerender: false })
       row.querySelector('.error')?.remove()
-      if (row.classList.contains('overridden')) return
-      row.classList.add('overridden')
-      row.querySelector('.origin').replaceWith(origin(true, prettyValue(spec, server[section][key]), reset))
+      const now = mine(section, key) !== undefined
+      if (now === row.classList.contains('overridden')) return
+      row.classList.toggle('overridden', now)
+      row.querySelector('.origin').replaceWith(origin(now, prettyValue(spec, server[section][key]), reset))
     }
     if (spec.type === 'boolean') {
       const box = el('input', { type: 'checkbox', id, checked: value, className: 'switch' })

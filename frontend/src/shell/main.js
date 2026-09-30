@@ -6,6 +6,8 @@
  *
  * Every name the server sends is set as text, never as markup.
  */
+import '@fontsource/jost/400.css'
+import '@fontsource/jost/500.css'
 import './shell.css'
 import { BASE, appUrl, homeUrl, request } from '../api.js'
 import { createBackupStore } from '../localBackup.js'
