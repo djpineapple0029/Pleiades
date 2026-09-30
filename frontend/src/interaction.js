@@ -5,6 +5,7 @@ import { createHistory } from './history.js'
 import { createCommands } from './commands.js'
 import { rankNodes } from './search.js'
 import { focusSetOf } from './heat.js'
+import { orbitFocus, shortestPath } from './paths.js'
 import { FLY_DURATION } from './flyTo.js'
 import { createKeymap } from './keymap.js'
 
@@ -79,6 +80,13 @@ const MAP_TARGET = { kind: 'map', ring: 'top' }
 const MAP_TARGET_MORE = { kind: 'map', ring: 'more' }
 
 const nodeName = (node) => node.label || node.id
+// The layout shapes the tree_shape key steps through, in order (physics.js
+// `treeShape`). Off is the constellation layout, which has no tree.
+const SHAPES = [
+  { id: 'cone', name: 'cone' },
+  { id: 'disc', name: 'flat' },
+  { id: 'off', name: 'off (no tree)' },
+]
 
 function sameTarget(a, b) {
   if (a === b) return true
@@ -251,15 +259,64 @@ export function createInteraction({
    */
   function setFocus(target) {
     focusRevision = graph.revision
-    const lit = target && focusSetOf(graph, target)
+    let lit = null
+    if (target?.kind === 'orbit') {
+      // Only the tree the orbit is laid out along stays bright; every other
+      // link crosses the rings and is what made the first try unreadable.
+      lit = orbitFocus(graph, target.id)
+    } else if (target?.kind === 'path') {
+      // Re-walked from its two ends, so an edit along the way finds the new way round.
+      const path = shortestPath(graph, target.from, target.to)
+      if (path) {
+        target.path = path
+        lit = { nodes: new Set(path.nodes), edges: new Set(path.edges) }
+      }
+    } else lit = target && focusSetOf(graph, target)
     focusTarget = lit ? target : null
     view.setFocus(lit || null)
+  }
+
+  // The first star of a path (P on a star, then P on another), or null.
+  let pathStart = null
+
+  /** P on a star: the first marks where the path starts, the second shows it. */
+  function pathKey() {
+    const id = hover?.kind === 'node' ? hover.id : null
+    if (!id) {
+      pathStart = null
+      view.setSource(null)
+      status.info('path cancelled')
+      return
+    }
+    if (!pathStart || pathStart === id || !graph.getNode(pathStart)) {
+      pathStart = id
+      view.setSource(id)
+      status.info(
+        `path from ${nodeName(graph.getNode(id))} · aim at another star and press ${keymap.label('path')}`,
+      )
+      return
+    }
+    const from = pathStart
+    pathStart = null
+    view.setSource(null)
+    setFocus({ kind: 'path', from, to: id })
+    if (!focusTarget)
+      status.info(`no path between ${nodeName(graph.getNode(from))} and ${nodeName(graph.getNode(id))}`)
   }
 
   function focusLine() {
     if (!focusTarget) return null
     const clear = 'click empty space to clear'
     if (focusTarget.kind === 'edge') return `focus ${describe(focusTarget)} · ${clear}`
+    if (focusTarget.kind === 'orbit') {
+      const node = graph.getNode(focusTarget.id)
+      return `orbit ${nodeName(node)} · rings are links away · ${keymap.label('undo')}: back · ${clear} for every link`
+    }
+    if (focusTarget.kind === 'path') {
+      const names = focusTarget.path.nodes.map((id) => nodeName(graph.getNode(id)))
+      const steps = names.length - 1
+      return `path ${names.join(' → ')} · ${steps} link${steps === 1 ? '' : 's'} · ${clear}`
+    }
     const node = graph.getNode(focusTarget.id)
     const count = graph.connectionsOf(node.id).size
     return `focus ${nodeName(node)} · ${count} connection${count === 1 ? '' : 's'} · ${clear}`
@@ -846,6 +903,7 @@ export function createInteraction({
   function forgetJumps() {
     jumps.length = 0
     setFocus(null)
+    pathStart = null
   }
 
   function openMenu(target, ring = 'top') {
@@ -1054,6 +1112,25 @@ export function createInteraction({
     if (is('notes_sidebar') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
       sidebar.toggle()
       sidebarKey = null
+    }
+
+    if (is('orbit') && !event.repeat && controls.isLocked && mode === 'idle' && hover?.kind === 'node') {
+      // Flat, facing the camera: its right and up are the orbit's plane.
+      const e = camera.matrixWorld.elements
+      const plane = { right: [e[0], e[1], e[2]], up: [e[4], e[5], e[6]] }
+      if (commands.orbitAround(hover.id, plane)) setFocus({ kind: 'orbit', id: hover.id })
+    }
+
+    if (is('path') && !event.repeat && controls.isLocked && mode === 'idle') pathKey()
+
+    // The layout's shape (context/BALANCE2.md §8): cone (the default) → flat
+    // → off, and balances with it straight away — one undo entry, like B.
+    if (is('tree_shape') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
+      const next = SHAPES[(SHAPES.findIndex((shape) => shape.id === physics.treeShape) + 1) % SHAPES.length]
+      physics.treeShape = next.id
+      if (physics.isRunning) physics.stop()
+      commands.toggleBalance()
+      status.info(`layout: ${next.name} · ${keymap.label('tree_shape')}: next shape`)
     }
 
     if (is('heat') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {

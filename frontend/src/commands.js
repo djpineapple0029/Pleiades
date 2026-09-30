@@ -309,12 +309,27 @@ export function createCommands({ graph, view, physics, history }) {
       physics.stop()
       return false
     }
+    return layoutRun('balance', () => physics.start())
+  }
+
+  /**
+   * Lays the map out round one star (`orbit.js`), as one undo entry the same
+   * way a Balance is: Ctrl+Z puts the map back as it was. A run already in
+   * flight is stopped where it got to first, and that is what undo returns to.
+   */
+  function orbitAround(id, plane) {
+    if (physics.isRunning) physics.stop()
+    return layoutRun('orbit', () => physics.orbit(id, plane))
+  }
+
+  /** One undo entry covering a whole layout run that `begin` starts. */
+  function layoutRun(label, begin) {
     const before = graph.contentRevision
     const layoutBefore = graph.layoutSnapshot()
-    if (!physics.start()) return false
+    if (!begin()) return false
     let layoutAfter = null
     const entry = {
-      label: 'balance',
+      label,
       before,
       after: null,
       undo() {
@@ -366,6 +381,7 @@ export function createCommands({ graph, view, physics, history }) {
     splitEdge,
     move,
     toggleBalance,
+    orbitAround,
     undo,
     redo,
     clear: () => history.clear(),

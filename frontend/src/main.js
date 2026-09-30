@@ -82,7 +82,24 @@ const view = createGraphView(graph, scene, renderer)
 view.setHeat(visuals.connection_heat, { instant: true })
 const rivers = createDustRivers(graph, scene, { radiusOf: view.radiusOf })
 const supernova = createSupernova(scene)
-const physics = createPhysics(graph, view)
+// Balance prototype variants (context/BALANCE2.md): `?layout=shell,subgroups`
+// picks an arrangement (free | shell | disc) and/or an inner layout
+// (force | rings | subgroups). Temporary, while the variants are compared.
+const layoutParam = new URLSearchParams(location.search).get('layout')?.split(',') ?? []
+// Prototype switches (context/BALANCE2.md), temporary: `?lanes=1` bundles
+// links between groups, `?nebula=1` adds group nebulae.
+const layoutFlags = new URLSearchParams(location.search)
+view.setLanes(layoutFlags.get('lanes') === '1')
+view.setNebulae(layoutFlags.get('nebula') === '1')
+const physics = createPhysics(graph, view, {
+  layout: {
+    // The Balance's starting shape: cone trees, unless `?tree=disc|off`. The
+    // tree_shape key (T) steps through all three in the map.
+    tree: ['disc', 'cone', 'off'].find((v) => v === layoutFlags.get('tree')) ?? 'cone',
+    arrangement: layoutParam.find((v) => ['free', 'shell', 'disc'].includes(v)),
+    inner: layoutParam.find((v) => ['force', 'rings', 'subgroups'].includes(v)),
+  },
+})
 const files = createFiles({ graph, view, camera, physics, settings })
 
 // Drives the same camera as flight does — the bloom pipeline captured that one.

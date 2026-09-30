@@ -3,6 +3,7 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js'
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { hash32 } from './random.js'
+import { LANE_POINTS } from './lanes.js'
 
 // Widths are in CSS pixels, which is what LineMaterial's `resolution` holds.
 // The widest an edge is ever drawn, and the width it is picked at.
@@ -37,6 +38,11 @@ const HEAT_FOG_FLOOR = 0.55
 const LOOK_EASE = 0.15
 // Click-to-focus: a line outside the focus keeps this much of its light.
 const FOCUS_DIM = 0.1
+// A curved link (a cross-link, `lanes.computeArcs`) at this share of a
+// straight one's strength until hovered or lit: the branches are the map's
+// shape, the cross-links a lighter second kind, the way mind-map tools draw
+// "relationship" lines.
+const LANE_BASE = 0.55
 
 // Depth fog. It runs across the map's own depth as seen from the camera —
 // the near and far side of the edges' bounding sphere — rather than a fixed
@@ -99,6 +105,12 @@ vec3 heatColour(float t) {
 // end, heat at the to end, focus light, focus lift]: light is 1, or down to
 // FOCUS_DIM outside a focus, and lift is 1 inside one, where the line ignores
 // distance the way a hovered line does. gl_InstanceID is the edge's index.
+// instanceHide is 1 for a link drawn as a curve instead (`lanes.js`: a
+// cross-link's arc, or a bundled lane): its straight line isn't drawn. The
+// curves are the same shader with LANE defined, one instance per piece, and
+// there instanceHide holds the piece's link's index, so a curve hovers and
+// focuses with its link. A curve is drawn at LANE_BASE of a line's strength
+// until it is hovered or lit.
 
 // three's screen-space line shader (LineMaterial, `worldUnits` off) with a
 // width that follows distance, and with everything needed to fade the edge
@@ -114,8 +126,10 @@ attribute vec3 instanceStart;
 attribute vec3 instanceEnd;
 attribute vec4 instanceEdge;
 attribute vec4 instanceLook;
+attribute float instanceHide;
 varying vec2 vUv;
 varying vec4 vLook;
+varying float vHide;
 varying vec3 vView; // the point on the edge, in view space
 varying float vAlong; // world distance from the start
 varying float vLength;
@@ -134,9 +148,14 @@ void trimSegment(const in vec4 start, inout vec4 end) {
 }
 
 void main() {
+#ifdef LANE
+  vHover = instanceHide == hovered ? 1.0 : 0.0;
+#else
   vHover = float(gl_InstanceID) == hovered ? 1.0 : 0.0;
+#endif
   vRadii = instanceEdge.xy;
   vLook = instanceLook;
+  vHide = instanceHide;
   vUv = uv;
   float aspect = resolution.x / resolution.y;
 
@@ -190,6 +209,7 @@ uniform vec2 fogRange; // distances from the camera where the fog starts and bot
 ${HEAT_GLSL}
 varying vec2 vUv;
 varying vec4 vLook;
+varying float vHide;
 varying vec3 vView;
 varying float vAlong;
 varying float vLength;
@@ -212,8 +232,13 @@ void main() {
     * smoothstep(END_CLEAR * vRadii.y, END_FULL * vRadii.y, vLength - vAlong);
 
   float lift = max(vHover, vLook.w);
+#ifdef LANE
+  float shown = mix(LANE_BASE, 1.0, lift);
+#else
+  float shown = 1.0 - vHide;
+#endif
   float strength = min(1.0, opacity * (1.0 + HEAT_OPACITY_GAIN * h));
-  float alpha = strength * ends * vLook.z * mix(coverage * fog, 1.0, lift);
+  float alpha = shown * strength * ends * vLook.z * mix(coverage * fog, 1.0, lift);
   // The ramp's cool end is the plain edge colour (diffuse), so no heat at all
   // looks exactly as before.
   gl_FragColor = vec4(mix(heatColour(h), hoverColor, vHover), alpha);
@@ -247,6 +272,7 @@ attribute vec3 instanceStart;
 attribute vec3 instanceEnd;
 attribute vec4 instanceEdge;
 attribute vec4 instanceLook;
+attribute float instanceHide;
 varying vec3 vColor;
 
 float hash12(vec2 p) {
@@ -288,6 +314,9 @@ void main() {
 
   float light = present * ends * (0.55 + 0.45 * hash12(vec2(seed * 97.0, slot)));
   light *= mix(fog * coverage * coverage, 1.0, max(hover, instanceLook.w)) * dim * instanceLook.z;
+  // A link drawn as a curve carries no motes (yet): they'd run along the
+  // straight line that isn't drawn.
+  light *= 1.0 - instanceHide;
   // A mote on a hot line carries a lighter shade of the line's heat.
   float h = heat * mix(instanceLook.x, instanceLook.y, t);
   vec3 mote = mix(moteColor, mix(heatColour(h), vec3(1.0), 0.35), smoothstep(0.1, 0.5, h));
@@ -403,6 +432,31 @@ export function createEdges(graph, parent, renderer, radiusOf) {
   }
   parent.add(drift)
 
+  // Lanes: the same line shader over one instance per piece of each lane,
+  // sharing the lines' fog, heat, opacity and hover colour. Never hovered by
+  // index (a lane piece's instance is not an edge's), never raycast.
+  const laneMaterial = new LineMaterial({
+    color: EDGE_COLOR,
+    linewidth: EDGE_WIDTH,
+    transparent: true,
+    opacity: EDGE_OPACITY,
+    depthWrite: false,
+  })
+  laneMaterial.vertexShader = EDGE_VERTEX
+  laneMaterial.fragmentShader = EDGE_FRAGMENT
+  Object.assign(laneMaterial.defines, EDGE_DEFINES, { LANE: '', LANE_BASE: glslFloat(LANE_BASE) })
+  for (const name of ['hoverColor', 'heat', 'heatRamp', 'fogRange', 'opacity'])
+    laneMaterial.uniforms[name] = name === 'hoverColor' ? hoverColor : lineMaterial.uniforms[name]
+  laneMaterial.uniforms.heat = heatUniform
+  laneMaterial.uniforms.heatRamp = heatRamp
+  laneMaterial.uniforms.hovered = { value: -1 }
+  laneMaterial.resolution.set(viewport.z, viewport.w)
+  const laneLines = new LineSegments2(new LineSegmentsGeometry(), laneMaterial)
+  laneLines.name = 'lanes'
+  laneLines.frustumCulled = false
+  laneLines.visible = false
+  parent.add(laneLines)
+
   let order = [] // index -> edge id
   let fromIds = []
   let toIds = []
@@ -415,7 +469,22 @@ export function createEdges(graph, parent, renderer, radiusOf) {
   let lookAttribute = null
   let heatOn = true
   let focusIds = null // edge ids a focus keeps lit, or null
+  let focusDim = FOCUS_DIM // what a line outside the focus keeps
   let lookEasing = false
+  let hide = new Float32Array(0) // per edge: 1 if drawn as a lane
+  let hideAttribute = null
+  let indexOf = new Map() // edge id -> index in `order`
+  // Lanes, per piece (LANE_POINTS - 1 of them per lane).
+  let routes = null // edge id -> Float32Array route, from setLanes
+  let laneIds = [] // lane order -> edge id
+  let laneParent = new Int32Array(0) // piece -> its edge's index in `order`
+  let lanePositions = new Float32Array(0)
+  let laneFrac = new Float32Array(0) // piece: share of the lane's length at its start and end
+  let laneData = new Float32Array(0)
+  let laneLook = new Float32Array(0)
+  let laneLookAttribute = null
+  let laneDataAttribute = null
+  const PIECES = LANE_POINTS - 1
 
   function writeEndpoints() {
     for (let i = 0; i < order.length; i++) {
@@ -439,6 +508,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
       edgeData[i * 4 + 1] = radiusOf(toIds[i])
     }
     edgeAttribute.needsUpdate = true
+    writeLaneRadii()
   }
 
   /** Each end's heat from `graph.heatOf`. Call when the graph's revision moves. */
@@ -449,9 +519,10 @@ export function createEdges(graph, parent, renderer, radiusOf) {
       look[i * 4 + 1] = graph.heatOf(toIds[i])
     }
     lookAttribute.needsUpdate = true
+    writeLaneLook()
   }
 
-  const focusLight = (id) => (!focusIds || focusIds.has(id) ? 1 : FOCUS_DIM)
+  const focusLight = (id) => (!focusIds || focusIds.has(id) ? 1 : focusDim)
   const focusLift = (id) => (focusIds?.has(id) ? 1 : 0)
 
   /** Every edge's focus straight to its target, for a fresh geometry. */
@@ -460,6 +531,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
       look[i * 4 + 2] = focusLight(order[i])
       look[i * 4 + 3] = focusLift(order[i])
     }
+    writeLaneLook()
   }
 
   /** One frame of heat on/off and the focus closing on their targets. */
@@ -489,6 +561,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
       }
     }
     if (changed && lookAttribute) lookAttribute.needsUpdate = true
+    if (changed) writeLaneLook()
     return moving
   }
 
@@ -532,6 +605,10 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     lookAttribute = new THREE.InstancedBufferAttribute(look, 4)
     lookAttribute.setUsage(THREE.DynamicDrawUsage)
     lineGeometry.setAttribute('instanceLook', lookAttribute)
+    hide = new Float32Array(count)
+    hideAttribute = new THREE.InstancedBufferAttribute(hide, 1)
+    lineGeometry.setAttribute('instanceHide', hideAttribute)
+    indexOf = new Map(order.map((id, i) => [id, i]))
 
     // The motes read the lines' own endpoint buffer: one upload serves both.
     const driftGeometry = new THREE.InstancedBufferGeometry()
@@ -540,6 +617,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     driftGeometry.setAttribute('instanceEnd', lineGeometry.getAttribute('instanceEnd'))
     driftGeometry.setAttribute('instanceEdge', edgeAttribute)
     driftGeometry.setAttribute('instanceLook', lookAttribute)
+    driftGeometry.setAttribute('instanceHide', hideAttribute)
     driftGeometry.instanceCount = count
 
     lines.geometry = lineGeometry
@@ -549,11 +627,132 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     // generations, but three uploads it again on first use after a dispose.
     oldLines.dispose()
     oldDrift.dispose()
+    // Lanes are indexed by edge, so they rebuild with the edges.
+    laneIds = []
+    buildLanes()
     writeRadii()
     writeHeat()
     snapFocus()
 
     lines.visible = drift.visible = count > 0
+  }
+
+  /**
+   * Lane routes for the links drawn as lanes (`lanes.computeLanes`), or null
+   * for none. Call whenever positions or colours change. The geometry is only
+   * rebuilt when the set of lanes changes; otherwise the points are rewritten
+   * in place.
+   */
+  function setLanes(next) {
+    routes = next
+    const ids = order.filter((id) => routes?.has(id))
+    const same = ids.length === laneIds.length && ids.every((id, j) => id === laneIds[j])
+    if (!same) {
+      buildLanes()
+      writeLaneRadii()
+      writeLaneLook()
+    } else writeLanePositions()
+  }
+
+  function buildLanes() {
+    laneIds = order.filter((id) => routes?.has(id))
+    writeHide()
+
+    const pieces = laneIds.length * PIECES
+    laneParent = new Int32Array(pieces)
+    lanePositions = new Float32Array(pieces * 6)
+    laneFrac = new Float32Array(pieces * 2)
+    laneData = new Float32Array(pieces * 4)
+    laneLook = new Float32Array(pieces * 4)
+    laneIds.forEach((id, j) => {
+      const parentIndex = indexOf.get(id)
+      for (let s = 0; s < PIECES; s++) {
+        const piece = j * PIECES + s
+        laneParent[piece] = parentIndex
+        laneData[piece * 4 + 3] = edgeData[parentIndex * 4 + 3]
+      }
+    })
+    writeLanePositions(false)
+
+    const old = laneLines.geometry
+    const geometry = new LineSegmentsGeometry()
+    geometry.setPositions(lanePositions)
+    laneDataAttribute = new THREE.InstancedBufferAttribute(laneData, 4)
+    geometry.setAttribute('instanceEdge', laneDataAttribute)
+    laneLookAttribute = new THREE.InstancedBufferAttribute(laneLook, 4)
+    laneLookAttribute.setUsage(THREE.DynamicDrawUsage)
+    geometry.setAttribute('instanceLook', laneLookAttribute)
+    // A piece's link index, read by the LANE shader for hover (see above).
+    geometry.setAttribute(
+      'instanceHide',
+      new THREE.InstancedBufferAttribute(Float32Array.from(laneParent), 1),
+    )
+    laneLines.geometry = geometry
+    old.dispose()
+    laneLines.visible = pieces > 0
+  }
+
+  /** Per edge: 1 drawn as a lane, 0 as a plain line. */
+  function writeHide() {
+    const laned = new Set(laneIds)
+    for (let i = 0; i < order.length; i++) hide[i] = laned.has(order[i]) ? 1 : 0
+    if (hideAttribute) hideAttribute.needsUpdate = true
+  }
+
+  function writeLanePositions(upload = true) {
+    laneIds.forEach((id, j) => {
+      const route = routes.get(id)
+      let total = 0
+      for (let s = 0; s < PIECES; s++) {
+        const a = s * 3
+        total += Math.hypot(route[a + 3] - route[a], route[a + 4] - route[a + 1], route[a + 5] - route[a + 2])
+      }
+      let run = 0
+      for (let s = 0; s < PIECES; s++) {
+        const piece = j * PIECES + s
+        const a = s * 3
+        const o = piece * 6
+        for (let k = 0; k < 6; k++) lanePositions[o + k] = route[a + k]
+        laneFrac[piece * 2] = total ? run / total : 0
+        run += Math.hypot(route[a + 3] - route[a], route[a + 4] - route[a + 1], route[a + 5] - route[a + 2])
+        laneFrac[piece * 2 + 1] = total ? run / total : 1
+      }
+    })
+    if (upload && laneIds.length) {
+      laneLines.geometry.attributes.instanceStart.data.needsUpdate = true
+      // Raycasting gates on the bounds, as for the lines.
+      laneLines.geometry.computeBoundingBox()
+      laneLines.geometry.computeBoundingSphere()
+      writeLaneLook()
+    }
+  }
+
+  /** A lane fades into its end stars like its line does; its inner joins don't fade. */
+  function writeLaneRadii() {
+    if (!laneDataAttribute) return
+    for (let piece = 0; piece < laneParent.length; piece++) {
+      const i = laneParent[piece]
+      const s = piece % PIECES
+      laneData[piece * 4] = s === 0 ? radiusOf(fromIds[i]) : 1e-3
+      laneData[piece * 4 + 1] = s === PIECES - 1 ? radiusOf(toIds[i]) : 1e-3
+    }
+    laneDataAttribute.needsUpdate = true
+  }
+
+  /** Each piece's heat, from its share along the lane, and its link's focus. */
+  function writeLaneLook() {
+    if (!laneLookAttribute) return
+    for (let piece = 0; piece < laneParent.length; piece++) {
+      const i = laneParent[piece] * 4
+      const o = piece * 4
+      const hFrom = look[i]
+      const hTo = look[i + 1]
+      laneLook[o] = hFrom + (hTo - hFrom) * laneFrac[piece * 2]
+      laneLook[o + 1] = hFrom + (hTo - hFrom) * laneFrac[piece * 2 + 1]
+      laneLook[o + 2] = look[i + 2]
+      laneLook[o + 3] = look[i + 3]
+    }
+    laneLookAttribute.needsUpdate = true
   }
 
   /** Rewrites endpoints from current node positions, in place. */
@@ -597,17 +796,30 @@ export function createEdges(graph, parent, renderer, radiusOf) {
   /** Nearest edge under the ray as `{ id, distance }`, or null. */
   function raycast(raycaster) {
     if (!lines.visible) return null
-    const hit = raycaster.intersectObject(lines, false)[0]
-    const id = hit ? order[hit.faceIndex] : undefined
-    return id ? { id, distance: hit.distance } : null
+    let best = null
+    // A link drawn as a curve is picked on its curve, not on the straight
+    // line that isn't drawn.
+    for (const hit of raycaster.intersectObject(lines, false)) {
+      if (hide[hit.faceIndex]) continue
+      best = { id: order[hit.faceIndex], distance: hit.distance }
+      break
+    }
+    if (laneLines.visible) {
+      const hit = raycaster.intersectObject(laneLines, false)[0]
+      if (hit && (!best || hit.distance < best.distance))
+        best = { id: order[laneParent[hit.faceIndex]], distance: hit.distance }
+    }
+    return best?.id ? best : null
   }
 
   function dispose() {
-    parent.remove(lines, drift)
+    parent.remove(lines, drift, laneLines)
     lines.geometry.dispose()
     drift.geometry.dispose()
+    laneLines.geometry.dispose()
     lineMaterial.dispose()
     driftMaterial.dispose()
+    laneMaterial.dispose()
   }
 
   /** Scales every edge and mote's light: 1 is normal. Search dims the map. */
@@ -623,9 +835,13 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     lookEasing = true
   }
 
-  /** Edge ids a click-to-focus keeps lit (a Set), dimming every other; null for none. */
-  function setFocus(ids) {
+  /**
+   * Edge ids a click-to-focus keeps lit (a Set), dimming every other to `dim`
+   * of its light; null for none.
+   */
+  function setFocus(ids, { dim = FOCUS_DIM } = {}) {
     focusIds = ids ?? null
+    focusDim = dim
     lookEasing = true
   }
 
@@ -639,6 +855,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     setDim,
     setHeat,
     setFocus,
+    setLanes,
     raycast,
     dispose,
     get heatOn() {

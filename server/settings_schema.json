@@ -16,10 +16,13 @@
     { "id": "jump_back", "group": "View", "label": "Fly back to before the last jump", "default": ["Backspace"], "contexts": ["flight"], "scope": ["app"] },
     { "id": "notes_sidebar", "group": "View", "label": "Notes sidebar on/off", "default": ["N"], "contexts": ["flight", "overview"], "scope": ["app"] },
     { "id": "heat", "group": "View", "label": "Connection heat colours on/off", "default": ["H"], "contexts": ["flight", "overview"], "scope": ["app", "viewer"] },
+    { "id": "orbit", "group": "View", "label": "Lay the map out round the targeted star (Ctrl+Z goes back)", "default": ["O"], "contexts": ["flight"], "scope": ["app"] },
+    { "id": "path", "group": "View", "label": "Show the path between two stars: press on one, then on the other", "default": ["P"], "contexts": ["flight"], "scope": ["app"] },
 
     { "id": "rename", "group": "Edit", "label": "Rename the targeted star or link", "default": ["Enter"], "contexts": ["flight"], "scope": ["app"] },
     { "id": "edit_notes", "group": "Edit", "label": "Edit the targeted star's notes", "default": ["Mod+Enter"], "contexts": ["flight"], "scope": ["app"] },
     { "id": "balance", "group": "Edit", "label": "Balance the layout (again to stop)", "default": ["B"], "contexts": ["flight", "overview"], "scope": ["app"] },
+    { "id": "tree_shape", "group": "Edit", "label": "Change the layout shape (cone, flat, off) and balance", "default": ["T"], "contexts": ["flight", "overview"], "scope": ["app"] },
     { "id": "undo", "group": "Edit", "label": "Undo", "default": ["Mod+Z"], "contexts": ["flight", "free", "overview"], "printed": true, "scope": ["app"] },
     { "id": "redo", "group": "Edit", "label": "Redo", "default": ["Mod+Shift+Z", "Ctrl+Y"], "contexts": ["flight", "free", "overview"], "printed": true, "scope": ["app"] },
 

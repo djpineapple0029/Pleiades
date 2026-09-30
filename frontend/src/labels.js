@@ -535,6 +535,9 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
   // name is left out while it is set.
   let focusNodes = null
   let focusEdges = null
+  // Aim-to-reveal (prototype): stars named at any range while the one they
+  // link to is aimed at, without leaving anyone else out. Ignored in a focus.
+  let aimNodes = null
   // The stretched reveal range (see `adaptiveRange`), eased; 0 until the
   // first frame sets it outright. `distances` collects this frame's.
   let stretch = 0
@@ -944,12 +947,13 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       // Focused: only the focus is named, whatever its range.
       const focused = focusNodes?.has(node.id) ?? false
       if (focusNodes && !focused && !hovered) continue
+      const aimed = !focusNodes && (aimNodes?.has(node.id) ?? false)
 
       // A nexus is named like a star (labelSize 1), not cut by its half size.
       const labelSize = Math.max(nodeSize, 1)
       const range = Math.max(revealRange(labelSize), stretch)
       let visibility =
-        hovered || landmark || focused ? 1 : smoothstep(range, range * (1 - REVEAL_FADE), distance)
+        hovered || landmark || focused || aimed ? 1 : smoothstep(range, range * (1 - REVEAL_FADE), distance)
       visibility *= smoothstep(NEAR_CLEAR, NEAR_FULL, distance / radius)
       if (visibility <= 0) continue
 
@@ -987,7 +991,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
       entry.hue = node.cluster_color_id ? (node.blend ?? clusterInk(node.cluster_color_id)) : null
       // Cores and landmarks rank by size before nearness, so a core keeps its
       // label over a neighbour that happens to be closer.
-      const rank = hovered ? 1e6 : landmark ? 1e3 * nodeSize : focused ? 500 : 0
+      const rank = hovered ? 1e6 : landmark ? 1e3 * nodeSize : focused || aimed ? 500 : 0
       entry.priority = rank + (radius / depth) * (entry.placed ? HOLD_BONUS : 1)
       // Still fading out, so still drawn: its cells must survive this frame.
       if (entry.alpha > 0) entry.used = frame
@@ -1370,6 +1374,11 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
     focusEdges = focus?.edges ?? null
   }
 
+  /** Aim-to-reveal: node ids (a Set) named at any range as well as the usual names; null for none. */
+  function setAim(ids) {
+    aimNodes = ids ?? null
+  }
+
   function dispose() {
     parent.remove(mesh)
     parent.remove(leaderMesh)
@@ -1387,6 +1396,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
     setHovered,
     setDraft,
     setFocus,
+    setAim,
     reset,
     invalidateAtlas,
     dispose,

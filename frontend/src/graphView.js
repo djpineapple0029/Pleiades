@@ -4,6 +4,10 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { STAR_LAYER } from './bloom.js'
 import { createEdges, EDGE_WIDTH } from './edges.js'
+import { computeArcs, computeLanes, measureGroups } from './lanes.js'
+import { computeBackbone } from './backbone.js'
+import { focusSetOf } from './heat.js'
+import { createNebulae } from './nebulae.js'
 import { createLabels } from './labels.js'
 import { clusterInk } from './palette.js'
 import { hash32 } from './random.js'
@@ -444,6 +448,7 @@ export function createGraphView(graph, scene, renderer) {
   allocate(0)
 
   const edges = createEdges(graph, root, renderer, radiusOf)
+  const nebulae = createNebulae(root)
   const labels = createLabels(graph, root, renderer, { radiusOf, baseRadius: NODE_RADIUS })
 
   const ringMap = ringTexture()
@@ -789,14 +794,43 @@ export function createGraphView(graph, scene, renderer) {
     edges.writeRadii()
   }
 
+  // Links between colour groups drawn as lanes (`lanes.js`); on by default.
+  // Nebulae behind colour groups (`nebulae.js`) sit on the same measured balls.
+  // Lanes were tried and read worse (bundled strands can't be followed one
+  // link at a time), so they are off unless asked for.
+  // Cross-links (every link off the backbone, `backbone.js`) are drawn as
+  // arcs (`lanes.computeArcs`) unless `setArcs(false)`.
+  let lanesOn = false
+  let arcsOn = true
+  function refreshLanes() {
+    const groups = lanesOn || nebulae.on ? measureGroups(graph.nodes) : null
+    if (lanesOn) edges.setLanes(computeLanes(graph.nodes, graph.edges, groups))
+    else if (arcsOn)
+      edges.setLanes(computeArcs(graph.nodes, graph.edges, computeBackbone(graph.nodes, graph.edges).cross))
+    else edges.setLanes(null)
+    if (nebulae.on) nebulae.setGroups(groups)
+  }
+
+  // Aim to reveal: every line drawn at REVEAL_DIM, and the star under the
+  // crosshair lights its own lines and names the stars they reach — the
+  // click-to-focus set, without clicking and without dimming stars. Always on
+  // in the app since round 2 of the Balance rework (context/BALANCE2.md);
+  // `setReveal(false)` is for suites that measure a line's full light.
+  const REVEAL_DIM = 0.28
+  let revealOn = true
+  let aim = null // focusSetOf the hovered target, while revealing
+  let aimKey = null
+
   /** Rebuilds the edge geometry. Call when edges are added or removed. */
   function syncEdges() {
     edges.sync()
+    refreshLanes()
   }
 
   /** Rewrites edge endpoints from current node positions, in place. */
   function updateEdgePositions() {
     edges.updatePositions()
+    refreshLanes()
   }
 
   /**
@@ -821,6 +855,14 @@ export function createGraphView(graph, scene, renderer) {
     labels.setHovered(target)
     // Held by id, so it survives an edge sync that renumbers the edges.
     edges.setHovered(target?.kind === 'edge' ? target.id : null)
+    if (revealOn) {
+      const key = target ? `${target.kind}:${target.id}:${graph.revision}` : null
+      if (key !== aimKey) {
+        aimKey = key
+        aim = target ? focusSetOf(graph, target) : null
+        applyFocus()
+      }
+    }
   }
 
   /**
@@ -844,8 +886,15 @@ export function createGraphView(graph, scene, renderer) {
 
   function applyFocus() {
     const active = emphasis ? null : focus
-    edges.setFocus(active?.edges ?? null)
-    labels.setFocus(active)
+    if (!active && revealOn && !emphasis) {
+      edges.setFocus(aim?.edges ?? new Set(), { dim: REVEAL_DIM })
+      labels.setFocus(null)
+      labels.setAim(aim?.nodes ?? null)
+    } else {
+      edges.setFocus(active?.edges ?? null)
+      labels.setFocus(active)
+      labels.setAim(null)
+    }
     easing = true
   }
 
@@ -941,12 +990,15 @@ export function createGraphView(graph, scene, renderer) {
       refreshTints()
       // Heat reads connections, which any structural edit or nexus flag moves.
       edges.writeHeat()
+      // So do lanes, and they also follow colour groups, which a re-partition moves.
+      refreshLanes()
       easing = true
     }
     if (easing) easing = easeAppearance(dt)
     edges.update(dt)
     // After easing: a label sits below its star's drawn radius.
     if (camera) labels.update(camera, dt)
+    if (camera) nebulae.update(camera)
     else labels.hide()
   }
 
@@ -957,6 +1009,7 @@ export function createGraphView(graph, scene, renderer) {
     nodeMaterial.dispose()
     ringMap.dispose()
     edges.dispose()
+    nebulae.dispose()
     labels.dispose()
     pendingGeometry.dispose()
     pendingLine.material.dispose()
@@ -974,6 +1027,31 @@ export function createGraphView(graph, scene, renderer) {
     setHover,
     setEmphasis,
     setFocus,
+    /** Lanes between colour groups on or off (`lanes.js`). */
+    setLanes(on) {
+      lanesOn = Boolean(on)
+      refreshLanes()
+    },
+    get lanesOn() {
+      return lanesOn
+    },
+    /** Cross-links as arcs on or off (`lanes.computeArcs`); on by default. */
+    setArcs(on) {
+      arcsOn = Boolean(on)
+      refreshLanes()
+    },
+    /** Aim to reveal on or off (see REVEAL_DIM); on by default. */
+    setReveal(on) {
+      revealOn = Boolean(on)
+      aim = null
+      aimKey = null
+      applyFocus()
+    },
+    /** Nebulae behind colour groups on or off (`nebulae.js`). */
+    setNebulae(on) {
+      nebulae.setOn(on)
+      refreshLanes()
+    },
     /** Connection heat colours on or off (`edges.js`). */
     setHeat: edges.setHeat,
     get heatOn() {
