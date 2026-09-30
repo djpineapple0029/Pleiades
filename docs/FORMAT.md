@@ -1,6 +1,9 @@
-# The `.atlasmap` payload
+# The `.plm` payload
 
-An `.atlasmap` file is a container around a JSON payload. There are two
+A `.plm` file is a container around a JSON payload. Files written before
+the rename to Pleiades end in `.atlasmap`; the bytes are identical, and both
+open. The payload's `"format": "atlasmap"` and the container's `ATLM` magic keep
+the old name, since every file already written carries them. There are two
 separate version numbers, and they never stand in for each other:
 
 | Number                   | Where                                                     | Changes when                                             |
@@ -57,12 +60,12 @@ encrypted file is harmless, but nothing needs it yet.
    (`graph.js`'s `passThrough`, `files.js`'s `passedThrough`). Known,
    validated fields always win over a same-named raw value. d3-force's
    `index`/`vx`…`fz` stamps are dropped.
-5. **A newer schema is refused**, with "made by a newer AtlasMap (schema N)",
+5. **A newer schema is refused**, with "made by a newer Pleiades (schema N)",
    rather than half-read.
 6. **HTML exports are an allowlist** (`format/exportPayload.js`): nodes carry
    `id, label, x, y, z, cluster_color_id, blend, is_core`, and edges carry
    `id, from, to, directed, label`. Notes, links and passed-through fields
-   never leave the `.atlasmap`. A new field joins the list only in the same
+   never leave the `.plm`. A new field joins the list only in the same
    change that makes the viewer draw it.
 
 The viewer loads exports through the same `graph.load` → `migrate()` path.

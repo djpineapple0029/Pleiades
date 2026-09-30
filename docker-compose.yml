@@ -3,7 +3,7 @@ services:
     build: .
     restart: unless-stopped
     volumes:
-      # config/atlasmap.toml for the container: keybinds, settings, admin password hash.
+      # config/pleiades.toml for the container: keybinds, settings, admin password hash.
       - pleiades-config:/data
     networks:
       - caddy

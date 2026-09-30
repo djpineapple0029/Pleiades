@@ -3,15 +3,15 @@ import { defineConfig } from 'vite'
 
 // Where /api goes in dev. The accounts e2e suite points it at a Flask of its
 // own (playwright.accounts.config.js) so it never touches a dev backend.
-const API = process.env.ATLASMAP_API || 'http://127.0.0.1:5001'
+const API = process.env.PLEIADES_API || 'http://127.0.0.1:5001'
 const page = (name) => fileURLToPath(new URL(name, import.meta.url))
 
 // Plain `/` is the homepage, as Flask serves it (server/__init__.py). The e2e
-// harness (VITE_ATLASMAP_SETTINGS=defaults) boots the app at `/`, so not there.
+// harness (VITE_PLEIADES_SETTINGS=defaults) boots the app at `/`, so not there.
 const homeAtRoot = {
-  name: 'atlasmap-home-at-root',
+  name: 'pleiades-home-at-root',
   configureServer(server) {
-    if (process.env.VITE_ATLASMAP_SETTINGS === 'defaults') return
+    if (process.env.VITE_PLEIADES_SETTINGS === 'defaults') return
     server.middlewares.use((req, _res, next) => {
       if (req.url === '/') req.url = '/home.html'
       next()
@@ -22,9 +22,9 @@ const homeAtRoot = {
 // Build output lands in server/static/ so Flask can serve it directly.
 export default defineConfig({
   // `/` for local runs (Flask serves the bundle at the root). The container
-  // build sets ATLASMAP_BASE=/pleiades/ (see Dockerfile), since Caddy mounts
+  // build sets PLEIADES_BASE=/pleiades/ (see Dockerfile), since Caddy mounts
   // it under that prefix; baking the prefix in here broke every local build.
-  base: process.env.ATLASMAP_BASE || '/',
+  base: process.env.PLEIADES_BASE || '/',
   plugins: [homeAtRoot],
   build: {
     outDir: '../server/static',

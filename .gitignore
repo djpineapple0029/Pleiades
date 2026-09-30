@@ -10,7 +10,9 @@ server/static/
 frontend/.viewer-build/
 
 *.atlasmap
+*.plm
 !**/tests/fixtures/*.atlasmap
+!**/tests/fixtures/*.plm
 .DS_Store
 
 .vite/

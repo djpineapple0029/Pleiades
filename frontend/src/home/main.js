@@ -1,5 +1,5 @@
 /**
- * The homepage (home.html): what AtlasMap is, then Get started (the app with
+ * The homepage (home.html): what Pleiades is, then Get started (the app with
  * no account) or Sign in (the account shell). Plain `/` serves this page only
  * while signed out; Flask sends a signed-in visitor on to My maps.
  */

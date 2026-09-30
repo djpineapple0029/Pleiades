@@ -44,7 +44,7 @@ for (const [i, n] of hits) {
   let key
   const m = src.match(/node_modules\/((?:@[^/]+\/)?[^/]+)/)
   if (m) key = m[1]
-  else if (src.includes('/src/')) key = 'AtlasMap src'
+  else if (src.includes('/src/')) key = 'Pleiades src'
   else key = 'other'
   buckets.set(key, (buckets.get(key) ?? 0) + n)
 }

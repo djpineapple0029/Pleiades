@@ -1,4 +1,4 @@
-"""The `.atlasmap` container: password-derived key, authenticated encryption.
+"""The `.plm` container: password-derived key, authenticated encryption.
 
 Layout, none of it negotiable once files exist on someone's disk:
 
@@ -98,7 +98,7 @@ class AtlasFileError(Exception):
 
 
 class FormatError(AtlasFileError):
-    """Not an `.atlasmap` file, or one this build cannot read."""
+    """Not a `.plm` file, or one this build cannot read."""
 
 
 class PasswordError(AtlasFileError):
@@ -116,7 +116,7 @@ def _key(password: str, salt: bytes) -> bytes:
 
 
 def encode(payload: dict[str, Any], password: str) -> bytes:
-    """Serialises, encrypts, and frames a payload as `.atlasmap` bytes."""
+    """Serialises, encrypts, and frames a payload as `.plm` bytes."""
     try:
         # allow_nan=False: Python would happily write bare NaN, which is not
         # JSON and which the browser refuses to parse back. Better to fail the
@@ -131,15 +131,15 @@ def encode(payload: dict[str, Any], password: str) -> bytes:
 
 
 def decode(blob: bytes, password: str) -> dict[str, Any]:
-    """Unframes, decrypts, and parses `.atlasmap` bytes back into a payload."""
+    """Unframes, decrypts, and parses `.plm` bytes back into a payload."""
     if len(blob) <= HEADER_SIZE:
-        raise FormatError("Not an .atlasmap file: too short to hold a header.")
+        raise FormatError("Not a .plm file: too short to hold a header.")
     if blob[: len(MAGIC)] != MAGIC:
-        raise FormatError("Not an .atlasmap file.")
+        raise FormatError("Not a .plm file.")
 
     version = blob[len(MAGIC)]
     if version != VERSION:
-        raise FormatError(f"This is an .atlasmap version {version} file; this build reads version {VERSION}.")
+        raise FormatError(f"This is a .plm version {version} file; this build reads version {VERSION}.")
 
     salt = blob[len(MAGIC) + 1 : HEADER_SIZE]
     try:
@@ -199,7 +199,7 @@ def decode_v2(blob: bytes, password: str) -> dict[str, Any]:
     """The v2 counterpart to `decode`. See the module docstring for the layout."""
     prefix_size = len(MAGIC) + 2  # magic + version + mode
     if len(blob) < prefix_size:
-        raise FormatError("Not an .atlasmap file: too short to hold a header.")
+        raise FormatError("Not a .plm file: too short to hold a header.")
 
     mode = blob[len(MAGIC) + 1]
     if mode == MODE_NONE:
@@ -209,7 +209,7 @@ def decode_v2(blob: bytes, password: str) -> dict[str, Any]:
 
     header_size = prefix_size + 4 + SALT_SIZE + V2_NONCE_SIZE
     if len(blob) < header_size:
-        raise FormatError("Not an .atlasmap file: too short to hold a v2 header.")
+        raise FormatError("Not a .plm file: too short to hold a v2 header.")
 
     (iterations,) = struct.unpack(">I", blob[prefix_size : prefix_size + 4])
     if not (V2_MIN_ITERATIONS <= iterations <= V2_MAX_ITERATIONS):
@@ -234,20 +234,20 @@ def decode_v2(blob: bytes, password: str) -> dict[str, Any]:
 
 
 def decode_any(blob: bytes, password: str) -> dict[str, Any]:
-    """Reads a v1 *or* v2 `.atlasmap`, dispatching on the version byte.
+    """Reads a v1 *or* v2 `.plm`, dispatching on the version byte.
 
     This is what `/api/open` should call from now on — everything already on
     disk is v1, and everything newly written by a secure-context browser (or
     by `encode_v2` here, for the insecure-context fallback) is v2.
     """
     if len(blob) <= len(MAGIC):
-        raise FormatError("Not an .atlasmap file: too short to hold a header.")
+        raise FormatError("Not a .plm file: too short to hold a header.")
     if blob[: len(MAGIC)] != MAGIC:
-        raise FormatError("Not an .atlasmap file.")
+        raise FormatError("Not a .plm file.")
 
     version = blob[len(MAGIC)]
     if version == VERSION:
         return decode(blob, password)
     if version == VERSION_2:
         return decode_v2(blob, password)
-    raise FormatError(f"This is an .atlasmap version {version} file; this build reads versions 1 and 2.")
+    raise FormatError(f"This is a .plm version {version} file; this build reads versions 1 and 2.")

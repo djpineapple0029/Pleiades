@@ -84,7 +84,7 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   await settle(page)
   expect
     .soft(await t(page, 'hud()'), 'above plain n1 is empty space')
-    .toBe('map.atlasmap · unsaved · 3 nodes · 2 edges')
+    .toBe('map.plm · unsaved · 3 nodes · 2 edges')
   await t(page, `look(0, ${-UP})`)
   await settle(page)
   await page.screenshot({ path: testInfo.outputPath('app_before.png') })
@@ -125,7 +125,7 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   await settle(page)
   expect
     .soft(await t(page, 'hud()'), 'shrunk back: offset misses again')
-    .toBe('map.atlasmap · unsaved · 3 nodes · 2 edges')
+    .toBe('map.plm · unsaved · 3 nodes · 2 edges')
   await t(page, `look(0, ${-UP})`)
   await settle(page)
 

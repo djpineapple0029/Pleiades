@@ -6,7 +6,7 @@ import pytest
 
 from server.config import SCHEMA, SETTINGS, apply_overrides, default_keybinds, validate_overrides
 
-CSRF = {"X-Atlas": "1"}
+CSRF = {"X-Pleiades": "1"}
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def patch(client, body):
 
 
 def admin_save(app, change):
-    config = app.extensions["atlasmap_config"]
+    config = app.extensions["pleiades_config"]
     values = config.all_values()
     change(values)
     assert config.save(values) == []
@@ -192,14 +192,14 @@ def test_accounts_off(isolated_config):
     config = client.get("/api/config").json
     assert "account" not in config
     # No database for a server that never switched accounts on.
-    assert not (isolated_config.parent / "atlasmap.db").exists()
+    assert not (isolated_config.parent / "pleiades.db").exists()
 
 
 def test_config_does_not_slide_the_session(accounts_app, alice, monkeypatch):
     import importlib
 
     accounts_module = importlib.import_module("server.accounts")
-    db = accounts_app.extensions["atlasmap_db"]
+    db = accounts_app.extensions["pleiades_db"]
     with db.connect() as conn:
         conn.execute("UPDATE sessions SET last_seen_at = last_seen_at - 7200, expires_at = expires_at - 7200")
         (before,) = conn.execute("SELECT expires_at FROM sessions").fetchone()
@@ -213,7 +213,7 @@ def test_config_does_not_slide_the_session(accounts_app, alice, monkeypatch):
 
 def test_settings_go_with_the_account(accounts_app, alice):
     put(alice, {"flight": {"invert_y": True}})
-    db = accounts_app.extensions["atlasmap_db"]
+    db = accounts_app.extensions["pleiades_db"]
     with db.connect() as conn:
         conn.execute("DELETE FROM users WHERE username = 'alice'")
         assert conn.execute("SELECT COUNT(*) FROM user_settings").fetchone()[0] == 0

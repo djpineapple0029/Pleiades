@@ -1,7 +1,7 @@
 /**
  * The homepage's hero: a small made-up map, turning slowly. Plain three, none
  * of the app's scene code (bloom, labels, physics), so the page stays light;
- * the colours are the app's cluster palette so it still looks like AtlasMap.
+ * the colours are the app's cluster palette so it still looks like Pleiades.
  *
  * `createGalaxy(canvas)` returns null when there's no WebGL, so the caller can
  * show the still picture instead.

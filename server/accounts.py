@@ -10,7 +10,7 @@ carries `Secure` where a browser would keep it: HTTPS, a TLS proxy counted in
 A session is a random token in an HttpOnly cookie; the database keeps only its
 SHA-256. Unlike /admin's bearer token this lives 30 days, so it belongs out of
 JS-readable storage. The cost of a cookie is CSRF: every state-changing request
-must carry `X-Atlas: 1`, which a cross-site form can't send, and SameSite=Lax
+must carry `X-Pleiades: 1`, which a cross-site form can't send, and SameSite=Lax
 covers the rest.
 
 Wrong passwords are slowed like /admin's: scrypt, lockouts per client address
@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
-import os
 import re
 import secrets
 import sqlite3
@@ -36,6 +35,7 @@ from . import db as dbmod
 from .admin import Guard, client_ip
 from .config import ConfigStore, hash_password, verify_password
 from .db import Database
+from .env import env
 
 accounts = Blueprint("accounts", __name__, url_prefix="/api")
 
@@ -46,7 +46,9 @@ TOUCH_SECONDS = 3600
 USERNAME_RE = re.compile(r"[a-z0-9_.-]{3,32}")
 MAX_PASSWORD_LENGTH = 1024
 MAX_USER_AGENT = 200
-CSRF_HEADER = "X-Atlas"
+CSRF_HEADER = "X-Pleiades"
+# Its pre-rename name, still accepted so a tab opened before the rename can save.
+LEGACY_CSRF_HEADER = "X-Atlas"
 # Concurrent scrypt checks (each ~60 ms and 32 MB); past this, try again shortly.
 MAX_CONCURRENT_CHECKS = 4
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -57,15 +59,15 @@ _dummy_lock = threading.Lock()
 
 
 def store() -> ConfigStore:
-    return current_app.extensions["atlasmap_config"]
+    return current_app.extensions["pleiades_config"]
 
 
 def database() -> Database:
-    return current_app.extensions["atlasmap_db"]
+    return current_app.extensions["pleiades_db"]
 
 
 def guard() -> Guard:
-    return current_app.extensions["atlasmap_account_guard"]
+    return current_app.extensions["pleiades_account_guard"]
 
 
 def fail(message: str, status: int, **extra: object) -> tuple[Response, int]:
@@ -123,7 +125,8 @@ def gate() -> tuple[Response, int] | None:
         return None
     if not available():
         abort(404)
-    if request.method not in SAFE_METHODS and request.headers.get(CSRF_HEADER) != "1":
+    csrf = (request.headers.get(CSRF_HEADER), request.headers.get(LEGACY_CSRF_HEADER))
+    if request.method not in SAFE_METHODS and "1" not in csrf:
         return fail(f"Missing the {CSRF_HEADER} header.", 403)
     return None
 
@@ -145,7 +148,7 @@ accounts.after_request(finish)
 
 
 def cookie_path() -> str:
-    base = os.environ.get("ATLASMAP_BASE", "")
+    base = env("BASE")
     return base if base.startswith("/") else "/"
 
 

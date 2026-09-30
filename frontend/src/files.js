@@ -1,5 +1,5 @@
 /**
- * `.atlasmap` files: assembling the payload, saving/opening, and the
+ * `.plm` map files (`.atlasmap` before the rename): assembling the payload, saving/opening, and the
  * browser's own file dialogs. Plus the standalone `.html` export.
  *
  * There is no server-side folder — the user owns the file's location entirely.
@@ -25,8 +25,22 @@ import {
 import { ENVELOPE_KEYS, envelope, migrate } from './format/schema.js'
 import { exportPayload } from './format/exportPayload.js'
 
-const SUFFIX = '.atlasmap'
+const SUFFIX = '.plm'
+// What files were called before the rename to Pleiades. Same bytes: they
+// open as they always did, and save again under SUFFIX.
+const LEGACY_SUFFIX = '.atlasmap'
 const DEFAULT_FILENAME = `map${SUFFIX}`
+
+/** `name` without a map file suffix, current or legacy. */
+function baseName(name) {
+  for (const suffix of [SUFFIX, LEGACY_SUFFIX]) {
+    if (name.endsWith(suffix)) return name.slice(0, -suffix.length)
+  }
+  return name
+}
+
+/** `name` as this build saves it: `foo`, `foo.plm` and `foo.atlasmap` all give `foo.plm`. */
+const withSuffix = (name) => `${baseName(name)}${SUFFIX}`
 // Revoking the object URL in the same task can cancel the download it was
 // created for; one turn of the event loop is enough for the click to take it.
 const REVOKE_DELAY_MS = 1000
@@ -35,9 +49,9 @@ const REVOKE_DELAY_MS = 1000
 // `frontend/scripts/build-viewer.mjs`; served by Flask from server/static, and
 // proxied through in dev so Ctrl+E works there too.
 const VIEWER_TEMPLATE = `${import.meta.env.BASE_URL}viewer-template.html`
-const PAYLOAD_MARK = '__ATLASMAP_PAYLOAD__'
-const TITLE_MARK = '__ATLASMAP_TITLE__'
-const SETTINGS_MARK = '__ATLASMAP_SETTINGS__'
+const PAYLOAD_MARK = '__PLEIADES_PAYLOAD__'
+const TITLE_MARK = '__PLEIADES_TITLE__'
+const SETTINGS_MARK = '__PLEIADES_SETTINGS__'
 
 /** The `error` a failed endpoint reports, or something honest about the status. */
 async function errorFrom(response) {
@@ -155,7 +169,7 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
    * network — cheap enough to call before ever showing a password prompt.
    * A v2 file with no encryption reports `needsPassword: false`; everything
    * else (v1, or v2 that is actually encrypted) reports `true`. Returns
-   * `null` if the bytes don't look like an `.atlasmap` file at all, so the
+   * `null` if the bytes don't look like a map file at all, so the
    * caller can fall through to its normal "wrong file" handling.
    */
   async function probe(file) {
@@ -191,7 +205,7 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
         return { ok: false, error: error.message || 'the file does not hold a graph' }
       }
       password = attempt
-      filename = file.name.endsWith(SUFFIX) ? file.name : `${file.name}${SUFFIX}`
+      filename = withSuffix(file.name)
       return { ok: true }
     }
 
@@ -215,7 +229,7 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
     }
     // Only now: these are the credentials that actually opened something.
     password = attempt
-    filename = file.name.endsWith(SUFFIX) ? file.name : `${file.name}${SUFFIX}`
+    filename = withSuffix(file.name)
     return { ok: true }
   }
 
@@ -225,7 +239,7 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
    * code that could change a graph is not in that bundle at all.
    */
   async function exportHtml() {
-    const base = filename.endsWith(SUFFIX) ? filename.slice(0, -SUFFIX.length) : filename
+    const base = baseName(filename)
     const name = `${base}.html`
 
     let template
@@ -272,7 +286,7 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
     return new Promise((resolve) => {
       const input = document.createElement('input')
       input.type = 'file'
-      input.accept = SUFFIX
+      input.accept = `${SUFFIX},${LEGACY_SUFFIX}`
       const settle = (value) => {
         input.remove()
         resolve(value)
@@ -298,13 +312,13 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
       // password) — distinct from `null`, "nothing has been set up yet".
       password = nextPassword ?? ''
       const trimmed = (nextFilename ?? '').trim()
-      filename = !trimmed ? DEFAULT_FILENAME : trimmed.endsWith(SUFFIX) ? trimmed : `${trimmed}${SUFFIX}`
+      filename = !trimmed ? DEFAULT_FILENAME : withSuffix(trimmed)
     },
     /** The name "Save to file" offers first, without setting a password — a
      *  server map's own name, so its first save to a file still asks for one. */
     setFilename(nextFilename) {
       const trimmed = (nextFilename ?? '').trim().replace(/[\\/:*?"<>|]/g, '')
-      filename = !trimmed ? DEFAULT_FILENAME : trimmed.endsWith(SUFFIX) ? trimmed : `${trimmed}${SUFFIX}`
+      filename = !trimmed ? DEFAULT_FILENAME : withSuffix(trimmed)
     },
     /** Forgets password, filename and the last file's passed-through fields —
      *  used when New map starts a fresh document. */

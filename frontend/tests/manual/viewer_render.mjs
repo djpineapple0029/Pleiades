@@ -61,11 +61,11 @@ edges.push({ id: `e${e++}`, from: 'n2_3', to: 'n0_4', directed: false, label: ''
 const payload = { nodes, edges, camera: { position: [0, 0, 900], rotation: [0, 0, 0] } }
 
 const template = readFileSync(TEMPLATE, 'utf8')
-if (!template.includes('__ATLASMAP_PAYLOAD__')) throw new Error('template has no payload marker')
+if (!template.includes('__PLEIADES_PAYLOAD__')) throw new Error('template has no payload marker')
 const json = JSON.stringify(payload).replaceAll('<', '\\u003c')
 const html = template
-  .replace('__ATLASMAP_TITLE__', () => 'three fields')
-  .replace('__ATLASMAP_PAYLOAD__', () => json)
+  .replace('__PLEIADES_TITLE__', () => 'three fields')
+  .replace('__PLEIADES_PAYLOAD__', () => json)
 const file = `${DIR}/rich.html`
 writeFileSync(file, html)
 console.log(

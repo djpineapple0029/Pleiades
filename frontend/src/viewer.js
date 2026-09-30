@@ -52,13 +52,13 @@ const guard = createCrashGuard({
  * The embedded map, or null if this page has none.
  *
  * A template that was built but never exported still carries the build's
- * `__ATLASMAP_*` placeholder there, which is not JSON — so it lands here as
+ * `__PLEIADES_*` placeholder there, which is not JSON — so it lands here as
  * "no map", the same as any other unreadable payload. Deliberately not tested
  * for by name: naming it would put a second copy of the marker in the bundle,
  * and `files.js` fills only the first one it finds.
  */
 function readPayload() {
-  const tag = document.getElementById('atlasmap-map')
+  const tag = document.getElementById('pleiades-map')
   const text = tag?.textContent?.trim()
   if (!text) return null
   try {

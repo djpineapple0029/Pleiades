@@ -252,7 +252,7 @@ writeFileSync(`${DIR}/color_balanced.json`, JSON.stringify(balanced.payload))
 
 // --- Render both versions in the built viewer ------------------------------------
 const template = readFileSync(TEMPLATE, 'utf8')
-if (!template.includes('__ATLASMAP_PAYLOAD__')) throw new Error('template has no payload marker')
+if (!template.includes('__PLEIADES_PAYLOAD__')) throw new Error('template has no payload marker')
 const variants = {
   flat: balanced.payload.nodes.map((node) => ({ ...node, blend: null })),
   fade: balanced.payload.nodes,
@@ -265,8 +265,8 @@ for (const [name, variantNodes] of Object.entries(variants)) {
   }
   const json = JSON.stringify(payload).replaceAll('<', '\\u003c')
   const html = template
-    .replace('__ATLASMAP_TITLE__', () => `colour ${name}`)
-    .replace('__ATLASMAP_PAYLOAD__', () => json)
+    .replace('__PLEIADES_TITLE__', () => `colour ${name}`)
+    .replace('__PLEIADES_PAYLOAD__', () => json)
   const file = `${DIR}/color_${name}.html`
   writeFileSync(file, html)
   await page.goto(`file://${file}`)

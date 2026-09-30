@@ -72,7 +72,7 @@ test('sign up, make a map, and it saves itself', async ({ page }) => {
   await expect(page.locator('#empty')).toBeVisible()
 
   const id = await newMap(page, 'Orion')
-  expect(await page.title()).toBe('Orion — AtlasMap')
+  expect(await page.title()).toBe('Orion — Pleiades')
   await expect.poll(() => hud(page)).toContain('Orion · saved · 0 nodes')
 
   await t(page, 'doubleClick()')
@@ -81,7 +81,7 @@ test('sign up, make a map, and it saves itself', async ({ page }) => {
   await t(page, 'look(300, 0)')
   await settle(page)
   expect(await hud(page)).toMatch(/unsaved|saving/)
-  expect(await page.title()).toBe('• Orion — AtlasMap')
+  expect(await page.title()).toBe('• Orion — Pleiades')
   // Nothing goes out before the debounce...
   expect((await serverMap(page, id)).payload.nodes).toHaveLength(0)
   // ...and then it does, with no keypress.
@@ -89,7 +89,7 @@ test('sign up, make a map, and it saves itself', async ({ page }) => {
   const saved = await serverMap(page, id)
   expect(saved.payload.nodes).toHaveLength(1)
   expect(saved.revision).toBe(2)
-  expect(await page.title()).toBe('Orion — AtlasMap')
+  expect(await page.title()).toBe('Orion — Pleiades')
 
   // A reload opens what was saved.
   await page.reload()
@@ -199,7 +199,7 @@ async function editOfflineAndLeave(page, context, username) {
   await t(page, 'look(300, 0)')
   await settle(page)
   await expect.poll(() => hud(page), { timeout: 15_000 }).toContain('offline, not saved (retrying)')
-  await page.request.post('/api/auth/logout', { headers: { 'X-Atlas': '1' } })
+  await page.request.post('/api/auth/logout', { headers: { 'X-Pleiades': '1' } })
   await page.goto('about:blank')
   await context.setOffline(false)
   await signIn(page, username)
@@ -253,6 +253,49 @@ test('a save that landed on the way out leaves nothing to offer', async ({ page 
   await expect.poll(() => page.locator('#hud').textContent()).toContain('Pyxis · saved · 1 nodes')
 })
 
+test('edits kept before the rename (the atlasmap database) are still offered back', async ({ page }) => {
+  page.on('dialog', (dialog) => dialog.accept())
+  await signUp(page)
+  const id = await newMap(page, 'Lyra')
+  await page.goto('/account.html')
+  await page.evaluate(
+    (mapId) =>
+      new Promise((resolve, reject) => {
+        const req = indexedDB.open('atlasmap', 1)
+        req.onupgradeneeded = () => req.result.createObjectStore('unsaved-maps', { keyPath: 'mapId' })
+        req.onsuccess = () => {
+          const tx = req.result.transaction('unsaved-maps', 'readwrite')
+          tx.objectStore('unsaved-maps').put({
+            mapId,
+            name: 'Lyra',
+            baseRevision: 1,
+            savedAt: Date.now(),
+            payload: {
+              format: 'atlasmap',
+              schema: 1,
+              nodes: [{ id: 'n1', label: 'kept', x: 0, y: 0, z: 0 }],
+              edges: [],
+            },
+          })
+          tx.oncomplete = () => {
+            req.result.close()
+            resolve()
+          }
+          tx.onerror = () => reject(tx.error)
+        }
+      }),
+    id,
+  )
+
+  await page.goto(`/?map=${id}`)
+  await page.waitForTimeout(1500)
+  await expect(panel(page)).toContainText('unsaved changes to Lyra')
+  await page.keyboard.press('r')
+  await expect.poll(async () => (await serverMap(page, id)).payload.nodes.length, { timeout: 15_000 }).toBe(1)
+  const names = await page.evaluate(async () => (await indexedDB.databases()).map((db) => db.name))
+  expect(names, 'the old database is gone once moved').not.toContain('atlasmap')
+})
+
 test('edits kept here after the map moved on can only become a copy', async ({ page, context }) => {
   page.on('dialog', (dialog) => dialog.accept())
   const username = await signUp(page)
@@ -261,7 +304,7 @@ test('edits kept here after the map moved on can only become a copy', async ({ p
 
   // Meanwhile another device saves the map.
   const moved = await page.request.put(`/api/maps/${id}`, {
-    headers: { 'X-Atlas': '1', 'If-Match': '1' },
+    headers: { 'X-Pleiades': '1', 'If-Match': '1' },
     data: { payload: { schema: 1, nodes: [], edges: [], note: 'elsewhere' } },
   })
   expect(moved.ok()).toBe(true)
@@ -284,7 +327,7 @@ test('edits kept here after the map moved on can only become a copy', async ({ p
   const left = await page.evaluate(
     () =>
       new Promise((resolve) => {
-        const req = indexedDB.open('atlasmap', 1)
+        const req = indexedDB.open('pleiades', 1)
         req.onsuccess = () => {
           const get = req.result.transaction('unsaved-maps').objectStore('unsaved-maps').count()
           get.onsuccess = () => resolve(get.result)
@@ -406,7 +449,7 @@ test('?local is the classic app, even with accounts on', async ({ page }) => {
   await page.waitForTimeout(1500)
   expect(page.url()).toMatch(/\?local$/)
   await installGestures(page)
-  expect(await hud(page)).toContain('map.atlasmap')
+  expect(await hud(page)).toContain('map.plm')
   const menu = await pickMenu(page, 0, -60)
   expect(menu.labels[0]).toBe('New')
 })
@@ -468,7 +511,7 @@ test('settings: your own feel and keys reach Help and your maps, and reset to de
   await signUp(page)
   await nav(page, 'settings')
   await expect(page).toHaveURL(/#settings$/)
-  await expect(page).toHaveTitle('Settings — AtlasMap')
+  await expect(page).toHaveTitle('Settings — Pleiades')
 
   const sensitivity = settingsRow(page, 'flight.mouse_sensitivity')
   await expect(sensitivity.getByRole('button', { name: 'Reset to default' })).toHaveCount(0)
@@ -520,7 +563,7 @@ test('settings: your own feel and keys reach Help and your maps, and reset to de
     '2.5',
   )
   await nav(page, 'help')
-  await expect(page).toHaveTitle('Help — AtlasMap')
+  await expect(page).toHaveTitle('Help — Pleiades')
   await expect(page.locator('#help-view [data-action="heat"] kbd')).toHaveText(['J'])
   await expect(page.locator('#help-view [data-action="search"] kbd')).toHaveText(['/', 'Ctrl/⌘+F'])
 
@@ -572,7 +615,7 @@ test('signed in, a look picked with V is kept in the account and follows you', a
     .poll(async () => (await (await page.request.get('/api/account/settings')).json()).overrides)
     .toEqual({ visuals: { look: 'deep-sea' } })
   // Kept in the account, not in this browser.
-  expect(await page.evaluate(() => localStorage.getItem('atlasmap.look'))).toBeNull()
+  expect(await page.evaluate(() => localStorage.getItem('pleiades.look'))).toBeNull()
 
   await page.goto('/account.html#settings')
   await expect(page.locator('#mine-visuals-look')).toHaveValue('deep-sea')

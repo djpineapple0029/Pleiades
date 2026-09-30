@@ -27,7 +27,7 @@ export default defineConfig({
   webServer: {
     // Defaults, whatever a dev backend on :5001 has in its config: the specs
     // press the default keys (see src/settings.js).
-    command: 'VITE_ATLASMAP_SETTINGS=defaults npx vite --port 5180 --strictPort',
+    command: 'VITE_PLEIADES_SETTINGS=defaults npx vite --port 5180 --strictPort',
     url: 'http://localhost:5180',
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,

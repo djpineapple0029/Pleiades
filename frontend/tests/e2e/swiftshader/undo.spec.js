@@ -35,7 +35,7 @@ test('undo and redo through the keyboard', async ({ page }) => {
   const del = await pickMenu(page, ...DELETE)
   expect(del.armed).toBe('Delete')
   await settle(page)
-  expect(await t(page, 'hud()')).toBe('map.atlasmap · unsaved · 1 nodes · 0 edges')
+  expect(await t(page, 'hud()')).toBe('map.plm · unsaved · 1 nodes · 0 edges')
 
   // Undo: same id, same place, link back.
   await page.keyboard.press('Control+z')
@@ -45,9 +45,7 @@ test('undo and redo through the keyboard', async ({ page }) => {
   // Redo deletes it again; a second redo has nothing left.
   await page.keyboard.press('Control+Shift+z')
   await settle(page)
-  expect(await t(page, 'hud()')).toBe(
-    'map.atlasmap · unsaved · 1 nodes · 0 edges · redo: delete node n1 (1 link)',
-  )
+  expect(await t(page, 'hud()')).toBe('map.plm · unsaved · 1 nodes · 0 edges · redo: delete node n1 (1 link)')
   await page.keyboard.press('Control+y')
   await settle(page)
   expect(await t(page, 'hud()')).toContain('nothing to redo')
@@ -78,8 +76,8 @@ test('undo and redo through the keyboard', async ({ page }) => {
   }
   await page.keyboard.press('Control+z')
   await settle(page)
-  expect(await t(page, 'hud()')).toBe('map.atlasmap · 0 nodes · 0 edges · nothing to undo')
-  expect(await page.title()).toBe('map.atlasmap — AtlasMap')
+  expect(await t(page, 'hud()')).toBe('map.plm · 0 nodes · 0 edges · nothing to undo')
+  expect(await page.title()).toBe('map.plm — Pleiades')
 
   expect(errors).toEqual([])
 })

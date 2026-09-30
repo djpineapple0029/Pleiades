@@ -18,9 +18,9 @@ export default defineConfig({
   },
   webServer: {
     // A fresh default config in the gitignored artifacts/, never the real
-    // config/atlasmap.toml: the specs press the default keys.
+    // config/pleiades.toml: the specs press the default keys.
     command:
-      'npm run build && (cd .. && rm -f artifacts/e2e-prod.toml && ATLASMAP_CONFIG=artifacts/e2e-prod.toml uv run python -m server)',
+      'npm run build && (cd .. && rm -f artifacts/e2e-prod.toml && PLEIADES_CONFIG=artifacts/e2e-prod.toml uv run python -m server)',
     url: 'http://127.0.0.1:5001',
     reuseExistingServer: false,
     timeout: 60_000,

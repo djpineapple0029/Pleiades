@@ -189,7 +189,7 @@ test('click-to-focus, the type ring, a nexus, and splitting a link', async ({ pa
   await settle(page)
   expect
     .soft(await t(page, 'hud()'), 'a click on empty space clears the focus')
-    .toBe('map.atlasmap · unsaved · 3 nodes · 1 edges')
+    .toBe('map.plm · unsaved · 3 nodes · 1 edges')
   await t(page, 'look(0, 80)')
   await settle(page)
 
@@ -232,7 +232,7 @@ test('click-to-focus, the type ring, a nexus, and splitting a link', async ({ pa
   await settle(page)
   expect
     .soft(await t(page, 'hud()'), 'one link became two')
-    .toMatch(/^map\.atlasmap · unsaved · 4 nodes · 2 edges/)
+    .toMatch(/^map\.plm · unsaved · 4 nodes · 2 edges/)
   await page.keyboard.press('Control+z')
   await settle(page)
   expect.soft(await t(page, 'hud()'), 'undo puts the link back').toContain('3 nodes · 1 edges')

@@ -2,7 +2,7 @@
 //
 // Regression for files.js against the real built app served by Flask: build
 // a map, Ctrl+S through the password panel, check the bytes that come back
-// are a real .atlasmap, then Ctrl+O the same file back in and check the
+// are a real .plm, then Ctrl+O the same file back in and check the
 // graph returns.
 //
 // Headed on purpose: pointer lock does not exist in headless Chromium, and
@@ -48,7 +48,7 @@ test('save through the password panel, then open the same file back in', async (
   try {
     const download = await waitSave
     saved = await download.path()
-    expect.soft(download.suggestedFilename(), 'downloaded regress.atlasmap').toBe('regress.atlasmap')
+    expect.soft(download.suggestedFilename(), 'downloaded regress.plm').toBe('regress.plm')
   } catch (e) {
     expect.soft(false, `Ctrl+S produced a download: ${String(e).split('\n')[0]}`).toBe(true)
   }
@@ -63,7 +63,7 @@ test('save through the password panel, then open the same file back in', async (
 
   await page.waitForTimeout(600)
   expect
-    .soft(/downloaded regress\.atlasmap/.test(await page.textContent('#hud')), 'HUD reports the save')
+    .soft(/downloaded regress\.plm/.test(await page.textContent('#hud')), 'HUD reports the save')
     .toBe(true)
 
   // ---- open it straight back
@@ -83,7 +83,7 @@ test('save through the password panel, then open the same file back in', async (
     await page.waitForTimeout(1500)
 
     const hud = await page.textContent('#hud')
-    expect.soft(/opened regress\.atlasmap/.test(hud), 'HUD reports the open').toBe(true)
+    expect.soft(/opened regress\.plm/.test(hud), 'HUD reports the open').toBe(true)
     expect.soft(/3 nodes/.test(hud), 'the three nodes came back').toBe(true)
   }
 

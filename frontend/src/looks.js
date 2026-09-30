@@ -170,7 +170,9 @@ export const LOOKS = [
 
 export const DEFAULT_LOOK = 'deep-space'
 const BY_ID = new Map(LOOKS.map((look) => [look.id, look]))
-const STORAGE_KEY = 'atlasmap.look'
+const STORAGE_KEY = 'pleiades.look'
+// Where it was kept before the rename from AtlasMap; read when the new key is empty.
+const LEGACY_STORAGE_KEY = 'atlasmap.look'
 // Milliseconds of the dip to black either side of a switch (style.css
 // #look-fade matches it). Long enough to cover
 // a first bake of the sea (~0.1 s) and a shader recompile, short enough not
@@ -184,7 +186,7 @@ export function lookById(id) {
 /** This browser's remembered look id, or null (none yet, or storage is off). */
 export function storedLook() {
   try {
-    const id = localStorage.getItem(STORAGE_KEY)
+    const id = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
     return BY_ID.has(id) ? id : null
   } catch {
     return null
@@ -194,6 +196,7 @@ export function storedLook() {
 function storeLook(id) {
   try {
     localStorage.setItem(STORAGE_KEY, id)
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
   } catch {
     // Private window or storage blocked: the look just isn't remembered.
   }

@@ -9,7 +9,7 @@
  * any outward reference survives — a template that quietly reaches for a server
  * would only be discovered by whoever received the file.
  *
- * The three `__ATLASMAP_*__` markers are left in place for `files.js` to fill at
+ * The three `__PLEIADES_*__` markers are left in place for `files.js` to fill at
  * export time.
  */
 
@@ -101,7 +101,7 @@ for (const pattern of [/\bsrc="[^"]+"/g, /\bhref="[^"]+"/g, /\/assets\//g]) {
   const stray = html.match(pattern)
   if (stray) fail(`outward reference left in the template: ${stray.slice(0, 3).join(', ')}`)
 }
-for (const marker of ['__ATLASMAP_PAYLOAD__', '__ATLASMAP_TITLE__', '__ATLASMAP_SETTINGS__']) {
+for (const marker of ['__PLEIADES_PAYLOAD__', '__PLEIADES_TITLE__', '__PLEIADES_SETTINGS__']) {
   if (!html.includes(marker)) fail(`${marker} was consumed by the build; files.js cannot fill it`)
 }
 // `import.meta.url` would resolve against the file:// path of whatever machine

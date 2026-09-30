@@ -13,7 +13,7 @@ from server.db import MIGRATIONS, Database, schema_version
 
 @pytest.fixture
 def database(tmp_path) -> Database:
-    return Database(tmp_path / "data" / "atlasmap.db")
+    return Database(tmp_path / "data" / "pleiades.db")
 
 
 def test_first_use_creates_the_schema_owner_only(database):
@@ -76,11 +76,11 @@ def test_accounts_off_never_creates_the_file(isolated_config):
     client = app.test_client()
     assert client.get("/api/auth/me").json["enabled"] is False
     assert client.get("/api/maps").status_code == 404
-    assert client.post("/api/auth/login", json={}, headers={"X-Atlas": "1"}).status_code == 404
-    assert not app.extensions["atlasmap_db"].path.exists()
-    assert app.extensions["atlasmap_db"].path == isolated_config.parent / "atlasmap.db"
+    assert client.post("/api/auth/login", json={}, headers={"X-Pleiades": "1"}).status_code == 404
+    assert not app.extensions["pleiades_db"].path.exists()
+    assert app.extensions["pleiades_db"].path == isolated_config.parent / "pleiades.db"
 
 
 def test_data_dir_follows_the_environment(isolated_config, tmp_path, monkeypatch):
-    monkeypatch.setenv("ATLASMAP_DATA", str(tmp_path / "elsewhere"))
-    assert create_app().extensions["atlasmap_db"].path == tmp_path / "elsewhere" / "atlasmap.db"
+    monkeypatch.setenv("PLEIADES_DATA", str(tmp_path / "elsewhere"))
+    assert create_app().extensions["pleiades_db"].path == tmp_path / "elsewhere" / "pleiades.db"

@@ -1,5 +1,5 @@
 /**
- * Does a standalone .html on disk still support the three things the AtlasMap
+ * Does a standalone .html on disk still support the three things the Pleiades
  * viewer needs? Pointer lock (flight), WebGL2 (everything), and a data-URI
  * woff2 through document.fonts (labels.js waits on that before rastering).
  *

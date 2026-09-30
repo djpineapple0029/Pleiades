@@ -11,7 +11,7 @@ from server import history
 from server.db import Database, migrate, schema_version
 from server.history import DAY, HOUR, MAX_RECENT, to_keep
 
-CSRF = {"X-Atlas": "1"}
+CSRF = {"X-Pleiades": "1"}
 START = 1_800_000_000
 
 
@@ -261,7 +261,7 @@ def test_deleting_a_map_deletes_its_history(alice, accounts_app, clock):
     clock.at += 1
     save(alice, map_id, 1, payload("x"))
     assert alice.delete(f"/api/maps/{map_id}", headers=CSRF).status_code == 200
-    with accounts_app.extensions["atlasmap_db"].connect() as conn:
+    with accounts_app.extensions["pleiades_db"].connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0] == 0
 
 
