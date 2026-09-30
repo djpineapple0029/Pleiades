@@ -6,19 +6,39 @@ import { defineConfig } from 'vite'
 const API = process.env.ATLASMAP_API || 'http://127.0.0.1:5001'
 const page = (name) => fileURLToPath(new URL(name, import.meta.url))
 
+// Plain `/` is the homepage, as Flask serves it (server/__init__.py). The e2e
+// harness (VITE_ATLASMAP_SETTINGS=defaults) boots the app at `/`, so not there.
+const homeAtRoot = {
+  name: 'atlasmap-home-at-root',
+  configureServer(server) {
+    if (process.env.VITE_ATLASMAP_SETTINGS === 'defaults') return
+    server.middlewares.use((req, _res, next) => {
+      if (req.url === '/') req.url = '/home.html'
+      next()
+    })
+  },
+}
+
 // Build output lands in server/static/ so Flask can serve it directly.
 export default defineConfig({
   // `/` for local runs (Flask serves the bundle at the root). The container
   // build sets ATLASMAP_BASE=/pleiades/ (see Dockerfile), since Caddy mounts
   // it under that prefix; baking the prefix in here broke every local build.
   base: process.env.ATLASMAP_BASE || '/',
+  plugins: [homeAtRoot],
   build: {
     outDir: '../server/static',
     emptyOutDir: true,
     sourcemap: true,
     rollupOptions: {
-      // The app, and the account shell (plain DOM, no WebGL) it hands over to.
-      input: { index: page('index.html'), account: page('account.html') },
+      // The app, the account shell (plain DOM, no WebGL) it hands over to, and
+      // the homepage in front of both.
+      input: { index: page('index.html'), account: page('account.html'), home: page('home.html') },
+      output: {
+        // The homepage's hero and the app share three: one named chunk, so
+        // it's cached by the time Get started opens the app.
+        manualChunks: (id) => (id.includes('/node_modules/three/') ? 'three' : undefined),
+      },
     },
   },
   server: {

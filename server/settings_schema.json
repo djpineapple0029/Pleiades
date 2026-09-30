@@ -48,7 +48,7 @@
 
     { "section": "server", "key": "max_upload_mb", "label": "Largest file Open accepts (MB)", "type": "integer", "min": 1, "max": 1024, "default": 64, "scope": "server", "help": "Uploads over this are refused before they're read." },
 
-    { "section": "accounts", "key": "enabled", "label": "Accounts", "type": "boolean", "default": false, "scope": "server", "help": "Lets people sign up and keep their maps on this server. Only works over HTTPS, or with a TLS proxy counted in Reverse proxies in front." },
+    { "section": "accounts", "key": "enabled", "label": "Accounts", "type": "boolean", "default": false, "scope": "server", "help": "Lets people sign up and keep their maps on this server. Over plain HTTP (no HTTPS and no TLS proxy counted in Reverse proxies in front) they are warned before signing in, since passwords and maps then cross the network unencrypted." },
     { "section": "accounts", "key": "signup_open", "label": "Open sign-up", "type": "boolean", "default": false, "scope": "server", "help": "Anyone who can reach the server may create an account while this is on." },
     { "section": "accounts", "key": "max_maps_per_user", "label": "Maps per account", "type": "integer", "min": 1, "max": 10000, "default": 100, "scope": "server", "help": "Creating or duplicating a map past this is refused." },
     { "section": "accounts", "key": "min_password_length", "label": "Shortest account password", "type": "integer", "min": 8, "max": 128, "default": 10, "scope": "server", "help": "Applies to new passwords only." },

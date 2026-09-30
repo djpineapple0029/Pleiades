@@ -1,9 +1,11 @@
 """Accounts: sign-up, sign-in and the session cookie (context: USERS.md).
 
-Everything here is off unless `accounts.enabled` is on, and then only over a
-connection a browser would call secure: HTTPS, a TLS proxy counted in
+Everything here is off unless `accounts.enabled` is on: every route 404s,
+except `/api/auth/me`, which says accounts are off. Plain HTTP from the
+network is allowed (a LAN at home), but `/api/auth/me` reports it as not
+secure so the shell warns before anyone types a password, and the cookie only
+carries `Secure` where a browser would keep it: HTTPS, a TLS proxy counted in
 `admin.trusted_proxies`, or loopback (browsers treat localhost as secure).
-Otherwise every route 404s, except `/api/auth/me`, which says accounts are off.
 
 A session is a random token in an HttpOnly cookie; the database keeps only its
 SHA-256. Unlike /admin's bearer token this lives 30 days, so it belongs out of
@@ -91,14 +93,20 @@ def secure_enough() -> bool:
 
 
 def available() -> bool:
-    return bool(store().get("accounts", "enabled")) and secure_enough()
+    return bool(store().get("accounts", "enabled"))
 
 
 def account_shell_url() -> str | None:
-    """Where plain `/` should go instead of the app: the account shell, when accounts
-    are on here. `?map=<id>` (a server map) and `?local` (no account) are the app."""
-    if "map" in request.args or "local" in request.args or not available():
+    """Where plain `/` should go instead of the homepage: My maps, for someone
+    already signed in here. Read-only: it neither slides nor re-issues the session."""
+    if not available():
         return None
+    token = request.cookies.get(COOKIE)
+    if not token:
+        return None
+    with database().connect() as conn:
+        if session_row(conn, token_hash(token), dbmod.now()) is None:
+            return None
     return f"{cookie_path()}account.html"
 
 
@@ -140,14 +148,14 @@ def set_cookie(response: Response, token: str) -> None:
         token,
         max_age=SESSION_SECONDS,
         path=cookie_path(),
-        secure=True,
+        secure=secure_enough(),
         httponly=True,
         samesite="Lax",
     )
 
 
 def clear_cookie(response: Response) -> None:
-    response.delete_cookie(COOKIE, path=cookie_path(), secure=True, httponly=True, samesite="Lax")
+    response.delete_cookie(COOKIE, path=cookie_path(), secure=secure_enough(), httponly=True, samesite="Lax")
 
 
 def token_hash(token: str) -> str:
@@ -165,6 +173,16 @@ def open_session(conn: sqlite3.Connection, user_id: int) -> str:
     return token
 
 
+def session_row(conn: sqlite3.Connection, digest: str, now: int) -> sqlite3.Row | None:
+    """The live session with this token hash, joined to its (enabled) user."""
+    return conn.execute(
+        "SELECT users.id, users.username, users.must_change_password, sessions.last_seen_at "
+        "FROM sessions JOIN users ON users.id = sessions.user_id "
+        "WHERE sessions.token_hash = ? AND sessions.expires_at > ? AND users.disabled = 0",
+        (digest, now),
+    ).fetchone()
+
+
 def current_user() -> sqlite3.Row | None:
     """The signed-in user for this request, or None. Slides the session's expiry."""
     if "user" in g:
@@ -176,12 +194,7 @@ def current_user() -> sqlite3.Row | None:
     now = dbmod.now()
     digest = token_hash(token)
     with database().connect() as conn:
-        row = conn.execute(
-            "SELECT users.id, users.username, users.must_change_password, sessions.last_seen_at "
-            "FROM sessions JOIN users ON users.id = sessions.user_id "
-            "WHERE sessions.token_hash = ? AND sessions.expires_at > ? AND users.disabled = 0",
-            (digest, now),
-        ).fetchone()
+        row = session_row(conn, digest, now)
         if row is None:
             return None
         if now - row["last_seen_at"] >= TOUCH_SECONDS:
@@ -231,6 +244,7 @@ def me() -> Response:
     user = current_user()
     return jsonify(
         enabled=True,
+        secure=secure_enough(),
         signup_open=bool(store().get("accounts", "signup_open")),
         min_password_length=store().get("accounts", "min_password_length"),
         user=(

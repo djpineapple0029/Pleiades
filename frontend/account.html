@@ -8,7 +8,7 @@
   </head>
   <body>
     <header class="top">
-      <h1>AtlasMap</h1>
+      <h1><a id="home-link" href="./home.html">AtlasMap</a></h1>
       <div class="who" id="who" hidden>
         <span id="who-name"></span>
         <button id="sign-out" type="button" class="quiet">Sign out</button>
@@ -22,7 +22,22 @@
       <section id="off" class="card narrow" hidden>
         <h2>No accounts here</h2>
         <p>Accounts aren't switched on for this server. Maps are saved as files on your computer.</p>
-        <p><a class="button" id="off-open" href="./">Open AtlasMap</a></p>
+        <p><a class="button" id="off-open" href="./?local">Open AtlasMap</a></p>
+      </section>
+
+      <section id="insecure" class="narrow" hidden>
+        <div class="card warn">
+          <h2>This connection isn't encrypted</h2>
+          <p>
+            You reached this server over plain HTTP, not HTTPS. If you sign in here, your password and your
+            maps cross the network as readable text, and anyone else on the same Wi-Fi could pick them up.
+          </p>
+          <p>That's fine on your own home network. On a café or office network, don't.</p>
+          <div class="choices">
+            <button type="button" id="insecure-continue">Sign in anyway</button>
+            <a class="button quiet" id="insecure-local" href="./?local">Use without an account</a>
+          </div>
+        </div>
       </section>
 
       <section id="signed-out" class="narrow" hidden>

@@ -6,13 +6,13 @@
  * Every name the server sends is set as text, never as markup.
  */
 import './shell.css'
-import { BASE, appUrl, request } from '../api.js'
+import { appUrl, homeUrl, request } from '../api.js'
 import { createBackupStore } from '../localBackup.js'
 import { dateTime, mapSummary, relativeTime, versionSummary } from './format.js'
 
 const $ = (id) => document.getElementById(id)
 const backups = createBackupStore()
-const views = ['loading', 'off', 'signed-out', 'signed-in']
+const views = ['loading', 'off', 'insecure', 'signed-out', 'signed-in']
 
 const NOTICES = {
   missing: "That map doesn't exist any more, or it belongs to another account.",
@@ -56,13 +56,39 @@ function selectTab(which) {
   $(signUp ? 'sign-up-username' : 'sign-in-username').focus()
 }
 
+// Plain HTTP from the network (server/accounts.py `secure_enough`): say what
+// that means once per tab before anyone types a password.
+const WARNED_KEY = 'atlasmap.plain-http-ok'
+
+function warnedAlready() {
+  try {
+    return sessionStorage.getItem(WARNED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 function showSignedOut(me) {
+  if (me.secure === false && !warnedAlready()) {
+    document.title = 'Not encrypted — AtlasMap'
+    show('insecure')
+    $('insecure-continue').onclick = () => {
+      try {
+        sessionStorage.setItem(WARNED_KEY, '1')
+      } catch {
+        // Private mode and the like: it asks again next time, nothing worse.
+      }
+      showSignedOut({ ...me, secure: true })
+    }
+    return
+  }
   signupOpen = Boolean(me.signup_open)
   $('tab-sign-up').hidden = !signupOpen
   $('sign-up-min').textContent = me.min_password_length ? `At least ${me.min_password_length} characters` : ''
   document.title = 'Sign in — AtlasMap'
   show('signed-out')
-  selectTab('sign-in')
+  selectTab(wantSignUp ? 'sign-up' : 'sign-in')
+  wantSignUp = false
 }
 
 $('tab-sign-in').addEventListener('click', () => selectTab('sign-in'))
@@ -409,11 +435,13 @@ async function start() {
   else showSignedOut(me)
 }
 
-for (const id of ['local-link', 'local-link-in']) $(id).href = appUrl()
-$('off-open').href = BASE
+for (const id of ['local-link', 'local-link-in', 'insecure-local', 'off-open']) $(id).href = appUrl()
+$('home-link').href = homeUrl()
 const reason = location.hash.slice(1)
-if (NOTICES[reason]) {
-  notice(NOTICES[reason])
+// The homepage's "create an account" link.
+let wantSignUp = reason === 'sign-up'
+if (NOTICES[reason] || wantSignUp) {
+  notice(NOTICES[reason] ?? '')
   // Once said is enough: a reload shouldn't say it again.
   history.replaceState(null, '', location.pathname + location.search)
 }

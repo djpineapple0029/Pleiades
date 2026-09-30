@@ -13,12 +13,18 @@
 
 export const BASE = import.meta.env?.BASE_URL ?? '/'
 const TIMEOUT_MS = 30_000
-// Asked before the app starts: a slow answer must not hold up the classic app.
-const LANDING_TIMEOUT_MS = 3000
 
 /** Where the account shell lives, with an optional `#reason` for a notice there. */
 export function accountUrl(reason = '') {
   return `${BASE}account.html${reason ? `#${reason}` : ''}`
+}
+
+/**
+ * The homepage as a page of its own. Plain `/` is the homepage too, but only
+ * while signed out; signed in, the server sends `/` on to My maps.
+ */
+export function homeUrl() {
+  return `${BASE}home.html`
 }
 
 /** The app on a server map, or the classic app with no account (`?local`). */
@@ -73,14 +79,4 @@ export async function request(
     return { ok: false, status: response.status, data, error }
   }
   return { ok: true, status: response.status, data }
-}
-
-/**
- * Whether `/` should hand over to the account shell: only when this server has
- * accounts switched on. Anything else, an old server, no server, a slow one,
- * means the classic app, exactly as before accounts existed.
- */
-export async function accountsEnabled({ fetchImpl } = {}) {
-  const result = await request('api/auth/me', { timeoutMs: LANDING_TIMEOUT_MS, fetchImpl })
-  return result.ok && result.data?.enabled === true
 }

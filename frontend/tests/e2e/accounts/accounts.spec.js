@@ -2,8 +2,9 @@
 // map list, opening a server map, autosave, Ctrl+S, back to the list, and the
 // safety rails around them: a second tab never overwrites (the conflict
 // panel), edits made offline survive in this browser and are offered back,
-// earlier versions can be restored, signed-out goes to sign-in. Runs against a Flask of its own
-// (playwright.accounts.config.js).
+// earlier versions can be restored, signed-out goes to sign-in. Plus the
+// homepage in front of it all, and the warning before signing in over plain
+// HTTP. Runs against a Flask of its own (playwright.accounts.config.js).
 import { test, expect } from '@playwright/test'
 import { collectConsoleErrors, installGestures, pickMenu, settle, t } from '../helpers/gestures.js'
 
@@ -13,9 +14,11 @@ let counter = 0
 const freshName = () => `e2e${Date.now().toString(36)}${counter++}`
 
 async function signUp(page, username = freshName()) {
+  // Signed out, `/` is the homepage; its "Create an account" opens the form.
   await page.goto('/')
+  await page.getByRole('link', { name: 'Create an account' }).click()
   await expect(page).toHaveURL(/account\.html$/)
-  await page.getByRole('tab', { name: 'Create account' }).click()
+  await expect(page.getByRole('tab', { name: 'Create account' })).toHaveAttribute('aria-selected', 'true')
   await page.locator('#sign-up-username').fill(username)
   await page.locator('#sign-up-password').fill(PASSWORD)
   await page.locator('#sign-up-confirm').fill(PASSWORD)
@@ -406,4 +409,50 @@ test('?local is the classic app, even with accounts on', async ({ page }) => {
   expect(await hud(page)).toContain('map.atlasmap')
   const menu = await pickMenu(page, 0, -60)
   expect(menu.labels[0]).toBe('New')
+})
+
+test('signed out, / is the homepage: Get started opens the app, Sign in the shell', async ({ page }) => {
+  const errors = collectConsoleErrors(page)
+  await page.goto('/')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('A mind map you fly through.')
+  await expect(page.locator('#get-started')).toHaveAttribute('href', '/?local')
+  // The key caps in the copy and the list come from the server's keymap.
+  await expect(page.locator('#keys li').first()).toBeVisible()
+  await expect(page.locator('#way-account')).toBeVisible()
+  await page.getByRole('link', { name: 'Sign in' }).click()
+  await expect(page).toHaveURL(/account\.html$/)
+  await expect(page.locator('#sign-in-form')).toBeVisible()
+  await page.locator('#home-link').click()
+  await expect(page).toHaveURL(/home\.html$/)
+  await page.locator('#get-started').click()
+  await expect(page).toHaveURL(/\?local$/)
+  expect(errors).toEqual([])
+})
+
+test('signed in, / goes straight to My maps; the homepage says My maps', async ({ page }) => {
+  const username = await signUp(page)
+  await page.goto('/')
+  await expect(page).toHaveURL(/account\.html$/)
+  await expect(page.locator('#who-name')).toHaveText(username)
+  await page.goto('/home.html')
+  await expect(page.locator('#sign-in')).toHaveText('My maps')
+  await expect(page.locator('#sign-up')).toBeHidden()
+})
+
+test('over plain HTTP, the shell warns once before the sign-in form', async ({ page }) => {
+  // Loopback is always secure, so play a LAN address: the server's own answer, marked not secure.
+  await page.route('**/api/auth/me', async (route) => {
+    const response = await route.fetch()
+    await route.fulfill({ response, json: { ...(await response.json()), secure: false } })
+  })
+  await page.goto('/account.html')
+  await expect(page.getByRole('heading', { name: "This connection isn't encrypted" })).toBeVisible()
+  await expect(page.locator('#sign-in-form')).toBeHidden()
+  await expect(page.locator('#insecure-local')).toHaveAttribute('href', '/?local')
+  await page.getByRole('button', { name: 'Sign in anyway' }).click()
+  await expect(page.locator('#sign-in-form')).toBeVisible()
+  // Once per tab: a reload goes straight to the form.
+  await page.reload()
+  await expect(page.locator('#sign-in-form')).toBeVisible()
+  await expect(page.locator('#insecure')).toBeHidden()
 })

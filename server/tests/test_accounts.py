@@ -66,21 +66,31 @@ def test_the_classic_app_is_untouched_with_accounts_on(client):
     assert response.status_code == 200
 
 
-def test_plain_http_from_the_network_is_refused(client, signup):
+def test_plain_http_from_the_network_works_but_says_so(client, signup):
     remote = {"REMOTE_ADDR": "192.168.1.20"}
-    assert client.get("/api/auth/me", environ_base=remote).json["enabled"] is False
-    refused = client.post(
-        "/api/auth/signup", json={"username": "bob", "password": ACCOUNT_PASSWORD}, headers=CSRF, environ_base=remote
-    )
-    assert refused.status_code == 404
-    # Over HTTPS the same address is fine.
-    signup(client, "bob", environ_base=remote, base_url="https://atlas.example")
+    me = client.get("/api/auth/me", environ_base=remote).json
+    assert me["enabled"] is True
+    assert me["secure"] is False
+    response = signup(client, "bob", environ_base=remote)
+    # A browser drops a Secure cookie set over http://<LAN address>: no flag here.
+    assert "Secure" not in session_cookie(response)
+    assert client.get("/api/auth/me", environ_base=remote).json["user"]["username"] == "bob"
+    logout = client.post("/api/auth/logout", headers=CSRF, environ_base=remote)
+    assert "Secure" not in session_cookie(logout)
+
+
+def test_secure_connections_keep_the_secure_cookie(client, signup):
+    assert client.get("/api/auth/me").json["secure"] is True  # loopback
+    assert "Secure" in session_cookie(signup(client, "alice"))
+    remote = {"REMOTE_ADDR": "192.168.1.20"}
+    https = signup(client, "bob", environ_base=remote, base_url="https://atlas.example")
+    assert "Secure" in session_cookie(https)
 
 
 def test_a_trusted_tls_proxy_counts_as_secure(accounts_app, client):
     set_values(accounts_app, "admin", trusted_proxies=1)
     remote = {"REMOTE_ADDR": "172.18.0.2"}
-    assert client.get("/api/auth/me", environ_base=remote).json["enabled"] is True
+    assert client.get("/api/auth/me", environ_base=remote).json["secure"] is True
 
 
 def test_state_changes_need_the_csrf_header(client, signup):
@@ -263,33 +273,59 @@ def test_sessions_survive_a_restart(accounts_app, signup):
 
 @pytest.fixture
 def built(tmp_path, monkeypatch):
-    """A stand-in frontend build, so `/` has an index.html to serve."""
+    """A stand-in frontend build, so `/` has pages to serve."""
     import server
 
     static = tmp_path / "static"
     static.mkdir()
     (static / "index.html").write_text("<p>app</p>")
+    (static / "home.html").write_text("<p>home</p>")
     monkeypatch.setattr(server, "STATIC_DIR", static)
     return static
 
 
-def test_root_goes_to_the_account_shell_when_accounts_are_on(client, built, monkeypatch):
+def test_root_is_the_homepage_when_signed_out(client, built):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.data == b"<p>home</p>"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert client.get("/", environ_base={"REMOTE_ADDR": "192.168.1.20"}).data == b"<p>home</p>"
+    # A server map, and the app without an account, are the app itself.
+    assert client.get("/?map=abcdefghijklmnop").data == b"<p>app</p>"
+    assert client.get("/?local").data == b"<p>app</p>"
+
+
+def test_root_goes_to_my_maps_when_signed_in(client, built, signup, monkeypatch):
+    signup(client)
     response = client.get("/")
     assert response.status_code == 302
     assert response.headers["Location"] == "/account.html"
     assert response.headers["Cache-Control"] == "no-store"
     monkeypatch.setenv("ATLASMAP_BASE", "/pleiades/")
     assert client.get("/").headers["Location"] == "/pleiades/account.html"
-    # A server map, and the app without an account, are the app itself.
-    assert client.get("/?map=abcdefghijklmnop").data == b"<p>app</p>"
+    assert client.get("/?local").data == b"<p>app</p>"
+    client.post("/api/auth/logout", headers=CSRF)
+    assert client.get("/").data == b"<p>home</p>"
+
+
+def test_root_ignores_a_dead_session(client, built):
+    client.set_cookie(COOKIE, "not-a-real-token")
+    assert client.get("/").data == b"<p>home</p>"
+
+
+def test_root_is_the_homepage_when_accounts_are_off(accounts_app, client, built, signup):
+    signup(client)
+    set_values(accounts_app, "accounts", enabled=False)
+    assert client.get("/").data == b"<p>home</p>"
     assert client.get("/?local").data == b"<p>app</p>"
 
 
-def test_root_is_the_app_when_accounts_are_off_or_insecure(accounts_app, built):
-    client = accounts_app.test_client()
-    assert client.get("/", environ_base={"REMOTE_ADDR": "192.168.1.20"}).data == b"<p>app</p>"
-    set_values(accounts_app, "accounts", enabled=False)
-    assert client.get("/").data == b"<p>app</p>"
+def test_root_without_a_build_says_how_to_make_one(client, tmp_path, monkeypatch):
+    import server
+
+    monkeypatch.setattr(server, "STATIC_DIR", tmp_path)
+    assert client.get("/").status_code == 503
+    assert client.get("/?local").status_code == 503
 
 
 def test_me_reports_the_password_minimum(client):

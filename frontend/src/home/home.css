@@ -1,0 +1,541 @@
+/* The homepage. Dark only, like the app and the account shell: it is a night
+   sky. Colour comes from the stars (the app's cluster palette), not from one
+   accent; type is one serif throughout, with the app's monospace kept for key
+   caps, which are literal keys. */
+:root {
+  color-scheme: dark;
+  --night: #070a16;
+  --night-raised: #0e1427;
+  --starlight: #dfe5f5;
+  --dust: #939bb5;
+  --rule: #242c47;
+  --sky: #8fd6ff;
+  --ember: #f6d8a8;
+  --gutter: 32px;
+  --serif: 'Newsreader Variable', Georgia, 'Times New Roman', serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--night);
+}
+
+body {
+  margin: 0;
+  background: var(--night);
+  color: var(--starlight);
+  font: 18px/1.6 var(--serif);
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+a {
+  color: var(--sky);
+}
+
+a:focus-visible,
+.button:focus-visible {
+  outline: 2px solid var(--sky);
+  outline-offset: 3px;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 400;
+  text-wrap: balance;
+}
+
+kbd,
+code {
+  font-family: var(--mono);
+  font-size: 0.78em;
+}
+
+kbd {
+  display: inline-block;
+  padding: 0 0.45em;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--night-raised);
+  color: var(--starlight);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+code {
+  color: var(--ember);
+}
+
+/* --- Buttons ----------------------------------------------------------------- */
+
+.button {
+  display: inline-block;
+  padding: 0.55em 1.25em;
+  border-radius: 6px;
+  font: 500 1rem/1.4 var(--serif);
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.button.solid {
+  background: var(--starlight);
+  color: var(--night);
+}
+
+.button.solid:hover {
+  background: var(--sky);
+}
+
+.button.outline {
+  border: 1px solid rgba(223, 229, 245, 0.35);
+  background: rgba(7, 10, 22, 0.45);
+  color: var(--starlight);
+  backdrop-filter: blur(6px);
+}
+
+.button.outline:hover {
+  border-color: var(--starlight);
+}
+
+/* --- Top bar ----------------------------------------------------------------- */
+
+.bar {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  /* The same column as the words below. */
+  padding: 20px max(var(--gutter), calc((100% - 1080px) / 2 + var(--gutter)));
+}
+
+.wordmark {
+  color: var(--starlight);
+  font-size: 1.3rem;
+  font-style: italic;
+  text-decoration: none;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.sign-up-link {
+  color: var(--starlight);
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+
+.sign-up-link:hover {
+  text-decoration: underline;
+}
+
+/* --- Hero -------------------------------------------------------------------- */
+
+.hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  height: min(100svh, 900px);
+  min-height: 580px;
+  overflow: hidden;
+}
+
+#galaxy,
+.galaxy-still {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.galaxy-still {
+  background: var(--night);
+}
+
+/* Keeps the words readable over the stars, and fades the sky into the page. */
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 60% at 0% 100%, rgba(7, 10, 22, 0.92), transparent 70%),
+    linear-gradient(to top, var(--night), transparent 22%);
+  pointer-events: none;
+}
+
+/* Lines up with the sections below it. */
+.hero-copy {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 var(--gutter) clamp(48px, 11vh, 120px);
+}
+
+.hero-copy > * {
+  max-width: 40rem;
+}
+
+h1 {
+  margin: 0 0 0.35em;
+  font-size: clamp(2.6rem, 6.4vw, 5.2rem);
+  font-weight: 360;
+  line-height: 1.02;
+  letter-spacing: -0.015em;
+}
+
+.lede {
+  max-width: 32em;
+  margin: 0 0 2rem;
+  font-size: 1.15rem;
+  color: rgba(223, 229, 245, 0.88);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin: 0;
+}
+
+.aside {
+  color: var(--dust);
+  font-size: 0.95rem;
+  font-style: italic;
+}
+
+/* --- Sections ---------------------------------------------------------------- */
+
+main {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+main > section {
+  padding: 88px 0 0;
+}
+
+h2 {
+  margin: 0 0 40px;
+  font-size: clamp(1.8rem, 3.4vw, 2.4rem);
+  line-height: 1.15;
+}
+
+h3 {
+  margin: 0 0 0.4em;
+  font-size: 1.4rem;
+  line-height: 1.25;
+}
+
+p {
+  margin: 0;
+}
+
+/* --- How it works: numbered stops along a dotted flight path ----------------- */
+
+.route {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.route::before {
+  content: '';
+  position: absolute;
+  top: 20px;
+  bottom: 60px;
+  left: 19px;
+  border-left: 1px dashed var(--rule);
+}
+
+.step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 30rem) minmax(0, 1fr);
+  gap: 0 32px;
+  align-items: center;
+  padding: 0 0 56px;
+  counter-increment: step;
+}
+
+.step::before {
+  content: counter(step);
+  align-self: start;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  background: var(--night);
+  color: var(--ember);
+  font-style: italic;
+  font-size: 1.1rem;
+}
+
+.step-text {
+  align-self: start;
+  padding-top: 4px;
+  color: rgba(223, 229, 245, 0.88);
+}
+
+.step-text h3 {
+  color: var(--starlight);
+}
+
+.diagram {
+  justify-self: center;
+  width: 100%;
+  max-width: 360px;
+  height: auto;
+  color: #8f98b8;
+}
+
+/* Diagram parts. Stars glow the way they do in the app: a soft halo, a white core. */
+.diagram .field circle {
+  fill: #5d6584;
+}
+
+.diagram .crosshair path {
+  fill: none;
+  stroke: var(--dust);
+  stroke-width: 1.2;
+}
+
+.diagram .ripple {
+  fill: none;
+  stroke: var(--ember);
+  stroke-opacity: 0.5;
+}
+
+.diagram .ripple.faint {
+  stroke-opacity: 0.18;
+}
+
+.diagram .core {
+  fill: #fffaf0;
+}
+
+.diagram .label {
+  font: italic 15px var(--serif);
+  fill: var(--starlight);
+}
+
+.diagram .label.small {
+  font-size: 12px;
+  fill: var(--dust);
+}
+
+.diagram .wedge {
+  fill: rgba(143, 214, 255, 0.05);
+  stroke: rgba(143, 214, 255, 0.22);
+}
+
+.diagram .wedge.on {
+  fill: rgba(143, 214, 255, 0.26);
+  stroke: var(--sky);
+}
+
+.diagram .wedge-label {
+  font: italic 13px var(--serif);
+  fill: var(--sky);
+  text-anchor: middle;
+}
+
+.diagram .link {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-opacity: 0.5;
+}
+
+.diagram .link.pending {
+  stroke: #b9c6ff;
+  stroke-dasharray: 5 5;
+  stroke-opacity: 0.8;
+}
+
+.diagram .link.between {
+  stroke: var(--dust);
+  stroke-dasharray: 3 4;
+}
+
+.diagram .link.lit {
+  stroke: #9ff0b4;
+  stroke-opacity: 0.8;
+}
+
+.diagram .cluster {
+  color: var(--c);
+}
+
+.diagram .cluster circle {
+  fill: var(--c);
+}
+
+.diagram .far {
+  fill: #6f789a;
+}
+
+.diagram .near {
+  fill: #b9c6ff;
+  fill-opacity: 0.22;
+}
+
+.diagram .flight {
+  fill: none;
+  stroke: var(--sky);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-dasharray: 0.1 7;
+}
+
+.diagram .arrow {
+  fill: none;
+  stroke: var(--sky);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.diagram .tree circle {
+  fill: #e2ecff;
+}
+
+/* --- Where maps live ---------------------------------------------------------- */
+
+.ways {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 32px 48px;
+}
+
+.way {
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+  color: rgba(223, 229, 245, 0.88);
+}
+
+.way h3 {
+  color: var(--starlight);
+}
+
+.share {
+  max-width: 44rem;
+  margin-top: 40px;
+  color: var(--dust);
+}
+
+/* --- Keys --------------------------------------------------------------------- */
+
+.keys-section > p {
+  margin: -24px 0 28px;
+  color: var(--dust);
+}
+
+.keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 30rem), 1fr));
+  gap: 10px 40px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.95rem;
+}
+
+.keys li {
+  color: var(--dust);
+}
+
+.keys kbd {
+  margin-right: 4px;
+}
+
+.keys span {
+  margin-left: 2px;
+}
+
+/* --- Foot --------------------------------------------------------------------- */
+
+.foot {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 88px var(--gutter) 96px;
+}
+
+/* --- Narrow screens ------------------------------------------------------------ */
+
+@media (max-width: 760px) {
+  :root {
+    --gutter: 16px;
+  }
+
+  body {
+    font-size: 17px;
+  }
+
+  .hero::after {
+    background: linear-gradient(to top, var(--night) 8%, rgba(7, 10, 22, 0.7) 45%, transparent 75%);
+  }
+
+  .sign-up-link {
+    display: none;
+  }
+
+  main > section {
+    padding-top: 64px;
+  }
+
+  .step {
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 16px;
+    padding-bottom: 48px;
+  }
+
+  .step::before {
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+  }
+
+  .route::before {
+    left: 15px;
+  }
+
+  .diagram {
+    grid-column: 2;
+    justify-self: start;
+    max-width: 320px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+}

@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from flask import Flask, Response, redirect, send_from_directory
+from flask import Flask, Response, redirect, request, send_from_directory
 
 from .accounts import account_shell_url, accounts
 from .admin import Guard, admin, client_ip
@@ -54,14 +54,23 @@ def create_app(config_path: Path | str | None = None) -> Flask:
 
     @app.get("/")
     def index() -> Response:
-        if not (STATIC_DIR / "index.html").is_file():
+        # `?map=<id>` (a server map) and `?local` (no account) are the app itself.
+        if "map" in request.args or "local" in request.args:
+            page = "index.html"
+        else:
+            shell = account_shell_url()
+            if shell:
+                # Not permanent: signing out must bring the homepage straight back.
+                response = redirect(shell, code=302)
+                response.headers["Cache-Control"] = "no-store"
+                return response
+            page = "home.html"
+        if not (STATIC_DIR / page).is_file():
             return Response(BUILD_MISSING, status=503, mimetype="text/plain")
-        shell = account_shell_url()
-        if shell:
-            # Not permanent: switching accounts off must bring `/` straight back.
-            response = redirect(shell, code=302)
+        response = send_from_directory(STATIC_DIR, page)
+        if page == "home.html":
+            # What `/` is depends on the session cookie, so never reuse it.
             response.headers["Cache-Control"] = "no-store"
-            return response
-        return send_from_directory(STATIC_DIR, "index.html")
+        return response
 
     return app

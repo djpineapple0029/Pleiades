@@ -27,7 +27,7 @@ import { APP_ROWS, SERVER_MAP_ROWS, renderKeyList, renderResumePill } from './ke
 import { setRevealScale, setLabelTarget } from './labels.js'
 import { CONTEXT_LOST, NO_WEBGL, createCrashGuard, errorText } from './crashGuard.js'
 import { watchContextLoss } from './contextLoss.js'
-import { accountUrl, accountsEnabled, appUrl } from './api.js'
+import { accountUrl, appUrl } from './api.js'
 import { TICK_MS, createServerMap, loadServerMap } from './serverMap.js'
 import { backupOffer, createBackupStore } from './localBackup.js'
 
@@ -53,28 +53,21 @@ const guard = createCrashGuard({
 // already says why nothing more can happen.
 const halt = () => new Promise(() => {})
 
-// `?map=<id>` opens a map from the account's list; `?local` is the classic app
-// on a server with accounts. Plain `/` on such a server belongs to the account
-// shell. The e2e harness pins defaults and never has accounts.
+// `?map=<id>` opens a map from the account's list; `?local` (or no query at
+// all, which only the e2e harness sends here) is the app without an account.
+// Plain `/` is the homepage (home.html), sent by Flask or vite.config.js.
 const params = new URLSearchParams(location.search)
 const mapId = params.get('map')
-const askAboutAccounts =
-  !mapId && !params.has('local') && import.meta.env.VITE_ATLASMAP_SETTINGS !== 'defaults'
 
 // Keybinds and settings from the server's config (/admin). Defaults if the
 // server can't be reached, so a failure here never stops the app starting.
 // A server map's unsaved edits this browser kept (localBackup.js), if any.
 const backups = mapId ? createBackupStore() : null
-const [settings, toAccountShell, opened, keptLocally] = await Promise.all([
+const [settings, opened, keptLocally] = await Promise.all([
   fetchSettings(`${import.meta.env.BASE_URL}api/config`),
-  askAboutAccounts ? accountsEnabled() : false,
   mapId ? loadServerMap(mapId) : null,
   backups ? backups.get(mapId) : null,
 ])
-if (toAccountShell) {
-  location.replace(accountUrl())
-  await halt()
-}
 if (opened && !opened.ok) {
   // Signed out: the shell signs in. Gone (or accounts off): the shell says so.
   if (opened.status === 401 || opened.status === 404) {

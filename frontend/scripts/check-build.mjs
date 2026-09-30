@@ -16,6 +16,13 @@ const BUDGETS = [
   { label: 'account.html', match: /^account\.html$/, dir: '', max: 8 * KB },
   { label: 'account JS', match: /^account-.*\.js$/, dir: 'assets', max: 24 * KB },
   { label: 'account CSS', match: /^account-.*\.css$/, dir: 'assets', max: 8 * KB },
+  // three, split out of the app on 2026-09-30 so the homepage's hero shares it
+  // (530 kB then; the app JS above dropped by the same amount).
+  { label: 'three chunk', match: /^three-.*\.js$/, dir: 'assets', max: 680 * KB },
+  // The homepage: its own code is small; the hero borrows the three chunk.
+  { label: 'home.html', match: /^home\.html$/, dir: '', max: 24 * KB },
+  { label: 'home JS', match: /^home-.*\.js$/, dir: 'assets', max: 16 * KB },
+  { label: 'home CSS', match: /^home-.*\.css$/, dir: 'assets', max: 16 * KB },
 ]
 
 let failed = false
