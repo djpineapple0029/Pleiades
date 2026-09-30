@@ -19,9 +19,11 @@ const SEED = 0x64757374
 // The looks (`looks.js`) that draw dust. Space: fixed, faint, pinpoint motes.
 // Sea: marine snow — bigger flakes, drawn to their size in the world, sinking
 // slowly and wandering a little from side to side.
+// Digital: square pixels rising slowly, like data drifting up out of the grid.
 const STYLES = {
-  space: { color: [0.55, 0.62, 0.75], gain: 1, worldSize: 0, softness: 4, fall: 0, sway: 0 },
-  sea: { color: [0.62, 0.86, 0.82], gain: 2.4, worldSize: 0.9, softness: 2.2, fall: 2.2, sway: 6 },
+  space: { color: [0.55, 0.62, 0.75], gain: 1, worldSize: 0, softness: 4, fall: 0, sway: 0, square: 0 },
+  sea: { color: [0.62, 0.86, 0.82], gain: 2.4, worldSize: 0.9, softness: 2.2, fall: 2.2, sway: 6, square: 0 },
+  digital: { color: [0.35, 1.0, 0.85], gain: 1.5, worldSize: 0.8, softness: 0, fall: -3, sway: 0, square: 1 },
 }
 const MAX_PX = 7 // a flake right by the camera stops growing here, in CSS px
 
@@ -55,18 +57,20 @@ const FRAGMENT = /* glsl */ `
 uniform vec3 color;
 uniform float gain;
 uniform float softness;
+uniform float square; // 1: a hard square pixel instead of a soft dot
 varying float vLight;
 void main() {
   vec2 p = gl_PointCoord * 2.0 - 1.0;
-  gl_FragColor = vec4(color * gain * vLight * exp(-softness * dot(p, p)), 1.0);
+  float shape = mix(exp(-softness * dot(p, p)), 1.0 - step(0.7, max(abs(p.x), abs(p.y))), square);
+  gl_FragColor = vec4(color * gain * vLight * shape, 1.0);
   #include <colorspace_fragment>
 }
 `
 
 /**
- * `object` goes in the scene. `setStyle('space' | 'sea' | null)` picks the
- * look's dust, null for none; `update(dt)` lets sea dust sink (pass 0 to
- * hold it still).
+ * `object` goes in the scene. `setStyle('space' | 'sea' | 'digital' | null)`
+ * picks the look's dust, null for none; `update(dt)` lets sea dust sink and
+ * digital dust rise (pass 0 to hold it still).
  */
 export function createDust() {
   const rand = seededRandom(SEED)
@@ -91,6 +95,7 @@ export function createDust() {
       color: { value: new THREE.Vector3() },
       gain: { value: 1 },
       softness: { value: 4 },
+      square: { value: 0 },
     },
     defines: {
       MAX_PX: MAX_PX.toFixed(1),
@@ -131,6 +136,7 @@ export function createDust() {
     u.worldSize.value = style.worldSize
     u.softness.value = style.softness
     u.sway.value = style.sway
+    u.square.value = style.square
   }
   setStyle('space')
 

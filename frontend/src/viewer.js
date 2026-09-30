@@ -19,6 +19,7 @@ import { createFlight } from './flight.js'
 import { createSkybox } from './skybox.js'
 import { createDust } from './dust.js'
 import { createLooks, storedLook } from './looks.js'
+import { createGrid } from './grid.js'
 import { createDustRivers } from './dustRivers.js'
 import { createBloom } from './bloom.js'
 import { createGraph } from './graph.js'
@@ -89,6 +90,8 @@ const skybox = createSkybox(renderer)
 scene.add(skybox.object)
 const dust = createDust()
 scene.add(dust.object)
+const grid = createGrid()
+scene.add(grid.object)
 const bloom = createBloom(renderer, scene, camera, { strength: settings.visuals.bloom_strength })
 
 const flight = createFlight(camera, canvas, { keymap, ...settings.flight })
@@ -108,6 +111,7 @@ const looks = createLooks({
   bloom,
   view,
   rivers,
+  grid,
   bloomStrength: settings.visuals.bloom_strength,
 })
 looks.set(storedLook() ?? settings.visuals.look, { instant: true, remember: false })
@@ -228,6 +232,7 @@ function frame() {
   const look = looks.current
   view.update(clock.elapsedTime, camera, look.motion ? clock.elapsedTime : 0)
   dust.update(look.motion ? delta : 0)
+  grid.update(look.motion ? delta : 0, camera, graph)
   if (look.rivers && settings.visuals.dust_rivers) rivers.update(delta)
   else rivers.hide()
   bloom.render() // the whole frame, stars and bloom included

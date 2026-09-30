@@ -23,6 +23,7 @@ const PLANET = new THREE.Vector3(0.12, -1, 0.3).normalize()
 const PLANET_COS = 0.4
 const SUN = new THREE.Vector3(1, 0.12, 0.25).normalize()
 const ORBIT_GAIN = 1.0
+const DIGITAL_GAIN = 0.35
 const STAR_COUNT = 6500
 // Share of the sky stars that crowd toward the band, and how tightly (radians).
 const BAND_SHARE = 0.45
@@ -314,9 +315,55 @@ void main() {
 }
 `
 
+// Cyberspace (`looks.js`): a virtual world's sky. Near-black overhead,
+// warming to violet and a hot magenta line at the horizon, where a skyline
+// of dark data towers stands against the glow with a few windows lit and a
+// cyan edge along each roof. The grid floor (`grid.js`) is drawn in the
+// scene, not here, so it moves under you; below the horizon this is only dark.
+const DIGITAL_FRAGMENT = /* glsl */ `
+uniform vec3 ground;
+varying vec3 vDirection;
+
+float hash11(float x) {
+  return fract(sin(x * 127.1) * 43758.5453);
+}
+
+void main() {
+  vec3 d = normalize(vDirection);
+  float y = d.y;
+  float up = max(y, 0.0);
+  vec3 light = vec3(0.0006, 0.0, 0.0022);
+  light += vec3(0.09, 0.012, 0.16) * exp(-up / 0.2);
+  light += vec3(0.5, 0.06, 0.38) * exp(-up / 0.012);
+  // Below the horizon the glow carries on a few degrees down, fading to
+  // black: that's where the far edge of the grid floor meets the sky, and the
+  // floor adds its light over this, so there's no dark band between them.
+  if (y < 0.0) light = (vec3(0.09, 0.012, 0.16) + vec3(0.5, 0.06, 0.38)) * exp(y / 0.03);
+
+  // The skyline: one tower per sliver of azimuth, most low, a few tall.
+  float az = atan(d.z, d.x) / 6.2831853 + 0.5;
+  float cell = floor(az * 300.0);
+  float across = fract(az * 300.0);
+  float tall = 0.012 + 0.05 * pow(hash11(cell), 3.0);
+  float gap = step(0.12, across) * step(across, 0.9); // a dark slit between towers
+  if (y > 0.0 && y < tall && gap > 0.0) {
+    vec3 tower = vec3(0.004, 0.001, 0.01);
+    // Windows: a grid on the tower's face, a few of them lit.
+    vec2 win = vec2(floor(across * 5.0), floor(y * 900.0));
+    float lit = step(0.9, hash11(cell * 13.1 + win.x * 3.7 + win.y * 1.3))
+      * step(0.35, fract(across * 5.0)) * step(0.4, fract(y * 900.0));
+    tower += vec3(0.05, 0.5, 0.6) * lit * 0.35;
+    // The roofline, lit cyan.
+    tower += vec3(0.05, 0.6, 0.75) * exp(-(tall - y) / 0.0012) * 0.5;
+    light = tower;
+  }
+  gl_FragColor = vec4(ground + light * DIGITAL_GAIN, 1.0);
+}
+`
+
 /**
  * The backdrop for `variant` ('space': the nebula, 'sea': the water column,
- * 'orbit': the planet),
+ * 'orbit': the planet, 'digital': Cyberspace's horizon),
  * rendered once into a cube map by a camera at the centre of a box.
  */
 function bakeNebula(renderer, variant = 'space') {
@@ -340,9 +387,11 @@ function bakeNebula(renderer, variant = 'space') {
       NEBULA_GAIN: NEBULA_GAIN.toFixed(3),
       SEA_GAIN: SEA_GAIN.toFixed(3),
       ORBIT_GAIN: ORBIT_GAIN.toFixed(3),
+      DIGITAL_GAIN: DIGITAL_GAIN.toFixed(3),
     },
     vertexShader: BAKE_VERTEX,
-    fragmentShader: { sea: SEA_FRAGMENT, orbit: ORBIT_FRAGMENT }[variant] ?? BAKE_FRAGMENT,
+    fragmentShader:
+      { sea: SEA_FRAGMENT, orbit: ORBIT_FRAGMENT, digital: DIGITAL_FRAGMENT }[variant] ?? BAKE_FRAGMENT,
     side: THREE.BackSide,
   })
   const box = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), material)
@@ -462,7 +511,8 @@ export function createSkybox(renderer) {
 
   /**
    * Which backdrop to show: 'space' (nebula and sky stars), 'sea' (the water
-   * column, no stars) or null for none (the clear colour shows).
+   * column, no stars), 'orbit' (the planet, sparse stars), 'digital'
+   * (Cyberspace's horizon) or null for none (the clear colour shows).
    */
   function setVariant(next) {
     group.visible = next !== null
@@ -471,8 +521,9 @@ export function createSkybox(renderer) {
     if (!cubes.has(variant)) cubes.set(variant, bakeNebula(renderer, variant))
     cube = cubes.get(variant)
     nebulaMaterial.uniforms.map.value = cube.texture
-    // Sea: none. Orbit: only the brighter third or so, and none through the planet.
-    stars.visible = variant !== 'sea'
+    // Sea and digital: none. Orbit: only the brighter third or so, and none
+    // through the planet.
+    stars.visible = variant === 'space' || variant === 'orbit'
     const orbit = variant === 'orbit'
     starMaterial.uniforms.occluder.value.set(PLANET.x, PLANET.y, PLANET.z, orbit ? PLANET_COS : 2)
     starMaterial.uniforms.faintCut.value = orbit ? 0.09 : 0

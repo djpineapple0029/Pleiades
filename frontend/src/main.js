@@ -5,6 +5,7 @@ import { createFlight } from './flight.js'
 import { createSkybox } from './skybox.js'
 import { createDust } from './dust.js'
 import { createLooks, storedLook } from './looks.js'
+import { createGrid } from './grid.js'
 import { createDustRivers } from './dustRivers.js'
 import { createSupernova } from './supernova.js'
 import { createBloom } from './bloom.js'
@@ -70,6 +71,8 @@ const skybox = createSkybox(renderer)
 scene.add(skybox.object)
 const dust = createDust()
 scene.add(dust.object)
+const grid = createGrid()
+scene.add(grid.object)
 const bloom = createBloom(renderer, scene, camera, { strength: visuals.bloom_strength })
 
 const flight = createFlight(camera, canvas, { keymap, ...settings.flight })
@@ -121,6 +124,7 @@ const looks = createLooks({
   bloom,
   view,
   rivers,
+  grid,
   supernova,
   fade: document.getElementById('look-fade'),
   bloomStrength: visuals.bloom_strength,
@@ -293,6 +297,7 @@ function frame() {
   const look = looks.current
   view.update(clock.elapsedTime, camera, look.motion ? clock.elapsedTime : frozenElapsed)
   dust.update(look.motion ? delta : 0)
+  grid.update(look.motion ? delta : 0, camera, graph)
   // After the view: the rivers read the stars' drawn radii. A look without
   // them draws neither (deletes don't start a burst then, either).
   if (!look.rivers || !visuals.dust_rivers) {
@@ -334,6 +339,7 @@ if (import.meta.hot) {
     bloom.dispose()
     skybox.dispose()
     dust.dispose()
+    grid.dispose()
     flight.dispose()
     disposeScene()
   })

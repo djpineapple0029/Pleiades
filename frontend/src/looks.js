@@ -1,7 +1,7 @@
 /**
  * Looks: whole-scene presets, picked from their own radial ring: hold V, move
- * the mouse onto one, let go. Each one decides which layers are drawn at all, how the stars are
- * drawn, whether anything moves, and the colours.
+ * the mouse onto one, let go. Each one decides which layers are drawn at all,
+ * how the stars are drawn, whether anything moves, and the colours.
  *
  * - Deep Space: everything. Pulsing stars, dust rivers, drift along links,
  *   supernovas, the nebula and bloom. What "Motion: on" used to be.
@@ -12,6 +12,11 @@
  * - Deep Sea: the same pipeline dressed as the deep ocean. A water column lit
  *   from above instead of a sky, jellies instead of stars, sinking marine
  *   snow instead of dust, and teal and violet colours.
+ * - Cyberspace: a neon virtual world. A grid floor to the horizon under the
+ *   map (in the world, so it slides by as you fly) with a scan pulse running
+ *   across it, a skyline against a magenta horizon, holographic hexagons for
+ *   stars, square data packets along the links, pixels rising in place of
+ *   dust, and faint CRT scanlines over the view.
  * - Minimal: built for speed. Plain lit orbs on a flat ground, no glow, no
  *   bloom passes, no sky, no dust, nothing animated.
  *
@@ -65,6 +70,23 @@ const MINIMAL = {
   murk: 0,
 }
 
+const CYBER = {
+  clear: 0x020008,
+  // Neon: cyan, ice white, magenta.
+  tints: [
+    [0.2, 0.95, 1.0],
+    [0.85, 1.0, 1.0],
+    [1.0, 0.3, 0.85],
+  ],
+  edges: { edge: 0x1fb5c9, mote: 0xaaffff, heat: [0x3f7bff, 0xb44dff, 0xff3fb4] },
+  rivers: [
+    [0.3, 1.0, 0.95],
+    [0.75, 0.3, 1.0],
+  ],
+  murk: 0,
+  grid: [0x0a5c78, 0xe0308f],
+}
+
 export const LOOKS = [
   {
     id: 'deep-space',
@@ -93,6 +115,22 @@ export const LOOKS = [
     stars: 'jelly',
     rays: 3,
     palette: SEA,
+  },
+  {
+    id: 'cyberspace',
+    name: 'Cyberspace',
+    motion: true,
+    sky: 'digital',
+    dust: 'digital',
+    grid: true,
+    packets: true,
+    rivers: true,
+    supernova: true,
+    drift: true,
+    bloom: 1.5,
+    stars: 'hex',
+    rays: 3,
+    palette: CYBER,
   },
   {
     id: 'minimal',
@@ -170,6 +208,7 @@ export function createLooks({
   bloom,
   view,
   rivers,
+  grid = null,
   supernova = null,
   fade = null,
   bloomStrength = 0.3,
@@ -194,7 +233,10 @@ export function createLooks({
       voidColor: palette.clear,
       edges: palette.edges,
       drift: look.drift,
+      packets: Boolean(look.packets),
     })
+    grid?.setOn(Boolean(look.grid))
+    if (look.grid) grid?.setColors(...palette.grid)
     rivers.setColors(...palette.rivers)
     if (!look.rivers) rivers.hide()
     if (!look.supernova) supernova?.clear()

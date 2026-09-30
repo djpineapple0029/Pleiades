@@ -8,7 +8,7 @@
  * Loads the balanced ~130-node map `color_fade_look.mjs` leaves in artifacts/
  * (run that first if it's missing). Saves artifacts/looks_*.png. Headless only.
  *
- *   node tests/manual/looks_look.mjs
+ *   node tests/manual/looks_look.mjs [look,look…]
  */
 /* global fx -- set on window by the page.evaluate below */
 import { globSync, mkdirSync, readFileSync } from 'node:fs'
@@ -48,6 +48,7 @@ await page.evaluate(async (input) => {
   const { createGraphView } = await import('/src/graphView.js')
   const { createDustRivers } = await import('/src/dustRivers.js')
   const { createLooks } = await import('/src/looks.js')
+  const { createGrid } = await import('/src/grid.js')
   const canvas = document.getElementById('c')
   const { renderer, scene, camera } = createScene(canvas)
   const skybox = createSkybox(renderer)
@@ -60,7 +61,9 @@ await page.evaluate(async (input) => {
   const view = createGraphView(graph, scene, renderer)
   view.sync()
   const rivers = createDustRivers(graph, scene, { radiusOf: view.radiusOf })
-  const looks = createLooks({ renderer, skybox, dust, bloom, view, rivers })
+  const grid = createGrid()
+  scene.add(grid.object)
+  const looks = createLooks({ renderer, skybox, dust, bloom, view, rivers, grid })
   let clock = 0
   const gl = renderer.getContext()
   const pixel = new Uint8Array(4)
@@ -69,6 +72,7 @@ await page.evaluate(async (input) => {
     clock += dt
     view.update(clock, camera, look.motion ? clock : 0)
     dust.update(look.motion ? dt : 0)
+    grid.update(look.motion ? dt : 0, camera, graph)
     if (look.rivers) rivers.update(dt, [])
     else rivers.hide()
   }
@@ -112,7 +116,8 @@ const h = [hub.x, hub.y, hub.z]
 const near = [h[0] + 120, h[1] + 60, h[2] + 220]
 
 const report = {}
-for (const id of ['deep-space', 'deep-sea', 'minimal', 'shallow-space']) {
+const only = process.argv[2]?.split(',')
+for (const id of only ?? ['deep-space', 'deep-sea', 'cyberspace', 'minimal', 'shallow-space']) {
   await page.evaluate((look) => fx.setLook(look), id)
   await page.evaluate(() => fx.advance(6, 1 / 30))
   await page.evaluate(([from, at]) => fx.look(from, at), [far, centre])

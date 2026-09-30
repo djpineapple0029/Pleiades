@@ -177,7 +177,7 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   await settle(page)
   expect
     .soft(await t(page, 'wedges()'), 'the look ring, the current one ticked')
-    .toEqual(['Deep Space ✓', 'Deep Sea', 'Minimal', 'Shallow Space'])
+    .toEqual(['Deep Space ✓', 'Deep Sea', 'Cyberspace', 'Minimal', 'Shallow Space'])
   await t(page, 'look(-60, 0)')
   await settle(page)
   expect.soft(await t(page, 'armed()'), 'left arms Shallow Space').toBe('Shallow Space')

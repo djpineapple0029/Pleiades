@@ -267,6 +267,7 @@ uniform vec3 moteColor;
 uniform vec3 hoverColor;
 uniform float dim; // 1 normally; lower while a search dims the map
 uniform float heat; // as for the lines
+uniform float packets; // 1: square data packets (Cyberspace), drawn bigger
 ${HEAT_GLSL}
 attribute vec3 instanceStart;
 attribute vec3 instanceEnd;
@@ -307,7 +308,7 @@ void main() {
 
   vec4 view = modelViewMatrix * vec4(world, 1.0);
   float size = MOTE_SIZE * 0.5 * resolution.y * projectionMatrix[1][1] / max(-view.z, 1e-3);
-  float drawn = clamp(size, MOTE_MIN_PX, MOTE_MAX_PX);
+  float drawn = clamp(size, MOTE_MIN_PX, MOTE_MAX_PX) * (1.0 + 0.5 * packets);
   float coverage = min(1.0, size / MOTE_MIN_PX);
   float fog = 1.0 - smoothstep(MOTE_FOG_NEAR, MOTE_FOG_FAR, length(view.xyz));
   float hover = float(gl_InstanceID) == hovered ? 1.0 : 0.0;
@@ -329,11 +330,16 @@ void main() {
 `
 
 const DRIFT_FRAGMENT = /* glsl */ `
+uniform float packets;
 varying vec3 vColor;
 void main() {
   vec2 p = gl_PointCoord * 2.0 - 1.0;
   float r2 = dot(p, p);
-  gl_FragColor = vec4(vColor * exp(-3.0 * r2) * (1.0 - smoothstep(0.7, 1.0, r2)), 1.0);
+  float round = exp(-3.0 * r2) * (1.0 - smoothstep(0.7, 1.0, r2));
+  // A packet: a hard little square with a brighter centre.
+  float box = max(abs(p.x), abs(p.y));
+  float square = (1.0 - step(0.62, box)) * (0.7 + 0.8 * (1.0 - step(0.3, box)));
+  gl_FragColor = vec4(vColor * mix(round, square, packets), 1.0);
   #include <colorspace_fragment>
 }
 `
@@ -409,6 +415,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
       dim: { value: 1 },
       heat: heatUniform,
       heatRamp,
+      packets: { value: 0 },
     },
     defines: DRIFT_DEFINES,
     vertexShader: DRIFT_VERTEX,
@@ -846,6 +853,11 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     heat?.forEach((hex, i) => heatRamp.value[i + 1].set(hex))
   }
 
+  /** Drift motes drawn as square data packets (Cyberspace) or round motes. */
+  function setPackets(on) {
+    driftMaterial.uniforms.packets.value = on ? 1 : 0
+  }
+
   /** Drift motes on or off. Off, they are hidden and their phases stand still. */
   function setDrift(on) {
     driftOn = Boolean(on)
@@ -880,6 +892,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     setHeat,
     setColors,
     setDrift,
+    setPackets,
     setFocus,
     setLanes,
     raycast,

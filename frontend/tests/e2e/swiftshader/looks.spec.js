@@ -26,11 +26,11 @@ test('hold V to pick a look', async ({ page }) => {
 
   // Right: Deep Sea. The ring stays open through a right-button release.
   const sea = await holdV(page, 60, 0)
-  expect(sea.wedges).toEqual(['Deep Space ✓', 'Deep Sea', 'Minimal', 'Shallow Space'])
+  expect(sea.wedges).toEqual(['Deep Space ✓', 'Deep Sea', 'Cyberspace', 'Minimal', 'Shallow Space'])
   expect(sea.armed).toBe('Deep Sea')
   await t(page, 'rightUp()')
   await settle(page)
-  expect(await t(page, 'wedges()'), 'still open after a right-button release').toHaveLength(4)
+  expect(await t(page, 'wedges()'), 'still open after a right-button release').toHaveLength(5)
   await page.keyboard.up('v')
   await settle(page, 500) // the dip to black and back
   expect(await lookNow(page)).toBe('deep-sea')
@@ -42,13 +42,28 @@ test('hold V to pick a look', async ({ page }) => {
   await settle(page, 500)
   expect(await lookNow(page), 'a tap changes nothing').toBe('deep-sea')
 
-  // Down: Minimal, then remembered across a reload.
-  const minimal = await holdV(page, 0, 60)
-  expect(minimal.wedges[1], 'the current look is ticked').toBe('Deep Sea ✓')
+  // Down and right: Cyberspace, with its scanlines over the view.
+  const cyber = await holdV(page, 35, 49)
+  expect(cyber.armed).toBe('Cyberspace')
+  await page.keyboard.up('v')
+  await settle(page, 500)
+  expect(await lookNow(page)).toBe('cyberspace')
+  expect(
+    await page.evaluate(() => getComputedStyle(document.getElementById('look-scan')).display),
+    'scanlines on',
+  ).toBe('block')
+
+  // Down and left: Minimal, then remembered across a reload.
+  const minimal = await holdV(page, -35, 49)
+  expect(minimal.wedges[2], 'the current look is ticked').toBe('Cyberspace ✓')
   expect(minimal.armed).toBe('Minimal')
   await page.keyboard.up('v')
   await settle(page, 500)
   expect(await lookNow(page)).toBe('minimal')
+  expect(
+    await page.evaluate(() => getComputedStyle(document.getElementById('look-scan')).display),
+    'scanlines off again',
+  ).toBe('none')
 
   await page.reload()
   await page.waitForTimeout(1500)
