@@ -95,7 +95,7 @@ view.setNebulae(layoutFlags.get('nebula') === '1')
 const physics = createPhysics(graph, view, {
   layout: {
     // The Balance's starting shape: cone trees, unless `?tree=disc|off`. The
-    // tree_shape key (T) steps through all three in the map.
+    // tree_shape key (hold T) picks among all three in the map.
     tree: ['disc', 'cone', 'off'].find((v) => v === layoutFlags.get('tree')) ?? 'cone',
     arrangement: layoutParam.find((v) => ['free', 'shell', 'disc'].includes(v)),
     inner: layoutParam.find((v) => ['force', 'rings', 'subgroups'].includes(v)),
