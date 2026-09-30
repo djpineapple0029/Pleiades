@@ -9,6 +9,11 @@
   <body>
     <header class="top">
       <h1><a id="home-link" href="./home.html">AtlasMap</a></h1>
+      <nav class="pages" id="pages" aria-label="Account" hidden>
+        <a href="#maps" data-page="maps">My maps</a>
+        <a href="#settings" data-page="settings">Settings</a>
+        <a href="#help" data-page="help">Help</a>
+      </nav>
       <div class="who" id="who" hidden>
         <span id="who-name"></span>
         <button id="sign-out" type="button" class="quiet">Sign out</button>
@@ -126,6 +131,10 @@
           <a id="local-link-in" href="./?local">Open a file from your computer instead →</a>
         </p>
       </section>
+
+      <section id="settings-view" aria-label="Settings" hidden></section>
+
+      <section id="help-view" aria-label="Help" hidden></section>
     </main>
 
     <script type="module" src="/src/shell/main.js"></script>

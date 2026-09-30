@@ -456,3 +456,111 @@ test('over plain HTTP, the shell warns once before the sign-in form', async ({ p
   await expect(page.locator('#sign-in-form')).toBeVisible()
   await expect(page.locator('#insecure')).toBeHidden()
 })
+
+// --- Milestone 5: your own settings and keys, Help -----------------------------
+
+const nav = (page, name) => page.locator(`#pages a[data-page="${name}"]`).click()
+const settingsRow = (page, path) => page.locator(`#settings-view [data-path="${path}"]`)
+const myConfig = async (page) => (await page.request.get('/api/config')).json()
+
+test('settings: your own feel and keys reach Help and your maps, and go back to the server’s', async ({
+  page,
+}) => {
+  const errors = collectConsoleErrors(page)
+  await signUp(page)
+  await nav(page, 'settings')
+  await expect(page).toHaveURL(/#settings$/)
+  await expect(page).toHaveTitle('Settings — AtlasMap')
+
+  const sensitivity = settingsRow(page, 'flight.mouse_sensitivity')
+  await expect(sensitivity.locator('.origin')).toHaveText("server's")
+  await sensitivity.locator('input[type="number"]').fill('2.5')
+
+  // Heat on J instead of H.
+  const heat = settingsRow(page, 'keybinds.heat')
+  await heat.getByRole('button', { name: '+ key' }).click()
+  await expect(heat.locator('button.add')).toHaveText(/press a key/)
+  await page.keyboard.press('j')
+  await heat.getByRole('button', { name: /^Remove H from/ }).click()
+  await expect(heat.locator('.chip kbd')).toHaveText(['J'])
+  await expect(page.locator('.savebar .state')).toHaveText('Unsaved changes')
+  await page.locator('#settings-save').click()
+  await expect(page.locator('.savebar .state')).toHaveText(/^Saved/)
+  await expect(heat.locator('.tag')).toHaveText('yours')
+
+  // A key another action has while flying is refused, on its row.
+  const balance = settingsRow(page, 'keybinds.balance')
+  await balance.getByRole('button', { name: '+ key' }).click()
+  await page.keyboard.press('j')
+  await page.locator('#settings-save').click()
+  await expect(balance.locator('.error')).toContainText('J clashes with connection heat')
+  await page.getByRole('button', { name: 'Discard' }).click()
+  await expect(balance.locator('.chip kbd')).toHaveText(['B'])
+
+  const config = await myConfig(page)
+  expect(config.account).toBe(true)
+  expect(config.flight.mouse_sensitivity).toBe(2.5)
+  expect(config.keybinds.heat).toEqual(['J'])
+
+  // Still there after a reload, and Help shows the key you have.
+  await page.reload()
+  await expect(settingsRow(page, 'flight.mouse_sensitivity').locator('input[type="number"]')).toHaveValue(
+    '2.5',
+  )
+  await nav(page, 'help')
+  await expect(page).toHaveTitle('Help — AtlasMap')
+  await expect(page.locator('#help-view [data-action="heat"] kbd')).toHaveText(['J'])
+  await expect(page.locator('#help-view [data-action="search"] kbd')).toHaveText(['/', 'Ctrl/⌘+F'])
+
+  // A map's own key list says J too.
+  await nav(page, 'maps')
+  await newMap(page, 'Keys')
+  await expect(page.locator('#overlay .keys li', { hasText: 'connection heat' }).locator('kbd')).toHaveText(
+    'J',
+  )
+
+  // Back to the server's: the override is gone, not just set to H.
+  await page.goto('/account.html#settings')
+  await settingsRow(page, 'keybinds.heat').getByRole('button', { name: "Use server's (H)" }).click()
+  await page.locator('#settings-save').click()
+  await expect(page.locator('.savebar .state')).toHaveText(/^Saved/)
+  const after = (await (await page.request.get('/api/account/settings')).json()).overrides
+  expect(after).toEqual({ flight: { mouse_sensitivity: 2.5 } })
+  expect((await myConfig(page)).keybinds.heat).toEqual(['H'])
+  // The one refused save above, which Chrome logs.
+  expect(errors).toEqual([expect.stringContaining('status of 400')])
+})
+
+async function holdV(page, dx, dy) {
+  await page.keyboard.down('v')
+  await settle(page)
+  await t(page, `look(${dx}, ${dy})`)
+  await settle(page)
+  return t(page, 'armed()')
+}
+
+test('signed in, a look picked with V is kept in the account and follows you', async ({ page, browser }) => {
+  const errors = collectConsoleErrors(page)
+  const username = await signUp(page)
+  const id = await newMap(page, 'Looks')
+  expect(await page.evaluate(() => document.documentElement.dataset.look)).toBe('deep-space')
+  expect(await holdV(page, 60, 0)).toBe('Deep Sea')
+  await page.keyboard.up('v')
+  await settle(page, 500)
+  expect(await page.evaluate(() => document.documentElement.dataset.look)).toBe('deep-sea')
+  await expect
+    .poll(async () => (await (await page.request.get('/api/account/settings')).json()).overrides)
+    .toEqual({ visuals: { look: 'deep-sea' } })
+  // Kept in the account, not in this browser.
+  expect(await page.evaluate(() => localStorage.getItem('atlasmap.look'))).toBeNull()
+
+  await page.goto('/account.html#settings')
+  await expect(page.locator('#mine-visuals-look')).toHaveValue('deep-sea')
+
+  // Another browser, signed in as the same person, opens in Deep Sea.
+  const other = await (await browser.newContext()).newPage()
+  await signIn(other, username)
+  await other.goto(`/?map=${id}`)
+  await expect.poll(() => other.evaluate(() => document.documentElement.dataset.look)).toBe('deep-sea')
+  expect(errors).toEqual([])
+})

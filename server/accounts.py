@@ -96,17 +96,24 @@ def available() -> bool:
     return bool(store().get("accounts", "enabled"))
 
 
-def account_shell_url() -> str | None:
-    """Where plain `/` should go instead of the homepage: My maps, for someone
-    already signed in here. Read-only: it neither slides nor re-issues the session."""
+def session_user() -> sqlite3.Row | None:
+    """The signed-in user, for requests outside these blueprints (`/`,
+    `/api/config`). Read-only: it neither slides nor re-issues the session,
+    since only this blueprint's after_request can send the cookie back."""
     if not available():
         return None
     token = request.cookies.get(COOKIE)
     if not token:
         return None
     with database().connect() as conn:
-        if session_row(conn, token_hash(token), dbmod.now()) is None:
-            return None
+        return session_row(conn, token_hash(token), dbmod.now())
+
+
+def account_shell_url() -> str | None:
+    """Where plain `/` should go instead of the homepage: My maps, for someone
+    already signed in here."""
+    if session_user() is None:
+        return None
     return f"{cookie_path()}account.html"
 
 

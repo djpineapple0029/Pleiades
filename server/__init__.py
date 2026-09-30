@@ -1,6 +1,7 @@
 """Flask app for AtlasMap: serves the built frontend, the file crypto endpoints,
 the public keybinds/settings (`/api/config`), the admin panel (`/admin`) and,
-when switched on, accounts with server-side maps (`/api/auth`, `/api/maps`).
+when switched on, accounts with server-side maps and settings (`/api/auth`,
+`/api/maps`, `/api/account`).
 
 No graph logic lives here — the frontend owns the graph entirely.
 """
@@ -12,6 +13,7 @@ from pathlib import Path
 
 from flask import Flask, Response, redirect, request, send_from_directory
 
+from .account import account
 from .accounts import account_shell_url, accounts
 from .admin import Guard, admin, client_ip
 from .api import api
@@ -51,6 +53,7 @@ def create_app(config_path: Path | str | None = None) -> Flask:
     app.register_blueprint(admin)
     app.register_blueprint(accounts)
     app.register_blueprint(maps)
+    app.register_blueprint(account)
 
     @app.get("/")
     def index() -> Response:

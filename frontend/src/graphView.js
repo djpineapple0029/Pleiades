@@ -179,6 +179,7 @@ const STAR_FRAGMENT = /* glsl */ `
 uniform float pulseBeat;
 uniform vec3 voidColor; // what a dimmed orb fades toward
 uniform float murk; // underwater fog: share of light lost per world unit (0 in space)
+uniform float brightness; // the user's star brightness (visuals.node_brightness), 1 = as designed
 varying vec2 vOffset;
 varying vec3 vTint;
 varying float vGlow;
@@ -205,7 +206,7 @@ void main() {
   float diffuse = max(dot(normal, light), 0.0);
   float spec = pow(max(dot(reflect(-light, normal), vec3(0.0, 0.0, 1.0)), 0.0), 28.0);
   vec3 colour = vTint * (0.28 + 0.8 * diffuse) + 0.22 * spec;
-  colour = mix(voidColor, colour, vGlow);
+  colour = mix(voidColor, colour * brightness, vGlow);
   gl_FragColor = vec4(colour, alpha * vFade);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -249,7 +250,7 @@ void main() {
   vec3 colour = hot * body * (1.1 + 0.9 * swell)
     + vTint * (membrane * (0.9 + 0.8 * swell) + halo * (0.35 + 0.5 * swell) + tendrils * (0.45 + 0.35 * swell));
   float sink = mix(0.12, 1.0, exp(-vDist * murk));
-  colour *= sink * vGlow * vFade * (1.0 - smoothstep(STAR_EXTENT * 0.9, STAR_EXTENT, r));
+  colour *= brightness * sink * vGlow * vFade * (1.0 - smoothstep(STAR_EXTENT * 0.9, STAR_EXTENT, r));
   gl_FragColor = vec4(colour, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -289,7 +290,7 @@ void main() {
 
   vec3 hot = mix(vec3(1.0), vTint, 0.35);
   vec3 colour = vTint * (bracket * 1.6 + fill * 0.12 + bits * 0.8 + halo * 0.18) + hot * core * level * 1.8;
-  colour *= vGlow * vFade * (1.0 - smoothstep(STAR_EXTENT * 0.9, STAR_EXTENT, length(vOffset)));
+  colour *= brightness * vGlow * vFade * (1.0 - smoothstep(STAR_EXTENT * 0.9, STAR_EXTENT, length(vOffset)));
   gl_FragColor = vec4(colour, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -472,7 +473,7 @@ void main() {
     + vTint * (glow * (0.7 + 1.1 * swell) + light * (0.85 + 0.6 * swell));
   // The glow scales the hot core too: a dimmed star with a white-hot centre
   // would still read as a bright point.
-  colour *= vGlow * vFade * (1.0 - smoothstep(STAR_EXTENT * 0.9, STAR_EXTENT, r));
+  colour *= brightness * vGlow * vFade * (1.0 - smoothstep(STAR_EXTENT * 0.9, STAR_EXTENT, r));
 
   gl_FragColor = vec4(colour, 1.0);
   #include <tonemapping_fragment>
@@ -540,6 +541,7 @@ export function createGraphView(graph, scene, renderer) {
     pulseBeat: { value: 0 },
     voidColor: { value: new THREE.Color(0x05060a) },
     murk: { value: 0 },
+    brightness: { value: 1 },
   }
   let tintRamp = SPACE_RAMP.map(srgb)
   let pull = null // a look pulling cluster colours toward one colour
@@ -1245,6 +1247,11 @@ export function createGraphView(graph, scene, renderer) {
     },
     get starStyle() {
       return starStyle
+    },
+    /** Star brightness (`visuals.node_brightness`): multiplies every star's
+     *  light in every look; 1 is as designed. Labels and links are untouched. */
+    setBrightness(value) {
+      starUniforms.brightness.value = Number.isFinite(value) ? Math.max(0, value) : 1
     },
     /** Nebulae behind colour groups on or off (`nebulae.js`). */
     setNebulae(on) {

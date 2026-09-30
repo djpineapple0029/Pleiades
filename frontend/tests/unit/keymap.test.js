@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chordText, createKeymap, parseChord } from '../../src/keymap.js'
+import { chordFromEvent, chordText, createKeymap, parseChord } from '../../src/keymap.js'
 import { defaultSettings, mergeSettings } from '../../src/settings.js'
 
 // A keydown as the browser would report it. `code` defaults from a letter key.
@@ -119,5 +119,48 @@ describe('mergeSettings', () => {
 
   it('never passes server-only settings through', () => {
     expect(mergeSettings({ admin: { session_minutes: 5 } }).admin).toBeUndefined()
+  })
+
+  it("says when the values are a signed-in user's, and only then", () => {
+    expect(mergeSettings({ account: true }).account).toBe(true)
+    expect(mergeSettings({ account: 'yes' }).account).toBeUndefined()
+    expect(mergeSettings({}).account).toBeUndefined()
+  })
+
+  it('has star brightness, 1 unless set', () => {
+    expect(defaultSettings().visuals.node_brightness).toBe(1)
+    expect(mergeSettings({ visuals: { node_brightness: 1.5 } }).visuals.node_brightness).toBe(1.5)
+    expect(mergeSettings({ visuals: { node_brightness: 9 } }).visuals.node_brightness).toBe(1)
+  })
+})
+
+describe('chordFromEvent', () => {
+  it('names letters and digits by position, whatever the layout types', () => {
+    expect(chordFromEvent(key('q', { code: 'KeyA' }))).toBe('A')
+    expect(chordFromEvent(key('&', { code: 'Digit1' }))).toBe('1')
+    expect(chordFromEvent(key(' ', { code: 'Space' }))).toBe('Space')
+    expect(chordFromEvent(key('PageUp'))).toBe('PageUp')
+  })
+
+  it('reads Ctrl as Mod off a Mac, Ctrl proper on one; ⌘ is always Mod', () => {
+    expect(chordFromEvent(key('j', { ctrl: true }))).toBe('Mod+J')
+    expect(chordFromEvent(key('j', { ctrl: true }), { mac: true })).toBe('Ctrl+J')
+    expect(chordFromEvent(key('j', { meta: true }), { mac: true })).toBe('Mod+J')
+    expect(chordFromEvent(key('j', { meta: true, shift: true, alt: true }))).toBe('Mod+Alt+Shift+J')
+  })
+
+  it('leaves Shift off a symbol, which already says it', () => {
+    expect(chordFromEvent(key('?', { code: 'Slash', shift: true }))).toBe('?')
+  })
+
+  it('waits while only modifiers are down; Shift alone is only a flight key', () => {
+    expect(chordFromEvent(key('Control', { code: 'ControlLeft', ctrl: true }))).toBeNull()
+    expect(chordFromEvent(key('Shift', { code: 'ShiftLeft', shift: true }))).toBeNull()
+    expect(chordFromEvent(key('Shift', { code: 'ShiftLeft', shift: true }), { movement: true })).toBe('Shift')
+  })
+
+  it('gives up on a key the config has no name for', () => {
+    expect(chordFromEvent(key('ä', { code: 'Quote' }))).toBeUndefined()
+    expect(chordFromEvent(key('MediaPlayPause'))).toBeUndefined()
   })
 })

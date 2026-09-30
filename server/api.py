@@ -10,6 +10,8 @@ import io
 
 from flask import Blueprint, Response, current_app, jsonify, request, send_file
 
+from .account import effective_config
+from .accounts import session_user
 from .atlasfile import FormatError, PasswordError, decode_any, encode_v2
 
 api = Blueprint("api", __name__, url_prefix="/api")
@@ -36,8 +38,17 @@ def too_large(_error: Exception) -> tuple[Response, int]:
 
 @api.get("/config")
 def client_config() -> Response:
-    """Keybinds and client settings for every page load. Nothing secret."""
-    return jsonify(current_app.extensions["atlasmap_config"].client_values())
+    """Keybinds and client settings for every page load. Nothing secret.
+
+    Signed in, the user's own settings are layered over the admin's
+    (server/account.py), and `account` says so: the app then keeps the look
+    picked with V in the account rather than in this browser.
+    """
+    user = session_user()
+    if user is None:
+        return jsonify(current_app.extensions["atlasmap_config"].client_values())
+    _, effective, _ = effective_config(user["id"])
+    return jsonify({**effective, "account": True})
 
 
 def fail(message: str, status: int) -> tuple[Response, int]:

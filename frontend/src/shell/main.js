@@ -1,18 +1,29 @@
 /**
  * The account shell (USERS.md, "Frontend"): sign in or sign up, then the list
- * of your maps. Plain DOM, no WebGL: it loads fast and works where the scene
- * can't. Opening a map hands over to the app at `?map=<id>`.
+ * of your maps, your Settings and Help (`#settings`, `#help`). Plain DOM, no
+ * WebGL: it loads fast and works where the scene can't. Opening a map hands
+ * over to the app at `?map=<id>`.
  *
  * Every name the server sends is set as text, never as markup.
  */
 import './shell.css'
-import { appUrl, homeUrl, request } from '../api.js'
+import { BASE, appUrl, homeUrl, request } from '../api.js'
 import { createBackupStore } from '../localBackup.js'
+import { fetchSettings } from '../settings.js'
 import { dateTime, mapSummary, relativeTime, versionSummary } from './format.js'
+import { renderHelp } from './helpPage.js'
+import { createSettingsPage } from './settingsPage.js'
 
 const $ = (id) => document.getElementById(id)
 const backups = createBackupStore()
-const views = ['loading', 'off', 'insecure', 'signed-out', 'signed-in']
+const views = ['loading', 'off', 'insecure', 'signed-out', 'signed-in', 'settings-view', 'help-view']
+// Signed in, the hash picks the page; anything else is My maps.
+const PAGES = {
+  maps: { view: 'signed-in', title: 'My maps' },
+  settings: { view: 'settings-view', title: 'Settings' },
+  help: { view: 'help-view', title: 'Help' },
+}
+let signedInNow = false
 
 const NOTICES = {
   missing: "That map doesn't exist any more, or it belongs to another account.",
@@ -20,7 +31,11 @@ const NOTICES = {
 
 function show(view) {
   for (const id of views) $(id).hidden = id !== view
-  $('who').hidden = view !== 'signed-in'
+  signedInNow = Object.values(PAGES).some((page) => page.view === view)
+  $('who').hidden = !signedInNow
+  $('pages').hidden = !signedInNow
+  // Signed out: a draft belongs to whoever was signed in, not the next person.
+  if (!signedInNow) settingsPage.forget()
 }
 
 function notice(text) {
@@ -154,10 +169,49 @@ function signedOutBy(result) {
 
 async function showSignedIn(me) {
   $('who-name').textContent = me.user.username
-  document.title = 'My maps — AtlasMap'
-  show('signed-in')
-  await refreshList()
+  await route()
 }
+
+function pageName() {
+  const name = location.hash.slice(1)
+  return name in PAGES ? name : 'maps'
+}
+
+/** Shows the page the hash names. */
+async function route() {
+  const name = pageName()
+  const page = PAGES[name]
+  document.title = `${page.title} — AtlasMap`
+  for (const link of $('pages').querySelectorAll('a')) {
+    if (link.dataset.page === name) link.setAttribute('aria-current', 'page')
+    else link.removeAttribute('aria-current')
+  }
+  if (name !== 'settings') settingsPage.close()
+  show(page.view)
+  if (name === 'maps') await refreshList()
+  else if (name === 'settings') await settingsPage.open()
+  else await showHelp()
+}
+
+async function showHelp() {
+  // Fresh each time: it should show keys just saved in Settings.
+  $('help-view').replaceChildren(
+    Object.assign(document.createElement('p'), { className: 'note', textContent: 'Loading…' }),
+  )
+  renderHelp($('help-view'), await fetchSettings(`${BASE}api/config`))
+}
+
+const settingsPage = createSettingsPage({ root: $('settings-view'), request, onSignedOut: signedOutBy })
+
+window.addEventListener('hashchange', () => {
+  if (signedInNow) route()
+})
+
+window.addEventListener('beforeunload', (event) => {
+  if (!settingsPage.isDirty) return
+  event.preventDefault()
+  event.returnValue = ''
+})
 
 async function refreshList() {
   const result = await request('api/maps')

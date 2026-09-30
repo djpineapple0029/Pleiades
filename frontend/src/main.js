@@ -27,7 +27,7 @@ import { APP_ROWS, SERVER_MAP_ROWS, renderKeyList, renderResumePill } from './ke
 import { setRevealScale, setLabelTarget } from './labels.js'
 import { CONTEXT_LOST, NO_WEBGL, createCrashGuard, errorText } from './crashGuard.js'
 import { watchContextLoss } from './contextLoss.js'
-import { accountUrl, appUrl } from './api.js'
+import { accountUrl, appUrl, request } from './api.js'
 import { TICK_MS, createServerMap, loadServerMap } from './serverMap.js'
 import { backupOffer, createBackupStore } from './localBackup.js'
 
@@ -109,6 +109,7 @@ camera.position.set(0, 0, 260)
 const graph = createGraph()
 const view = createGraphView(graph, scene, renderer)
 view.setHeat(visuals.connection_heat, { instant: true })
+view.setBrightness(visuals.node_brightness)
 const rivers = createDustRivers(graph, scene, { radiusOf: view.radiusOf })
 const supernova = createSupernova(scene)
 // Balance prototype variants (context/BALANCE2.md): `?layout=shell,subgroups`
@@ -181,8 +182,30 @@ const looks = createLooks({
   onChange: (look) => {
     if (!look.motion) frozenElapsed = clock.elapsedTime
   },
+  // Signed in, a V pick is kept in the account, not this browser, and the
+  // account's look (the config's, for them) is where every map starts.
+  ...(settings.account ? { store: keepLookInAccount } : {}),
 })
-looks.set(storedLook() ?? visuals.look, { instant: true, remember: false })
+looks.set(settings.account ? visuals.look : (storedLook() ?? visuals.look), {
+  instant: true,
+  remember: false,
+})
+
+// One save at a time; picks made meanwhile collapse into the latest.
+let lookToKeep = null
+let keepingLook = false
+async function keepLookInAccount(id) {
+  lookToKeep = id
+  if (keepingLook) return
+  keepingLook = true
+  while (lookToKeep) {
+    const look = lookToKeep
+    lookToKeep = null
+    const result = await request('api/account/settings', { method: 'PATCH', body: { visuals: { look } } })
+    if (!result.ok) interaction.reportError(`look not saved to your account: ${result.error}`)
+  }
+  keepingLook = false
+}
 
 const renderSettings = {
   /** True in a look that doesn't move: jumps cut instead of flying. */

@@ -22,6 +22,9 @@ const SECTION_NOTES = {
     'Applies to the next request. Maps kept here are readable by whoever runs the server; local files with a password stay private.',
   admin: 'Applies to this panel at once. The allowed networks must include your own address.',
 }
+// Schema entries marked `user`: this panel sets the default a signed-in user
+// starts from, and they may change it for themselves (server/account.py).
+const USER_TAG = ' · users can change their own'
 // Mirrors server/config.py: named keys by `event.key`, symbols by the character.
 const NAMED = [
   'Space', 'Enter', 'Tab', 'Backspace', 'Delete', 'Insert', 'Home', 'End', 'PageUp', 'PageDown',
@@ -325,7 +328,8 @@ function bindRow(action) {
   const name = document.createElement('div')
   name.className = 'name'
   const where = action.scope.includes('viewer') ? ' · also in exported maps' : ''
-  name.append(action.label, Object.assign(document.createElement('small'), { textContent: `${action.id}${where}` }))
+  const own = action.user ? USER_TAG : ''
+  name.append(action.label, Object.assign(document.createElement('small'), { textContent: `${action.id}${where}${own}` }))
 
   const chips = document.createElement('div')
   chips.className = 'chips'
@@ -380,7 +384,9 @@ function stopListening() {
   renderKeybinds()
 }
 
-/** A keydown as chord text in the config's syntax, or null to keep waiting. */
+/** A keydown as chord text in the config's syntax, or null to keep waiting.
+ *  frontend/src/keymap.js `chordFromEvent` is the same rule for the account
+ *  shell; this page has no build step, so it can't import that one. */
 function chordFrom(event, movement) {
   const { key, code } = event
   if (key === 'Shift') return movement ? 'Shift' : null
@@ -516,7 +522,8 @@ function settingRow(spec) {
     return row
   }
   head.append(control)
-  row.append(head, Object.assign(document.createElement('p'), { className: 'help', textContent: spec.help }))
+  const help = spec.user ? `${spec.help}${USER_TAG}` : spec.help
+  row.append(head, Object.assign(document.createElement('p'), { className: 'help', textContent: help }))
   appendError(row, path)
   return row
 }
