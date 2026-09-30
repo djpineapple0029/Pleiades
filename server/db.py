@@ -20,7 +20,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-FILENAME = "atlasmap.db"
+FILENAME = "pleiades.db"
 BUSY_TIMEOUT_MS = 5000
 
 MIGRATIONS: list[list[str]] = [

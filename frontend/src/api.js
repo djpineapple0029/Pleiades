@@ -1,7 +1,7 @@
 /**
  * The accounts API (`server/accounts.py`, `server/maps.py`) from the browser.
  *
- * Every call carries `X-Atlas: 1`, the header the server demands on anything
+ * Every call carries `X-Pleiades: 1`, the header the server demands on anything
  * that changes state (a cross-site form can't send it), and the session
  * cookie, which is HttpOnly and never visible here. Failures come back as
  * values, never throws: `{ ok: false, status, error }`, with `status` 0 when
@@ -51,7 +51,7 @@ export async function request(
     credentials: 'same-origin',
     cache: 'no-store',
     signal: keepalive ? undefined : controller.signal,
-    headers: { 'X-Atlas': '1', ...headers },
+    headers: { 'X-Pleiades': '1', ...headers },
   }
   if (body !== undefined) {
     init.body = typeof body === 'string' ? body : JSON.stringify(body)

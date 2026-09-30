@@ -1,7 +1,7 @@
 """A signed-in user's maps: list, create, open, save, rename, duplicate, delete,
 and each map's history (earlier versions, restore; see history.py).
 
-The server keeps the same JSON payload that goes inside an `.atlasmap` file,
+The server keeps the same JSON payload that goes inside a `.plm` file,
 zlib-compressed and otherwise untouched: unknown fields pass straight through,
 since the frontend owns the payload's shape (format/schema.js).
 

@@ -122,10 +122,29 @@ describe('files.js isDirty', () => {
     const files = createFiles({ graph, view: fakeView, camera: fakeCamera(), physics: fakePhysics })
     files.setCredentials('secret', 'mymap')
     expect(files.hasCredentials).toBe(true)
-    expect(files.filename).toBe('mymap.atlasmap')
+    expect(files.filename).toBe('mymap.plm')
 
     files.clearCredentials()
     expect(files.hasCredentials).toBe(false)
-    expect(files.filename).toBe('map.atlasmap')
+    expect(files.filename).toBe('map.plm')
+  })
+
+  it('names save as .plm, a legacy .atlasmap name included', () => {
+    const files = createFiles({
+      graph: createGraph(),
+      view: fakeView,
+      camera: fakeCamera(),
+      physics: fakePhysics,
+    })
+    for (const [given, saved] of [
+      ['orion', 'orion.plm'],
+      ['orion.plm', 'orion.plm'],
+      ['orion.atlasmap', 'orion.plm'],
+    ]) {
+      files.setCredentials('pw', given)
+      expect(files.filename).toBe(saved)
+      files.setFilename(given)
+      expect(files.filename).toBe(saved)
+    }
   })
 })

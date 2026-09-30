@@ -12,7 +12,7 @@ from server import create_app
 from server.accounts import COOKIE, SESSION_SECONDS, TOUCH_SECONDS
 
 ACCOUNT_PASSWORD = "long enough pw"  # conftest.py's signup fixture uses the same
-CSRF = {"X-Atlas": "1"}
+CSRF = {"X-Pleiades": "1"}
 
 
 @pytest.fixture
@@ -42,7 +42,7 @@ def whoami(client) -> str | None:
 
 
 def set_values(app, section, **values):
-    config = app.extensions["atlasmap_config"]
+    config = app.extensions["pleiades_config"]
     all_values = config.all_values()
     all_values[section].update(values)
     assert config.save(all_values) == []
@@ -119,7 +119,7 @@ def test_cookie_flags(client, signup):
 
 
 def test_cookie_is_scoped_to_the_app_prefix(client, signup, monkeypatch):
-    monkeypatch.setenv("ATLASMAP_BASE", "/pleiades/")
+    monkeypatch.setenv("PLEIADES_BASE", "/pleiades/")
     assert "Path=/pleiades/" in session_cookie(signup(client))
 
 
@@ -203,7 +203,7 @@ def test_lockout_per_username(accounts_app, signup):
 
 def test_account_lockouts_leave_the_admin_alone(accounts_app, signup):
     client = accounts_app.test_client()
-    config = accounts_app.extensions["atlasmap_config"]
+    config = accounts_app.extensions["pleiades_config"]
     config.set_password(config.initial_password, "admin password")
     for _ in range(6):
         login(client, "nobody")
@@ -212,7 +212,7 @@ def test_account_lockouts_leave_the_admin_alone(accounts_app, signup):
 
 def test_disabled_accounts_are_signed_out_and_refused(accounts_app, client, signup):
     signup(client)
-    with accounts_app.extensions["atlasmap_db"].connect() as conn:
+    with accounts_app.extensions["pleiades_db"].connect() as conn:
         conn.execute("UPDATE users SET disabled = 1")
     assert whoami(client) is None
     assert client.get("/api/maps").status_code == 401
@@ -255,7 +255,7 @@ def test_expired_sessions_are_swept_on_login(accounts_app, clock, signup):
     signup(accounts_app.test_client())
     clock["t"] += SESSION_SECONDS + 1
     login(accounts_app.test_client())
-    with accounts_app.extensions["atlasmap_db"].connect() as conn:
+    with accounts_app.extensions["pleiades_db"].connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 1
 
 
@@ -301,7 +301,7 @@ def test_root_goes_to_my_maps_when_signed_in(client, built, signup, monkeypatch)
     assert response.status_code == 302
     assert response.headers["Location"] == "/account.html"
     assert response.headers["Cache-Control"] == "no-store"
-    monkeypatch.setenv("ATLASMAP_BASE", "/pleiades/")
+    monkeypatch.setenv("PLEIADES_BASE", "/pleiades/")
     assert client.get("/").headers["Location"] == "/pleiades/account.html"
     assert client.get("/?local").data == b"<p>app</p>"
     client.post("/api/auth/logout", headers=CSRF)

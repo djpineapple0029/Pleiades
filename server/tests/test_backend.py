@@ -121,20 +121,22 @@ class TestAtlasfile:
 @pytest.mark.parametrize(
     "raw,want",
     [
-        ("mine", "mine.atlasmap"),
-        ("mine.atlasmap", "mine.atlasmap"),
-        ("../../etc/passwd", "passwd.atlasmap"),
-        ("..\\..\\win.ini", "win.ini.atlasmap"),
-        ("", "map.atlasmap"),
-        ("...", "map.atlasmap"),
-        (None, "map.atlasmap"),
-        (42, "map.atlasmap"),
-        ('a"b:c*d?', "abcd.atlasmap"),
-        ("my map.atlasmap", "my map.atlasmap"),
-        ("地図", "地図.atlasmap"),
-        ("x\r\ny", "xy.atlasmap"),
-        (".hidden", "hidden.atlasmap"),
-        ("z" * 300, "z" * 120 + ".atlasmap"),
+        ("mine", "mine.plm"),
+        ("mine.plm", "mine.plm"),
+        ("mine.atlasmap", "mine.plm"),  # a legacy file saves again as .plm
+        ("../../etc/passwd", "passwd.plm"),
+        ("..\\..\\win.ini", "win.ini.plm"),
+        ("", "map.plm"),
+        ("...", "map.plm"),
+        (None, "map.plm"),
+        (42, "map.plm"),
+        ('a"b:c*d?', "abcd.plm"),
+        ("my map.atlasmap", "my map.plm"),
+        ("my map.plm", "my map.plm"),
+        ("地図", "地図.plm"),
+        ("x\r\ny", "xy.plm"),
+        (".hidden", "hidden.plm"),
+        ("z" * 300, "z" * 120 + ".plm"),
     ],
 )
 def test_download_name(raw, want):
@@ -159,7 +161,7 @@ class TestSaveEndpoint:
         assert "attachment" in saved.headers.get("Content-Disposition", "")
 
     def test_names_the_file(self, saved):
-        assert "my map.atlasmap" in saved.headers.get("Content-Disposition", "")
+        assert "my map.plm" in saved.headers.get("Content-Disposition", "")
 
     def test_is_no_store(self, saved):
         assert saved.headers.get("Cache-Control") == "no-store"

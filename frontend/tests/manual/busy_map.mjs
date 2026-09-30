@@ -11,7 +11,7 @@
  *
  *   node tests/manual/busy_map.mjs
  *
- * Writes artifacts/busy_map.json (the payload) and artifacts/busy_map.atlasmap
+ * Writes artifacts/busy_map.json (the payload) and artifacts/busy_map.plm
  * (the same payload in a no-password v2 container, which Ctrl+O opens without
  * asking for a password).
  */
@@ -260,7 +260,7 @@ const payload = {
   camera: { position: [0, 150, 1600], rotation: [-0.09, 0, 0] },
 }
 writeFileSync(`${DIR}/busy_map.json`, JSON.stringify(payload))
-writeFileSync(`${DIR}/busy_map.atlasmap`, await writeContainer(payload, ''))
+writeFileSync(`${DIR}/busy_map.plm`, await writeContainer(payload, ''))
 const cross = edges.length - inTopic
 console.log(
   `busy_map: ${nodes.length} stars, ${edges.length} links (${cross} added across topics), ` +

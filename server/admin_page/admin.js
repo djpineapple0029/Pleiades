@@ -4,7 +4,7 @@
 // Every URL here is relative — the page is also served under a path prefix
 // (/pleiades/admin), and `api/admin/…` resolves against that the same way.
 
-const TOKEN_KEY = 'atlasmap-admin-token'
+const TOKEN_KEY = 'pleiades-admin-token'
 const STATUS_EVERY_MS = 5000
 const MAX_BINDINGS = 3
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)

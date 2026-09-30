@@ -3,7 +3,7 @@
  * schema's defaults for anything missing, wrong or unreachable.
  *
  * The app fetches them from `/api/config` once at startup. An exported map
- * carries a copy spliced in at export time (`#atlasmap-settings`), since it
+ * carries a copy spliced in at export time (`#pleiades-settings`), since it
  * opens from `file://` with no server at all. Either way a failure means
  * defaults, never a broken start.
  */
@@ -52,7 +52,7 @@ export function mergeSettings(raw) {
 export async function fetchSettings(url) {
   // The e2e server pins defaults, so a customised config on a dev backend
   // can't change the keys a test presses (see playwright.config.js).
-  if (import.meta.env?.VITE_ATLASMAP_SETTINGS === 'defaults') return defaultSettings()
+  if (import.meta.env?.VITE_PLEIADES_SETTINGS === 'defaults') return defaultSettings()
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   try {
@@ -67,7 +67,7 @@ export async function fetchSettings(url) {
 }
 
 /** For the viewer: the copy spliced into the exported page, if it's there. */
-export function readEmbeddedSettings(id = 'atlasmap-settings') {
+export function readEmbeddedSettings(id = 'pleiades-settings') {
   const text = document.getElementById(id)?.textContent?.trim()
   if (!text) return defaultSettings()
   try {

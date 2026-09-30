@@ -13,7 +13,7 @@ PAYLOAD = {
 }
 
 
-CSRF = {"X-Atlas": "1"}
+CSRF = {"X-Pleiades": "1"}
 
 
 @pytest.fixture
@@ -130,7 +130,7 @@ def test_names_are_capped(alice):
 
 
 def test_quota(accounts_app, alice):
-    config = accounts_app.extensions["atlasmap_config"]
+    config = accounts_app.extensions["pleiades_config"]
     values = config.all_values()
     values["accounts"]["max_maps_per_user"] = 2
     assert config.save(values) == []
@@ -154,7 +154,7 @@ def test_malformed_ids_are_404(alice):
 
 
 def test_oversized_saves_are_413(accounts_app, alice):
-    config = accounts_app.extensions["atlasmap_config"]
+    config = accounts_app.extensions["pleiades_config"]
     values = config.all_values()
     values["server"]["max_upload_mb"] = 1
     assert config.save(values) == []

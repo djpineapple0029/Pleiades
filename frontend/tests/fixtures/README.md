@@ -1,5 +1,8 @@
 # Golden `.atlasmap` files — never regenerate
 
+These predate the rename to Pleiades, so they keep the legacy `.atlasmap`
+extension; new files are `.plm`, with identical bytes.
+
 Each file here was written once, by the code named below, and committed with
 its decoded payload beside it (`<name>.json`). The tests in
 `server/tests/test_golden.py` and `tests/unit/golden.test.js` decrypt them and

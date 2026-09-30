@@ -7,7 +7,7 @@ COPY frontend/ ./
 COPY server/settings_schema.json ../server/settings_schema.json
 # Populates ../server/static per vite.config.js's outDir. Caddy serves this
 # under /pleiades (docker-compose.yml), so the asset URLs need that prefix.
-ENV ATLASMAP_BASE=/pleiades/
+ENV PLEIADES_BASE=/pleiades/
 RUN npm run build
 
 FROM python:3.13-slim
@@ -22,11 +22,13 @@ ENV PORT=5051
 # start writes it with a generated admin password: `docker compose logs pleiades`.
 # One proxy (Caddy) sits in front, so the client address is the last
 # X-Forwarded-For hop; this seeds admin.trusted_proxies in a new config only.
-ENV ATLASMAP_CONFIG=/data/atlasmap.toml
-ENV ATLASMAP_TRUSTED_PROXIES=1
+# A volume from before the rename keeps using its atlasmap.toml and atlasmap.db
+# (server/env.py), so an existing deployment keeps its password and accounts.
+ENV PLEIADES_CONFIG=/data/pleiades.toml
+ENV PLEIADES_TRUSTED_PROXIES=1
 # Accounts (off until switched on in /admin): the session cookie's Path, so it
 # only goes to this app and not to everything else Caddy serves on the host.
-# The database lands next to the config, at /data/atlasmap.db.
-ENV ATLASMAP_BASE=/pleiades/
+# The database lands next to the config, at /data/pleiades.db.
+ENV PLEIADES_BASE=/pleiades/
 VOLUME /data
 CMD ["python", "docker_serve.py"]

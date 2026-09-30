@@ -3,7 +3,7 @@
  * the file can read it in a text editor: it gets an explicit **allowlist** of
  * what the viewer draws, never "everything minus what we remembered to
  * strip". `notes`, `links`, and any field a newer build passed through
- * (`graph.js`'s `passThrough`) stay in the `.atlasmap` file only.
+ * (`graph.js`'s `passThrough`) stay in the `.plm` file only.
  *
  * Adding a field here is a deliberate act, in the same change that makes the
  * viewer render it (V2.md §2.3.3). Ids stay: star looks and drift-mote phase

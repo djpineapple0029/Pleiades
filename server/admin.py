@@ -51,11 +51,11 @@ SECURITY_HEADERS = {
 
 
 def store() -> ConfigStore:
-    return current_app.extensions["atlasmap_config"]
+    return current_app.extensions["pleiades_config"]
 
 
 def guard() -> Guard:
-    return current_app.extensions["atlasmap_admin_guard"]
+    return current_app.extensions["pleiades_admin_guard"]
 
 
 def client_ip() -> str:
@@ -306,7 +306,7 @@ def build_info() -> dict:
 def status() -> Response:
     config = store()
     return jsonify(
-        requests=current_app.extensions["atlasmap_stats"].snapshot(),
+        requests=current_app.extensions["pleiades_stats"].snapshot(),
         build=build_info(),
         server={
             "pid": os.getpid(),

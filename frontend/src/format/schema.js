@@ -35,14 +35,14 @@ export function migrate(payload) {
     throw new PayloadError('Payload is not an object.')
   }
   if (payload.format !== undefined && payload.format !== FORMAT) {
-    throw new PayloadError('This is not an AtlasMap map.')
+    throw new PayloadError('This is not a Pleiades map.')
   }
   const schema = payload.schema ?? 1
   if (!Number.isInteger(schema) || schema < 1) {
     throw new PayloadError('The map has an unreadable schema number.')
   }
   if (schema > CURRENT_SCHEMA) {
-    throw new PayloadError(`This map was made by a newer AtlasMap (schema ${schema}). Update to open it.`)
+    throw new PayloadError(`This map was made by a newer Pleiades (schema ${schema}). Update to open it.`)
   }
   let current = payload
   for (let n = schema; n < CURRENT_SCHEMA; n++) current = MIGRATIONS[n](current)

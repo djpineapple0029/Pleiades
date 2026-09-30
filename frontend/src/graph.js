@@ -1,7 +1,7 @@
 /**
  * Graph model — plain data, no Three.js and no DOM.
  *
- * Node and edge shapes match the `.atlasmap` payload in `atlasmap-build-plan.md`,
+ * Node and edge shapes match the `.plm` payload in `atlasmap-build-plan.md`,
  * so persistence is a straight JSON round-trip: `toPayload` hands them over
  * as-is and `load` puts them back. Fields later sessions own (`links`,
  * `directed`) are initialised here, round-tripped verbatim, and otherwise left
@@ -443,7 +443,7 @@ export function createGraph() {
   }
 
   /**
-   * The graph as `.atlasmap` payload fields. Copies, not the live objects:
+   * The graph as `.plm` payload fields. Copies, not the live objects:
    * physics writes x/y/z on the model every tick, and a save should be a value
    * rather than a view onto a layout still in motion.
    */

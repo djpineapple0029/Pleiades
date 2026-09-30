@@ -1,4 +1,4 @@
-"""Run AtlasMap and watch it from a small terminal dashboard.
+"""Run Pleiades and watch it from a small terminal dashboard.
 
     uv run python run.py          # or: .venv/bin/python run.py
 
@@ -11,9 +11,10 @@ The admin panel is at /admin on the same port. On the very first run the
 dashboard shows the generated admin password; change it in the panel.
 
 Environment:
-    ATLASMAP_HOST     bind address (default 0.0.0.0 — all interfaces)
-    ATLASMAP_PORT     bind port (default 5051; 5000 is AirPlay on macOS)
-    ATLASMAP_CONFIG   config file (default config/atlasmap.toml)
+    PLEIADES_HOST     bind address (default 0.0.0.0 — all interfaces)
+    PLEIADES_PORT     bind port (default 5051; 5000 is AirPlay on macOS)
+    PLEIADES_CONFIG   config file (default config/pleiades.toml)
+    (each falls back to its pre-rename ATLASMAP_* name; see server/env.py)
 """
 
 from __future__ import annotations
@@ -30,9 +31,10 @@ from datetime import timedelta
 from werkzeug.serving import make_server
 
 from server import create_app
+from server.env import env
 
-HOST = os.environ.get("ATLASMAP_HOST", "0.0.0.0")  # noqa: S104 -- LAN serving is the point of run.py
-PORT = int(os.environ.get("ATLASMAP_PORT", "5051"))
+HOST = env("HOST", "0.0.0.0")  # noqa: S104 -- LAN serving is the point of run.py
+PORT = int(env("PORT", "5051"))
 
 # ANSI helpers -----------------------------------------------------------------
 CLEAR = "\x1b[2J\x1b[H"
@@ -80,7 +82,7 @@ def render(stats: dict, addrs: dict, first_password: str | None) -> str:
     st = stats["status"]
 
     lines = []
-    lines.append(f"{BOLD}{CYAN}  AtlasMap{RESET}  {DIM}3D galaxy mind mapping{RESET}")
+    lines.append(f"{BOLD}{CYAN}  Pleiades{RESET}  {DIM}3D galaxy mind mapping{RESET}")
     lines.append(f"  {DIM}{'─' * 58}{RESET}")
     lines.append(f"  {BOLD}Connect from{RESET}")
     lines.append(f"    this machine    {GREEN}http://127.0.0.1:{PORT}{RESET}")
@@ -132,14 +134,14 @@ def main() -> int:
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
     app = create_app()
-    stats = app.extensions["atlasmap_stats"]
-    config = app.extensions["atlasmap_config"]
+    stats = app.extensions["pleiades_stats"]
+    config = app.extensions["pleiades_config"]
 
     try:
         server = make_server(HOST, PORT, app, threaded=True)
     except OSError as exc:
         print(f"Could not bind {HOST}:{PORT}: {exc}", file=sys.stderr)
-        print("Set ATLASMAP_PORT to a free port and try again.", file=sys.stderr)
+        print("Set PLEIADES_PORT to a free port and try again.", file=sys.stderr)
         return 1
 
     thread = threading.Thread(target=server.serve_forever, daemon=True)

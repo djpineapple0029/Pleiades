@@ -1,4 +1,4 @@
-# AtlasMap
+# Pleiades
 
 3D galaxy-style mind mapping tool: fly through your notes as stars, link them,
 let a force-directed layout auto-cluster related ideas, and save the whole map
@@ -28,8 +28,13 @@ cd frontend && npm run build   # writes server/static/
 uv run python -m server        # http://127.0.0.1:5001
 ```
 
-`ATLASMAP_HOST` and `ATLASMAP_PORT` override the Flask bind address. Port 5000 is
+`PLEIADES_HOST` and `PLEIADES_PORT` override the Flask bind address. Port 5000 is
 taken by AirPlay Receiver on macOS, hence 5001.
+
+The project was called AtlasMap before it was Pleiades. The old names still
+work for existing setups: every `PLEIADES_*` variable falls back to its
+`ATLASMAP_*` twin, and a `pleiades.toml` config or `pleiades.db` database that
+doesn't exist yet falls back to an `atlasmap.toml` / `atlasmap.db` beside it.
 
 ## Admin panel and config file
 
@@ -38,7 +43,7 @@ server's config: every keybind, flight feel (mouse sensitivity, invert Y, speed)
 visual effects (reduced motion, dust rivers, supernova, bloom, label distance),
 the upload limit, and admin access. It also shows a live status dashboard.
 
-- **The file** is `config/atlasmap.toml` (or `$ATLASMAP_CONFIG`), gitignored.
+- **The file** is `config/pleiades.toml` (or `$PLEIADES_CONFIG`), gitignored.
   The first start writes it with every default and a comment on each line.
   Hand edits apply within a second, with no restart, and saves from the panel
   keep your comments. A value that doesn't validate falls back to its default
@@ -78,9 +83,9 @@ shows the keys actually in use.
 | `/` or `Ctrl`/`Cmd` `F` | find a star by name: `↑` `↓` choose, `Enter` flies there, `Esc` closes. Works in the overview too |
 | `Backspace` | fly back to where you were before the last search jump (it remembers 20) |
 | `Tab` | overview: fly out until the whole map is in frame and orbit it with the mouse; press again to fly from where the orbit left off |
-| `Ctrl`/`Cmd` `S` | save to a `.atlasmap` file |
+| `Ctrl`/`Cmd` `S` | save to a `.plm` file |
 | `Ctrl`/`Cmd` `Shift` `S` | save under a different name or password |
-| `Ctrl`/`Cmd` `O` | open a `.atlasmap` file |
+| `Ctrl`/`Cmd` `O` | open a `.plm` file (or a legacy `.atlasmap` one) |
 | `Ctrl`/`Cmd` `E` | export a view-only `.html` anyone can open |
 | `Tab` / `Enter` / `Esc` in the editor | next field / save / cancel |
 
@@ -174,8 +179,10 @@ connection with no room left between its two stars is left unnamed.
 
 ## Files
 
-Maps are encrypted `.atlasmap` files that live wherever you put them — there is
-no server-side folder and nothing is stored between sessions.
+Maps are encrypted `.plm` files that live wherever you put them — there is
+no server-side folder and nothing is stored between sessions. Files saved before
+the rename to Pleiades end in `.atlasmap`; they're the same format, open as
+before, and are saved again as `.plm`.
 
 The first `Ctrl+S` asks for a filename and a password, twice; after that saving
 is one keystroke. **The password is the only key.** It is held in memory for the
@@ -221,18 +228,18 @@ frozen exactly as exported — there is no physics in it to move anything.
 readable by anyone who has the file; there is no password and no encryption, which
 is what makes it openable at all. And **the export carries only what the viewer
 draws**: labels, structure, positions, sizes, cluster colours and connection
-names. Node notes, links, and any field a newer AtlasMap added stay in your
-`.atlasmap` (the list is in `docs/FORMAT.md`).
+names. Node notes, links, and any field a newer Pleiades added stay in your
+`.plm` file (the list is in `docs/FORMAT.md`).
 
 Exporting changes nothing about the session: it is not a save, and it does not
-take the filename or the password. The `.atlasmap` file is still the thing that
+take the filename or the password. The `.plm` file is still the thing that
 keeps everything.
 
 ## Layout
 
 ```
 server/               Flask — file I/O, encryption, static serving. No graph logic.
-server/atlasfile.py   the .atlasmap container: framing, PBKDF2, Fernet
+server/atlasfile.py   the .plm container: framing, PBKDF2, Fernet
 server/api.py         POST /api/save, POST /api/open
 server/static/        Vite build output (generated, gitignored)
 frontend/src/         Three.js frontend — owns the graph entirely

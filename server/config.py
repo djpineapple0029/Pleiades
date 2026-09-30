@@ -1,6 +1,6 @@
 """The server's config file: keybinds, client settings, server and admin settings.
 
-One TOML file (default `config/atlasmap.toml`, or `$ATLASMAP_CONFIG`) holds
+One TOML file (default `config/pleiades.toml`, or `$PLEIADES_CONFIG`) holds
 everything the admin panel edits. What may go in it, with ranges and defaults,
 is `settings_schema.json` — the frontend imports the same file, so the two can
 never disagree about a default.
@@ -37,10 +37,12 @@ import tomlkit
 import tomlkit.items
 from tomlkit.exceptions import TOMLKitError
 
+from .env import env, legacy
+
 SCHEMA_PATH = Path(__file__).resolve().parent / "settings_schema.json"
 SCHEMA: dict = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
-DEFAULT_PATH = Path(__file__).resolve().parent.parent / "config" / "atlasmap.toml"
+DEFAULT_PATH = Path(__file__).resolve().parent.parent / "config" / "pleiades.toml"
 
 ACTIONS: dict[str, dict] = {action["id"]: action for action in SCHEMA["keybinds"]}
 SETTINGS: dict[tuple[str, str], dict] = {(s["section"], s["key"]): s for s in SCHEMA["settings"]}
@@ -506,7 +508,7 @@ def verify_password(password: str, stored: str) -> bool:
 # --- The file -----------------------------------------------------------------
 
 HEADER = """\
-AtlasMap server config. Edit it here or at http://<host>:<port>/admin.
+Pleiades server config. Edit it here or at http://<host>:<port>/admin.
 Hand edits apply within a second, no restart needed. A value that doesn't
 validate falls back to its default and shows up as a problem in the panel.
 
@@ -584,7 +586,7 @@ class ConfigStore:
     """Thread-safe owner of the config file (Waitress and run.py serve on threads)."""
 
     def __init__(self, path: Path | str | None = None) -> None:
-        self.path = Path(path or os.environ.get("ATLASMAP_CONFIG") or DEFAULT_PATH)
+        self.path = legacy(Path(path or env("CONFIG") or DEFAULT_PATH))
         self.lock = threading.RLock()
         self.values: dict = {}
         self.problems: list[str] = []
@@ -640,7 +642,7 @@ class ConfigStore:
 
     def _create(self) -> None:
         self.values = validate_values({}, strict=False)[0]
-        seeded = os.environ.get("ATLASMAP_TRUSTED_PROXIES")
+        seeded = env("TRUSTED_PROXIES")
         if seeded and seeded.isdigit():
             self.values["admin"]["trusted_proxies"] = min(int(seeded), 5)
         self.problems = []
@@ -653,7 +655,7 @@ class ConfigStore:
         self.password_hash = hash_password(password)
         self._set_admin_secret(self.password_hash)
         print(
-            f"AtlasMap: new admin password for /admin: {password}\n"
+            f"Pleiades: new admin password for /admin: {password}\n"
             f"          (only its hash is kept, in {self.path}; change it in the panel)",
             file=sys.stderr,
             flush=True,

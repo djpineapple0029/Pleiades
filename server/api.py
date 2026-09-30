@@ -16,7 +16,9 @@ from .atlasfile import FormatError, PasswordError, decode_any, encode_v2
 
 api = Blueprint("api", __name__, url_prefix="/api")
 
-SUFFIX = ".atlasmap"
+SUFFIX = ".plm"
+# Files were `.atlasmap` before the rename to Pleiades; same bytes, saved again as `.plm`.
+LEGACY_SUFFIX = ".atlasmap"
 DEFAULT_NAME = f"map{SUFFIX}"
 MAX_NAME_LENGTH = 120
 # Reserved on some filesystem or other, plus the separators that would let a
@@ -46,7 +48,7 @@ def client_config() -> Response:
     """
     user = session_user()
     if user is None:
-        return jsonify(current_app.extensions["atlasmap_config"].client_values())
+        return jsonify(current_app.extensions["pleiades_config"].client_values())
     _, effective, _ = effective_config(user["id"])
     return jsonify({**effective, "account": True})
 
@@ -56,7 +58,7 @@ def fail(message: str, status: int) -> tuple[Response, int]:
 
 
 def download_name(raw: object) -> str:
-    """A filename safe to put in a Content-Disposition header, `.atlasmap`-suffixed."""
+    """A filename safe to put in a Content-Disposition header, `.plm`-suffixed (never `.atlasmap`)."""
     if not isinstance(raw, str):
         return DEFAULT_NAME
     name = raw.replace("\\", "/").rsplit("/", 1)[-1]
@@ -66,7 +68,7 @@ def download_name(raw: object) -> str:
     name = name.strip(" .")[:MAX_NAME_LENGTH].strip(" .")
     if not name:
         return DEFAULT_NAME
-    return name if name.endswith(SUFFIX) else name + SUFFIX
+    return name.removesuffix(LEGACY_SUFFIX).removesuffix(SUFFIX) + SUFFIX
 
 
 @api.post("/save")

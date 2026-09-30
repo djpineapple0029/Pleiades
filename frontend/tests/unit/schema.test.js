@@ -32,7 +32,7 @@ describe('migrate', () => {
 
   it('refuses a newer schema, naming it', () => {
     expect(() => migrate({ schema: CURRENT_SCHEMA + 1 })).toThrow(
-      `made by a newer AtlasMap (schema ${CURRENT_SCHEMA + 1})`,
+      `made by a newer Pleiades (schema ${CURRENT_SCHEMA + 1})`,
     )
   })
 

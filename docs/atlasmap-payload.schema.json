@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "atlasmap-payload.schema.json",
-  "title": "AtlasMap payload, schema 1",
-  "description": "The decrypted JSON inside an .atlasmap container. Unknown keys are allowed everywhere and must be preserved by readers (docs/FORMAT.md, rule 4).",
+  "title": "Pleiades payload, schema 1",
+  "description": "The decrypted JSON inside a .plm container. Unknown keys are allowed everywhere and must be preserved by readers (docs/FORMAT.md, rule 4).",
   "type": "object",
   "properties": {
     "format": { "const": "atlasmap" },

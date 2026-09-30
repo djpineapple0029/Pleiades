@@ -33,7 +33,7 @@ def store(isolated_config) -> ConfigStore:
 @pytest.fixture
 def app(isolated_config):
     app = create_app()
-    config = app.extensions["atlasmap_config"]
+    config = app.extensions["pleiades_config"]
     config.set_password(config.initial_password, PASSWORD)
     return app
 
@@ -212,7 +212,7 @@ def test_public_config_has_no_secrets(client):
 def test_admin_page_is_served_hardened(client):
     response = client.get("/admin")
     assert response.status_code == 200
-    assert b"AtlasMap Admin" in response.data
+    assert b"Pleiades Admin" in response.data
     assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
     assert client.get("/admin/admin.js").status_code == 200
     assert client.get("/admin/../config.py").status_code == 404
@@ -329,7 +329,7 @@ def test_status_reports_requests(client):
 
 
 def test_hand_edit_applies_without_a_restart(app, client, isolated_config):
-    config = app.extensions["atlasmap_config"]
+    config = app.extensions["pleiades_config"]
     text = isolated_config.read_text().replace('balance = ["B"]', 'balance = ["J"]')
     time.sleep(0.01)  # a distinct mtime
     isolated_config.write_text(text)

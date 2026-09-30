@@ -75,7 +75,7 @@ function selectTab(which) {
 
 // Plain HTTP from the network (server/accounts.py `secure_enough`): say what
 // that means once per tab before anyone types a password.
-const WARNED_KEY = 'atlasmap.plain-http-ok'
+const WARNED_KEY = 'pleiades.plain-http-ok'
 
 function warnedAlready() {
   try {
@@ -87,7 +87,7 @@ function warnedAlready() {
 
 function showSignedOut(me) {
   if (me.secure === false && !warnedAlready()) {
-    document.title = 'Not encrypted — AtlasMap'
+    document.title = 'Not encrypted — Pleiades'
     show('insecure')
     $('insecure-continue').onclick = () => {
       try {
@@ -102,7 +102,7 @@ function showSignedOut(me) {
   signupOpen = Boolean(me.signup_open)
   $('tab-sign-up').hidden = !signupOpen
   $('sign-up-min').textContent = me.min_password_length ? `At least ${me.min_password_length} characters` : ''
-  document.title = 'Sign in — AtlasMap'
+  document.title = 'Sign in — Pleiades'
   show('signed-out')
   selectTab(wantSignUp ? 'sign-up' : 'sign-in')
   wantSignUp = false
@@ -183,7 +183,7 @@ function pageName() {
 async function route() {
   const name = pageName()
   const page = PAGES[name]
-  document.title = `${page.title} — AtlasMap`
+  document.title = `${page.title} — Pleiades`
   for (const link of $('pages').querySelectorAll('a')) {
     if (link.dataset.page === name) link.setAttribute('aria-current', 'page')
     else link.removeAttribute('aria-current')
@@ -483,7 +483,7 @@ async function start() {
   }
   const me = result.data
   if (!me.enabled) {
-    document.title = 'AtlasMap'
+    document.title = 'Pleiades'
     show('off')
     return
   }

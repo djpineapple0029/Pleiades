@@ -7,19 +7,20 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def isolated_config(tmp_path, monkeypatch):
-    path = tmp_path / "atlasmap.toml"
-    monkeypatch.setenv("ATLASMAP_CONFIG", str(path))
-    monkeypatch.delenv("ATLASMAP_TRUSTED_PROXIES", raising=False)
+    path = tmp_path / "pleiades.toml"
+    # The pre-rename ATLASMAP_* names are read too (server/env.py): clear both.
+    for prefix in ("PLEIADES_", "ATLASMAP_"):
+        for name in ("CONFIG", "TRUSTED_PROXIES", "DATA", "BASE", "HOST", "PORT"):
+            monkeypatch.delenv(prefix + name, raising=False)
+    monkeypatch.setenv("PLEIADES_CONFIG", str(path))
     # The accounts database lands next to the config, in tmp_path too.
-    monkeypatch.delenv("ATLASMAP_DATA", raising=False)
-    monkeypatch.delenv("ATLASMAP_BASE", raising=False)
     return path
 
 
 # --- Accounts -----------------------------------------------------------------
 
 ACCOUNT_PASSWORD = "long enough pw"
-CSRF = {"X-Atlas": "1"}
+CSRF = {"X-Pleiades": "1"}
 
 
 @pytest.fixture
@@ -40,7 +41,7 @@ def accounts_app(isolated_config, fast_scrypt):
     from server import create_app
 
     app = create_app()
-    config = app.extensions["atlasmap_config"]
+    config = app.extensions["pleiades_config"]
     values = config.all_values()
     values["accounts"]["enabled"] = True
     values["accounts"]["signup_open"] = True

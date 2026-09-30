@@ -14,8 +14,50 @@
  * data): every call then resolves to false/null and nothing throws.
  */
 
-const DB_NAME = 'atlasmap'
+const DB_NAME = 'pleiades'
 const STORE = 'unsaved-maps'
+// The database's name before the rename from AtlasMap. Whatever it still
+// holds moves into DB_NAME (never over a newer record) and then it's deleted.
+const LEGACY_DB_NAME = 'atlasmap'
+
+// Resolves with `request.result` once `tx` commits, or `fallback` if it doesn't.
+function settled(tx, request, fallback) {
+  return new Promise((resolve) => {
+    tx.oncomplete = () => resolve(request ? request.result : true)
+    tx.onerror = () => resolve(fallback)
+    tx.onabort = () => resolve(fallback)
+  })
+}
+
+// The legacy database if this browser has one, else null; never creates it.
+function openLegacy(indexedDB) {
+  return new Promise((resolve) => {
+    const req = indexedDB.open(LEGACY_DB_NAME)
+    req.onupgradeneeded = () => req.transaction.abort()
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => resolve(null)
+    req.onblocked = () => resolve(null)
+  })
+}
+
+async function migrateLegacy(indexedDB, db) {
+  const legacy = await openLegacy(indexedDB)
+  if (!legacy) return
+  let records = []
+  if (legacy.objectStoreNames.contains(STORE)) {
+    const tx = legacy.transaction(STORE, 'readonly')
+    records = await settled(tx, tx.objectStore(STORE).getAll(), null)
+  }
+  legacy.close()
+  if (!records) return
+  const tx = db.transaction(STORE, 'readwrite')
+  const store = tx.objectStore(STORE)
+  for (const record of records) {
+    // `add` fails on a map that already has a newer record here; keep that one.
+    store.add(record).onerror = (event) => event.preventDefault()
+  }
+  if (await settled(tx, null, false)) indexedDB.deleteDatabase(LEGACY_DB_NAME)
+}
 
 export function createBackupStore({ indexedDB = globalThis.indexedDB } = {}) {
   let opening = null
@@ -25,7 +67,10 @@ export function createBackupStore({ indexedDB = globalThis.indexedDB } = {}) {
       try {
         const req = indexedDB.open(DB_NAME, 1)
         req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'mapId' })
-        req.onsuccess = () => resolve(req.result)
+        req.onsuccess = () =>
+          migrateLegacy(indexedDB, req.result)
+            .catch(() => {}) // left in place; tried again next time
+            .then(() => resolve(req.result))
         req.onerror = () => resolve(null)
         req.onblocked = () => resolve(null)
       } catch {

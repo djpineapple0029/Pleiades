@@ -85,13 +85,13 @@ test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, 
 
   // ------------------------------------------------------- the file itself
   const html = readFileSync(exported, 'utf8')
-  expect.soft(html.includes('__ATLASMAP_PAYLOAD__'), 'payload marker was filled').toBe(false)
-  expect.soft(html.includes('__ATLASMAP_TITLE__'), 'title marker was filled').toBe(false)
+  expect.soft(html.includes('__PLEIADES_PAYLOAD__'), 'payload marker was filled').toBe(false)
+  expect.soft(html.includes('__PLEIADES_TITLE__'), 'title marker was filled').toBe(false)
   expect.soft(/\/assets\//.test(html), 'no /assets/ references').toBe(false)
   expect.soft(/<script[^>]+src=/.test(html), 'no external script src').toBe(false)
   expect.soft(/<link[^>]+href=/.test(html), 'no external stylesheet').toBe(false)
 
-  const payloadText = /<script id="atlasmap-map" type="application\/json">([\s\S]*?)<\/script>/.exec(
+  const payloadText = /<script id="pleiades-map" type="application\/json">([\s\S]*?)<\/script>/.exec(
     html,
   )?.[1]
   expect.soft(Boolean(payloadText), 'payload script tag present').toBe(true)
@@ -130,7 +130,7 @@ test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, 
   expect.soft(errs, 'no page errors').toEqual([])
   expect.soft(external.length, 'made no network requests at all').toBe(0)
   const title = await p2.title()
-  expect.soft(title.length > 0 && title !== 'AtlasMap', 'titled after the map').toBe(true)
+  expect.soft(title.length > 0 && title !== 'Pleiades', 'titled after the map').toBe(true)
 
   let vhud = await p2.textContent('#hud')
   expect.soft(/overview/.test(vhud), 'opens in the overview').toBe(true)

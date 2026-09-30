@@ -329,7 +329,7 @@ document.addEventListener('pointerlockerror', () => {
 // title is owned here, not in interaction.js or viewerInteraction.js.
 let lastTitle = null
 function updateTitle() {
-  const title = `${hasUnsaved() ? '• ' : ''}${serverMap ? serverMap.name : files.filename} — AtlasMap`
+  const title = `${hasUnsaved() ? '• ' : ''}${serverMap ? serverMap.name : files.filename} — Pleiades`
   if (title === lastTitle) return
   lastTitle = title
   document.title = title
