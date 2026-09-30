@@ -1,7 +1,7 @@
 /**
  * Help (USERS.md decision 7a, V2.md F9): every key in a map, from the same
  * keymap the app builds, so it shows the keys this user actually has — their
- * own where they changed them (Settings), the server's everywhere else. The
+ * own where they changed them (Settings), the defaults everywhere else. The
  * overlay's `?` list (keysHelp.js) is the short version of this page.
  */
 import schema from '../../../server/settings_schema.json'

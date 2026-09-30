@@ -437,11 +437,11 @@ def apply_overrides(client: dict, overrides: object) -> tuple[dict, dict, list[s
         for key, value in given.items():
             spec = USER_SETTINGS.get((section, key))
             if spec is None:
-                problems.append(f"{section}.{key}: no longer something you can set; the server's is used")
+                problems.append(f"{section}.{key}: no longer something you can set; the default is used")
                 continue
             value, error = validate_setting(spec, value)
             if error:
-                problems.append(f"{error}; the server's is used")
+                problems.append(f"{error}; the default is used")
             else:
                 merged.setdefault(section, {})[key] = value
                 kept.setdefault(section, {})[key] = value
@@ -460,12 +460,12 @@ def apply_overrides(client: dict, overrides: object) -> tuple[dict, dict, list[s
         named = {e.split(":", 1)[0].removeprefix("keybinds.") for e in errors}
         dropped = named & set(mine)
         for action_id in sorted(dropped):
-            problems.append(f"keybinds.{action_id}: your keys for this no longer work here; the server's are used")
+            problems.append(f"keybinds.{action_id}: your keys for this no longer work here; the default is used")
             del mine[action_id]
         if not dropped:
             break
     if mine:
-        problems.append("keybinds: your keys could not be used; the server's are used")
+        problems.append("keybinds: your keys could not be used; the defaults are used")
     return merged, kept, problems
 
 

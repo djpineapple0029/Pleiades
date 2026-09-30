@@ -1,7 +1,8 @@
 /**
  * Settings (USERS.md decision 7b / 17): a signed-in user's own settings and
- * keys, over the server's (server/account.py). Only what they change is kept;
- * everything else follows /admin, including later changes there.
+ * keys (server/account.py). The defaults are this server's, from /admin. Only
+ * what they change is kept; everything else follows the default, including
+ * later changes to it.
  *
  * Modelled on the /admin panel's settings and keybind rows, which can't be
  * shared: that page has no build step. Saved values reach a map the next time
@@ -169,18 +170,27 @@ export function createSettingsPage({ root, request, onSignedOut }) {
   function render() {
     if (!draft) return
     const intro = el('p', {
-      className: 'note intro',
-      textContent:
-        "Your own settings, on top of this server's. They apply the next time you open a map, on any device you sign in on. Anything you leave alone follows the server.",
+      className: 'note',
+      textContent: 'Changes apply the next time you open a map, on any device you sign in on.',
     })
-    const nodes = [intro]
+    const resetAll = button('Reset all to default', () => {
+      draft = {}
+      errors = {}
+      formError = ''
+      status = ''
+      listening = null
+      render()
+    })
+    resetAll.id = 'settings-reset-all'
+    resetAll.disabled = !Object.keys(draft).length
+    const nodes = [el('div', { className: 'intro' }, intro, resetAll)]
     if (problems.length) {
       nodes.push(
         el(
           'div',
           { className: 'banner problems', role: 'status' },
           el('p', {
-            textContent: 'Some of your settings no longer work on this server, so its own are used:',
+            textContent: 'Some of your settings no longer work here, so the default is used:',
           }),
           el('ul', {}, ...problems.map((text) => el('li', { textContent: text }))),
         ),
@@ -230,17 +240,16 @@ export function createSettingsPage({ root, request, onSignedOut }) {
     bar.replaceChildren(...nodes)
   }
 
-  /** "yours" + "Use server's (X)", or a quiet "server's" when not overridden. */
-  function origin(overridden, serverText, reset) {
-    if (!overridden) return el('span', { className: 'origin', textContent: "server's" })
-    const back = button(`Use server's (${serverText})`, reset)
-    back.classList.add('reset')
-    return el(
-      'span',
-      { className: 'origin mine' },
-      el('span', { className: 'tag', textContent: 'yours' }),
-      back,
-    )
+  /** A "Reset to default" button on a changed row; nothing on the others. */
+  function origin(overridden, defaultText, reset) {
+    const slot = el('span', { className: 'origin' })
+    if (overridden) {
+      const back = button('Reset to default', reset)
+      back.classList.add('reset')
+      back.title = `Default: ${defaultText}`
+      slot.append(back)
+    }
+    return slot
   }
 
   function settingRow(spec) {
@@ -359,14 +368,14 @@ export function createSettingsPage({ root, request, onSignedOut }) {
     add.disabled = !isListening && current.length >= MAX_BINDINGS
     chips.append(add)
 
-    const serverKeys = server.keybinds[action.id].map(prettyChord).join(', ') || 'no key'
+    const defaultKeys = server.keybinds[action.id].map(prettyChord).join(', ') || 'no key'
     row.append(
       el('div', { className: 'head' }, name, chips),
       el(
         'div',
         { className: 'foot' },
         el('span'),
-        origin(overridden, serverKeys, () => {
+        origin(overridden, defaultKeys, () => {
           setMine('keybinds', action.id, undefined)
           changed()
         }),

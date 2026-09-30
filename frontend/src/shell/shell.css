@@ -449,6 +449,18 @@ button.small {
   margin: 0 0 16px;
 }
 
+#settings-view .intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+#settings-view .intro .note {
+  margin: 0;
+}
+
 #settings-view .card h2,
 #help-view .card h2 {
   margin-bottom: 4px;
@@ -519,21 +531,10 @@ button.small {
 
 .origin {
   margin-left: auto;
-  color: var(--ink-dim);
-  font-size: 12px;
 }
 
-.origin.mine {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.tag {
-  padding: 0 6px;
-  border: 1px solid var(--accent-deep);
-  border-radius: 4px;
-  color: var(--accent);
+.origin:empty {
+  display: none;
 }
 
 .overridden .name,
@@ -689,4 +690,9 @@ kbd {
   .help-keys li {
     grid-template-columns: 1fr;
   }
+}
+
+/* A key row with nothing to reset has no second line. */
+.bind-row .foot:has(.origin:empty) {
+  display: none;
 }

@@ -90,7 +90,7 @@ def test_apply_overrides_drops_what_stopped_working():
     assert merged["keybinds"]["balance"] == ["J"]
     assert merged["flight"]["mouse_sensitivity"] == 3.0
     assert kept == {"flight": {"mouse_sensitivity": 3.0}, "keybinds": {"orbit": ["K"]}}
-    assert problems == ["keybinds.heat: your keys for this no longer work here; the server's are used"]
+    assert problems == ["keybinds.heat: your keys for this no longer work here; the default is used"]
 
 
 # --- Routes -------------------------------------------------------------------
@@ -169,7 +169,7 @@ def test_an_admin_change_that_breaks_a_users_key(accounts_app, alice):
 
     body = alice.get("/api/account/settings").json
     assert body["overrides"] == {"flight": {"invert_y": True}}
-    assert body["problems"] == ["keybinds.heat: your keys for this no longer work here; the server's are used"]
+    assert body["problems"] == ["keybinds.heat: your keys for this no longer work here; the default is used"]
     # The broken key doesn't block other changes.
     assert patch(alice, {"visuals": {"look": "minimal"}}).status_code == 200
 

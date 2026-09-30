@@ -463,9 +463,7 @@ const nav = (page, name) => page.locator(`#pages a[data-page="${name}"]`).click(
 const settingsRow = (page, path) => page.locator(`#settings-view [data-path="${path}"]`)
 const myConfig = async (page) => (await page.request.get('/api/config')).json()
 
-test('settings: your own feel and keys reach Help and your maps, and go back to the server’s', async ({
-  page,
-}) => {
+test('settings: your own feel and keys reach Help and your maps, and reset to default', async ({ page }) => {
   const errors = collectConsoleErrors(page)
   await signUp(page)
   await nav(page, 'settings')
@@ -473,7 +471,8 @@ test('settings: your own feel and keys reach Help and your maps, and go back to 
   await expect(page).toHaveTitle('Settings — AtlasMap')
 
   const sensitivity = settingsRow(page, 'flight.mouse_sensitivity')
-  await expect(sensitivity.locator('.origin')).toHaveText("server's")
+  await expect(sensitivity.getByRole('button', { name: 'Reset to default' })).toHaveCount(0)
+  await expect(page.locator('#settings-reset-all')).toBeDisabled()
   await sensitivity.locator('input[type="number"]').fill('2.5')
 
   // Heat on J instead of H.
@@ -486,7 +485,7 @@ test('settings: your own feel and keys reach Help and your maps, and go back to 
   await expect(page.locator('.savebar .state')).toHaveText('Unsaved changes')
   await page.locator('#settings-save').click()
   await expect(page.locator('.savebar .state')).toHaveText(/^Saved/)
-  await expect(heat.locator('.tag')).toHaveText('yours')
+  await expect(heat.getByRole('button', { name: 'Reset to default' })).toHaveAttribute('title', 'Default: H')
 
   // A key another action has while flying is refused, on its row.
   const balance = settingsRow(page, 'keybinds.balance')
@@ -519,14 +518,22 @@ test('settings: your own feel and keys reach Help and your maps, and go back to 
     'J',
   )
 
-  // Back to the server's: the override is gone, not just set to H.
+  // Back to the default: the override is gone, not just set to H.
+  const overrides = async () => (await (await page.request.get('/api/account/settings')).json()).overrides
   await page.goto('/account.html#settings')
-  await settingsRow(page, 'keybinds.heat').getByRole('button', { name: "Use server's (H)" }).click()
+  await settingsRow(page, 'keybinds.heat').getByRole('button', { name: 'Reset to default' }).click()
   await page.locator('#settings-save').click()
   await expect(page.locator('.savebar .state')).toHaveText(/^Saved/)
-  const after = (await (await page.request.get('/api/account/settings')).json()).overrides
-  expect(after).toEqual({ flight: { mouse_sensitivity: 2.5 } })
+  expect(await overrides()).toEqual({ flight: { mouse_sensitivity: 2.5 } })
   expect((await myConfig(page)).keybinds.heat).toEqual(['H'])
+
+  // Reset all: nothing of yours left.
+  await page.locator('#settings-reset-all').click()
+  await expect(settingsRow(page, 'flight.mouse_sensitivity').locator('input[type="number"]')).toHaveValue('1')
+  await page.locator('#settings-save').click()
+  await expect(page.locator('.savebar .state')).toHaveText(/^Saved/)
+  expect(await overrides()).toEqual({})
+  await expect(page.locator('#settings-reset-all')).toBeDisabled()
   // The one refused save above, which Chrome logs.
   expect(errors).toEqual([expect.stringContaining('status of 400')])
 })
