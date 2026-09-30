@@ -11,8 +11,52 @@
 import schema from '../../../server/settings_schema.json'
 import { chordCaps, chordFromEvent, parseChord } from '../keymap.js'
 import { LOOKS } from '../looks.js'
+import '@fontsource/jost/400.css'
+import '@fontsource/jost/500.css'
 
-const SECTION_TITLES = { flight: 'Flight & feel', visuals: 'Visual effects' }
+const SECTION_TITLES = { flight: 'Flight', visuals: 'Visuals' }
+const GROUP_TITLES = { Flight: 'Moving', View: 'Viewing', Edit: 'Editing', File: 'Files' }
+// This page's own wording: shorter and plainer than the schema's help, which
+// is written for the admin panel.
+// Short names for the keys, like a game's controls screen; the schema's
+// labels are full sentences for the admin panel.
+const KEY_NAMES = {
+  resume: 'Fly again after releasing the pointer',
+  overview: 'Overview',
+  help: 'Show the key list',
+  search: 'Find a star',
+  jump_back: 'Fly back after a jump',
+  notes_sidebar: 'Notes sidebar',
+  look: 'Pick a look (hold)',
+  heat: 'Connection heat',
+  orbit: 'Lay out round a star',
+  path: 'Path between two stars',
+  rename: 'Rename a star or link',
+  edit_notes: 'Edit notes',
+  balance: 'Balance the layout',
+  tree_shape: 'Pick a layout shape (hold)',
+  save: 'Save',
+  save_as: 'Save as',
+  open: 'Open a file',
+  export: 'Export a view-only page',
+}
+const DESCRIPTIONS = {
+  'flight.mouse_sensitivity': 'How far the view turns when you move the mouse. 1 is the original feel.',
+  'flight.invert_y': 'Push the mouse forward to look down, like a flight stick.',
+  'flight.move_speed': 'How fast you fly before the scroll wheel speeds you up.',
+  'flight.max_speed_multiplier':
+    'The fastest the scroll wheel can take you, as a multiple of your flight speed.',
+  'visuals.look':
+    'The look your maps open in. In a map, hold V to pick another; that choice is saved here too.',
+  'visuals.dust_rivers': 'Dust that circles stars and drifts along links.',
+  'visuals.supernova': 'A flash and a shockwave when you delete a star.',
+  'visuals.node_brightness': 'How bright stars are. 1 is the original.',
+  'visuals.bloom_strength': 'How much light spreads out from stars as glow.',
+  'visuals.label_range': 'How far away star names start to appear.',
+  'visuals.label_count': 'Roughly how many star names show at once.',
+  'visuals.connection_heat':
+    'Colour links from cool blue to hot red by how connected their stars are. H switches it in a map.',
+}
 const MAX_BINDINGS = 3
 const IS_MAC = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || globalThis.navigator?.userAgent || '')
 const CHOICE_NAMES = { look: new Map(LOOKS.map((look) => [look.id, look.name])) }
@@ -76,7 +120,7 @@ export function createSettingsPage({ root, request, onSignedOut }) {
   let errors = {} // path -> message
   let formError = ''
   let status = ''
-  let listening = null // action id waiting for a key
+  let listening = null // { id, slot } waiting for a key
   let saving = false
 
   const isDirty = () => draft !== null && overridesKey(draft) !== overridesKey(saved)
@@ -169,69 +213,100 @@ export function createSettingsPage({ root, request, onSignedOut }) {
 
   function render() {
     if (!draft) return
-    const intro = el('p', {
-      className: 'note',
-      textContent: 'Changes apply the next time you open a map, on any device you sign in on.',
-    })
-    const resetAll = button('Reset all to default', () => {
-      draft = {}
-      errors = {}
-      formError = ''
-      status = ''
-      listening = null
-      render()
-    })
+    const resetAll = button('Reset all to default', resetEverything, 'reset')
     resetAll.id = 'settings-reset-all'
     resetAll.disabled = !Object.keys(draft).length
-    const nodes = [el('div', { className: 'intro' }, intro, resetAll)]
+    const nodes = [
+      el(
+        'header',
+        { className: 'page-head' },
+        el(
+          'div',
+          {},
+          el('h1', { textContent: 'Settings' }),
+          el('p', {
+            textContent: 'Changes apply the next time you open a map, on any device you sign in on.',
+          }),
+        ),
+        resetAll,
+      ),
+    ]
     if (problems.length) {
       nodes.push(
         el(
           'div',
           { className: 'banner problems', role: 'status' },
-          el('p', {
-            textContent: 'Some of your settings no longer work here, so the default is used:',
-          }),
+          el('p', { textContent: 'Some of your settings no longer work here, so the default is used:' }),
           el('ul', {}, ...problems.map((text) => el('li', { textContent: text }))),
         ),
       )
     }
     for (const section of [...new Set(SETTINGS.map((spec) => spec.section))]) {
-      const card = el(
-        'div',
-        { className: 'card' },
-        el('h2', { textContent: SECTION_TITLES[section] ?? section }),
+      nodes.push(
+        el(
+          'section',
+          { className: 'group' },
+          el('h2', { textContent: SECTION_TITLES[section] ?? section }),
+          el('div', { className: 'rows' }, ...SETTINGS.filter((s) => s.section === section).map(settingRow)),
+        ),
       )
-      for (const spec of SETTINGS.filter((s) => s.section === section)) card.append(settingRow(spec))
-      nodes.push(card)
     }
+
     const groups = new Map()
     for (const action of ACTIONS) {
       if (!groups.has(action.group)) groups.set(action.group, [])
       groups.get(action.group).push(action)
     }
-    for (const [group, actions] of groups) {
-      const card = el('div', { className: 'card keys-card' }, el('h2', { textContent: `Keys: ${group}` }))
-      for (const action of actions) card.append(keyRow(action))
-      nodes.push(card)
-    }
+    nodes.push(
+      el(
+        'section',
+        { className: 'group keys' },
+        el('h2', { textContent: 'Keys' }),
+        el(
+          'p',
+          { className: 'lede' },
+          'Click a key to change it, then press the new one. ',
+          el('kbd', { textContent: 'Esc' }),
+          ' cancels. Each action can have up to three.',
+        ),
+        ...[...groups].map(([group, actions]) =>
+          el(
+            'div',
+            { className: 'rows' },
+            el('h3', { textContent: GROUP_TITLES[group] ?? group }),
+            ...actions.map(keyRow),
+          ),
+        ),
+      ),
+    )
     bar = el('div', { className: 'savebar' })
     nodes.push(bar)
     root.replaceChildren(...nodes)
     renderBar()
+    if (listening) root.querySelector('.cap.listening')?.focus()
+  }
+
+  function resetEverything() {
+    draft = {}
+    errors = {}
+    formError = ''
+    status = ''
+    listening = null
+    render()
   }
 
   function renderBar() {
     if (!bar) return
     const dirty = isDirty()
+    bar.hidden = !dirty && !status && !formError
     bar.classList.toggle('dirty', dirty)
     const text = el('span', {
       className: 'state',
       role: 'status',
-      textContent: status || (dirty ? 'Unsaved changes' : 'No unsaved changes'),
+      textContent: status || (dirty ? 'You have unsaved changes.' : ''),
     })
     const discardButton = button('Discard', discard, 'quiet')
-    const saveButton = button('Save', save, '')
+    const saveButton = button('Save changes', save, '')
     discardButton.disabled = !dirty || saving
     saveButton.disabled = !dirty || saving
     saveButton.id = 'settings-save'
@@ -240,12 +315,11 @@ export function createSettingsPage({ root, request, onSignedOut }) {
     bar.replaceChildren(...nodes)
   }
 
-  /** A "Reset to default" button on a changed row; nothing on the others. */
+  /** A red "Reset to default" on a changed row; an empty slot on the others. */
   function origin(overridden, defaultText, reset) {
-    const slot = el('span', { className: 'origin' })
+    const slot = el('div', { className: 'origin' })
     if (overridden) {
-      const back = button('Reset to default', reset)
-      back.classList.add('reset')
+      const back = button('Reset to default', reset, 'reset')
       back.title = `Default: ${defaultText}`
       slot.append(back)
     }
@@ -258,7 +332,7 @@ export function createSettingsPage({ root, request, onSignedOut }) {
     const id = `mine-${section}-${key}`
     const overridden = mine(section, key) !== undefined
     const value = overridden ? mine(section, key) : server[section][key]
-    const row = el('div', { className: 'setting' })
+    const row = el('div', { className: 'row setting' })
     row.dataset.path = path
     row.classList.toggle('overridden', overridden)
 
@@ -281,7 +355,8 @@ export function createSettingsPage({ root, request, onSignedOut }) {
       row.querySelector('.origin').replaceWith(origin(true, prettyValue(spec, server[section][key]), reset))
     }
     if (spec.type === 'boolean') {
-      const box = el('input', { type: 'checkbox', id, checked: value })
+      const box = el('input', { type: 'checkbox', id, checked: value, className: 'switch' })
+      box.setAttribute('role', 'switch')
       box.addEventListener('change', () => set(box.checked))
       control.append(box)
     } else if (spec.type === 'choice') {
@@ -315,66 +390,85 @@ export function createSettingsPage({ root, request, onSignedOut }) {
       control.append(number)
     }
 
-    const head = el(
+    const text = el(
       'div',
-      { className: 'head' },
+      { className: 'text' },
       el('label', { htmlFor: id, textContent: spec.label }),
-      control,
+      el('p', { className: 'description', textContent: DESCRIPTIONS[path] ?? spec.help }),
     )
-    const foot = el(
+    const side = el(
       'div',
-      { className: 'foot' },
-      el('p', { className: 'help', textContent: spec.help }),
+      { className: 'side' },
+      control,
       origin(overridden, prettyValue(spec, server[section][key]), reset),
     )
-    row.append(head, foot)
+    row.append(text, side)
     if (errors[path]) row.append(el('p', { className: 'error', role: 'alert', textContent: errors[path] }))
     return row
   }
 
   function keyRow(action) {
+    const label = KEY_NAMES[action.id] ?? action.label
     const path = `keybinds.${action.id}`
     const overridden = mine('keybinds', action.id) !== undefined
     const current = overridden ? mine('keybinds', action.id) : server.keybinds[action.id]
-    const row = el('div', { className: 'bind-row' })
+    const row = el('div', { className: 'row bind-row' })
     row.dataset.path = path
     row.classList.toggle('overridden', overridden)
 
-    const name = el('div', { className: 'name', textContent: action.label })
-    const chips = el('div', { className: 'chips' })
-    current.forEach((chord, i) => {
-      const remove = button('×', () => {
-        setMine(
-          'keybinds',
-          action.id,
-          current.filter((_, j) => j !== i),
+    // Three slots, like a game's controls screen: a bound key, or an empty
+    // slot to add one. Clicking a bound one replaces it.
+    const slots = el('div', { className: 'slots' })
+    for (let i = 0; i < MAX_BINDINGS; i++) {
+      const chord = current[i]
+      const waiting = listening?.id === action.id && listening.slot === i
+      const slot = el('div', { className: 'slot' })
+      // Past the first empty slot, the rest are only placeholders: a new key
+      // always goes on the end.
+      if (chord === undefined && i !== current.length) {
+        slot.append(el('span', { className: 'cap empty spare', ariaHidden: 'true' }))
+        slots.append(slot)
+        continue
+      }
+      const cap = button(
+        waiting ? 'Press a key' : chord !== undefined ? prettyChord(chord) : 'Add',
+        () => {
+          listening = waiting ? null : { id: action.id, slot: i }
+          render()
+        },
+        `cap${chord === undefined ? ' empty' : ''}${waiting ? ' listening' : ''}`,
+      )
+      cap.setAttribute(
+        'aria-label',
+        chord !== undefined ? `${label}: ${prettyChord(chord)}. Change it` : `Add a key for ${label}`,
+      )
+      slot.append(cap)
+      if (chord !== undefined && !waiting) {
+        const remove = button(
+          '×',
+          () => {
+            setMine(
+              'keybinds',
+              action.id,
+              current.filter((_, j) => j !== i),
+            )
+            changed()
+          },
+          'unbind',
         )
-        changed()
-      })
-      remove.className = 'remove'
-      remove.setAttribute('aria-label', `Remove ${prettyChord(chord)} from ${action.label}`)
-      chips.append(el('span', { className: 'chip' }, el('kbd', { textContent: prettyChord(chord) }), remove))
-    })
-    if (!current.length) chips.append(el('span', { className: 'note', textContent: 'no key' }))
-
-    const isListening = listening === action.id
-    const add = button(isListening ? 'press a key… (Esc cancels)' : '+ key', () => {
-      listening = isListening ? null : action.id
-      render()
-      if (listening) root.querySelector(`[data-path="${path}"] .add`)?.focus()
-    })
-    add.classList.add('add')
-    add.classList.toggle('listening', isListening)
-    add.disabled = !isListening && current.length >= MAX_BINDINGS
-    chips.append(add)
+        remove.setAttribute('aria-label', `Remove ${prettyChord(chord)} from ${label}`)
+        slot.append(remove)
+      }
+      slots.append(slot)
+    }
 
     const defaultKeys = server.keybinds[action.id].map(prettyChord).join(', ') || 'no key'
     row.append(
-      el('div', { className: 'head' }, name, chips),
+      el('div', { className: 'text' }, el('span', { className: 'label', textContent: label })),
       el(
         'div',
-        { className: 'foot' },
-        el('span'),
+        { className: 'side' },
+        slots,
         origin(overridden, defaultKeys, () => {
           setMine('keybinds', action.id, undefined)
           changed()
@@ -385,14 +479,15 @@ export function createSettingsPage({ root, request, onSignedOut }) {
     return row
   }
 
-  // A key pressed while a "+ key" is waiting becomes that action's next key.
+  // A key pressed while a slot is waiting goes into that slot.
   document.addEventListener(
     'keydown',
     (event) => {
       if (!listening) return
       event.preventDefault()
       event.stopPropagation()
-      const action = ACTIONS.find((a) => a.id === listening)
+      const { id, slot } = listening
+      const action = ACTIONS.find((a) => a.id === id)
       if (event.key === 'Escape') {
         listening = null
         render()
@@ -402,12 +497,19 @@ export function createSettingsPage({ root, request, onSignedOut }) {
       if (chord === null) return
       listening = null
       if (chord === undefined) {
-        errors[`keybinds.${action.id}`] = `${event.key} can't be a key here.`
+        errors[`keybinds.${id}`] = `${event.key} can't be used as a key here.`
         render()
         return
       }
-      const list = mine('keybinds', action.id) ?? server.keybinds[action.id]
-      if (!list.includes(chord)) setMine('keybinds', action.id, [...list, chord])
+      const list = [...(mine('keybinds', id) ?? server.keybinds[id])]
+      const already = list.indexOf(chord)
+      if (already === -1) list[slot] = chord
+      else if (already !== slot) list.splice(slot, 1)
+      setMine(
+        'keybinds',
+        id,
+        list.filter((c) => c !== undefined),
+      )
       changed()
     },
     true,

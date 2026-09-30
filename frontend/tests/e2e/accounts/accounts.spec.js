@@ -473,28 +473,31 @@ test('settings: your own feel and keys reach Help and your maps, and reset to de
   const sensitivity = settingsRow(page, 'flight.mouse_sensitivity')
   await expect(sensitivity.getByRole('button', { name: 'Reset to default' })).toHaveCount(0)
   await expect(page.locator('#settings-reset-all')).toBeDisabled()
+  await expect(page.locator('.savebar'), 'nothing to save yet').toBeHidden()
   await sensitivity.locator('input[type="number"]').fill('2.5')
 
   // Heat on J instead of H.
   const heat = settingsRow(page, 'keybinds.heat')
-  await heat.getByRole('button', { name: '+ key' }).click()
-  await expect(heat.locator('button.add')).toHaveText(/press a key/)
+  await heat.getByRole('button', { name: /^Add a key for/ }).click()
+  await expect(heat.locator('.cap.listening')).toHaveText('Press a key')
   await page.keyboard.press('j')
   await heat.getByRole('button', { name: /^Remove H from/ }).click()
-  await expect(heat.locator('.chip kbd')).toHaveText(['J'])
-  await expect(page.locator('.savebar .state')).toHaveText('Unsaved changes')
+  await expect(heat.locator('.cap:not(.empty)')).toHaveText(['J'])
+  await expect(page.locator('.savebar .state')).toHaveText('You have unsaved changes.')
   await page.locator('#settings-save').click()
   await expect(page.locator('.savebar .state')).toHaveText(/^Saved/)
   await expect(heat.getByRole('button', { name: 'Reset to default' })).toHaveAttribute('title', 'Default: H')
 
   // A key another action has while flying is refused, on its row.
   const balance = settingsRow(page, 'keybinds.balance')
-  await balance.getByRole('button', { name: '+ key' }).click()
+  // Clicking a bound key replaces it.
+  await balance.getByRole('button', { name: /^Balance the layout.*: B\. Change it/ }).click()
   await page.keyboard.press('j')
+  await expect(balance.locator('.cap:not(.empty)')).toHaveText(['J'])
   await page.locator('#settings-save').click()
   await expect(balance.locator('.error')).toContainText('J clashes with connection heat')
   await page.getByRole('button', { name: 'Discard' }).click()
-  await expect(balance.locator('.chip kbd')).toHaveText(['B'])
+  await expect(balance.locator('.cap:not(.empty)')).toHaveText(['B'])
 
   const config = await myConfig(page)
   expect(config.account).toBe(true)

@@ -14,10 +14,11 @@ const BUDGETS = [
   { label: 'app CSS', match: /^index-.*\.css$/, dir: 'assets', max: 16 * KB },
   // The account shell must stay small: no three, no scene code.
   { label: 'account.html', match: /^account\.html$/, dir: '', max: 8 * KB },
-  // Settings and Help (2026-09-30) brought in the schema, keymap and looks:
-  // JS 18.7 kB, CSS 7.4 kB then.
-  { label: 'account JS', match: /^account-.*\.js$/, dir: 'assets', max: 24 * KB },
-  { label: 'account CSS', match: /^account-.*\.css$/, dir: 'assets', max: 10 * KB },
+  // Settings and Help (2026-09-30) brought in the schema, keymap and looks,
+  // and set those pages in Jost (its @font-face rules are most of the CSS):
+  // JS 20.3 kB, CSS 10 kB then.
+  { label: 'account JS', match: /^account-.*\.js$/, dir: 'assets', max: 28 * KB },
+  { label: 'account CSS', match: /^account-.*\.css$/, dir: 'assets', max: 14 * KB },
   // three, split out of the app on 2026-09-30 so the homepage's hero shares it
   // (530 kB then; the app JS above dropped by the same amount).
   { label: 'three chunk', match: /^three-.*\.js$/, dir: 'assets', max: 680 * KB },

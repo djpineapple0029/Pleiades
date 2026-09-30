@@ -444,26 +444,69 @@ button.small {
   color: var(--ink);
 }
 
-/* Settings and Help. */
-.intro {
-  margin: 0 0 16px;
+/* Settings and Help: set in Jost, the face the map draws star names in, so
+   these pages read as part of the map rather than as a form. */
+#settings-view,
+#help-view {
+  --soft: #97a2b4; /* descriptions: a step brighter than --ink-dim, to read */
+  --raised: #141925;
+  --red: #ff8a80;
+  --red-deep: #3a1715;
+  font:
+    400 15px/1.45 Jost,
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
 }
 
-#settings-view .intro {
+#settings-view h1,
+#help-view h1 {
+  margin: 8px 0 4px;
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+
+#settings-view h2,
+#help-view h2 {
+  margin: 36px 0 10px;
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+#settings-view h3 {
+  margin: 0;
+  padding: 14px 18px 4px;
+  color: var(--soft);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.page-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 8px 16px;
+  gap: 12px 24px;
 }
 
-#settings-view .intro .note {
+.page-head p {
   margin: 0;
+  color: var(--soft);
 }
 
-#settings-view .card h2,
-#help-view .card h2 {
-  margin-bottom: 4px;
+.lede {
+  max-width: 58ch;
+  margin: -4px 0 12px;
+  color: var(--soft);
+}
+
+.banner.problems {
+  margin-top: 20px;
 }
 
 .banner.problems p,
@@ -475,157 +518,282 @@ button.small {
   padding-left: 18px;
 }
 
-.setting,
-.bind-row {
-  padding: 10px 0;
+/* One rounded panel per group, rows divided inside it. */
+.rows {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.keys .rows + .rows {
+  margin-top: 12px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 28px;
+  padding: 14px 18px;
   border-top: 1px solid var(--row);
 }
 
-.card h2 + .setting,
-.card h2 + .bind-row {
+.rows > .row:first-child,
+.rows > h3 + .row {
   border-top: none;
 }
 
-.setting .head,
-.bind-row .head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px 16px;
-}
-
-.setting label {
-  display: block;
-  margin: 0;
-  color: var(--ink);
-}
-
-.bind-row .name {
-  flex: 1 1 200px;
+.row .text {
   min-width: 0;
 }
 
-.setting .control {
+.row label,
+.row .label {
+  display: block;
+  margin: 0;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.row .description {
+  max-width: 55ch;
+  margin: 2px 0 0;
+  color: var(--soft);
+  font-size: 13.5px;
+}
+
+.row .side {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
+
+.row .control {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-.setting .foot,
-.bind-row .foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 4px 16px;
-  margin-top: 2px;
-}
-
-.setting .help {
-  flex: 1 1 260px;
+.row > .error {
+  grid-column: 1 / -1;
   margin: 0;
-  color: var(--ink-dim);
-  font-size: 12px;
 }
 
-.origin {
-  margin-left: auto;
+/* A changed row: a thin mark down its left edge, and its reset button. */
+.row.overridden {
+  box-shadow: inset 3px 0 0 var(--accent-deep);
 }
 
 .origin:empty {
   display: none;
 }
 
-.overridden .name,
-.overridden label {
-  color: var(--accent);
+button.reset {
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 138, 128, 0.45);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--red, #ff8a80);
+  font: inherit;
+  font-size: 13px;
+}
+
+button.reset:hover {
+  border-color: var(--red, #ff8a80);
+  background: var(--red-deep, #3a1715);
+}
+
+button.reset:disabled {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--ink-dim);
+}
+
+#settings-view button:not(.reset):not(.cap):not(.unbind) {
+  font: inherit;
+  font-size: 14px;
 }
 
 select,
 input[type='number'] {
-  padding: 4px 6px;
+  padding: 5px 8px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--field);
   color: var(--ink);
   font: inherit;
 }
 
 input[type='number'] {
-  width: 84px;
+  width: 72px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 input[type='range'] {
-  width: 140px;
+  width: 150px;
   accent-color: var(--accent);
 }
 
-input[type='checkbox'] {
+/* On/off as a switch, not a checkbox. */
+input.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--field);
+  cursor: pointer;
+  appearance: none;
+  transition: background 0.15s;
+}
+
+input.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
   width: 16px;
   height: 16px;
-  accent-color: var(--accent);
+  border-radius: 50%;
+  background: var(--ink-dim);
+  transition: transform 0.15s;
 }
 
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+input.switch:checked {
+  border-color: var(--accent);
+  background: var(--accent-deep);
 }
 
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 1px 2px 1px 0;
+input.switch:checked::after {
+  background: var(--ink);
+  transform: translateX(18px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  input.switch,
+  input.switch::after {
+    transition: none;
+  }
+}
+
+/* Key slots, drawn as keycaps: a deeper bottom edge, like a real key. */
+.slots {
+  display: grid;
+  grid-template-columns: repeat(3, 112px);
+  gap: 8px;
+}
+
+.slot {
+  position: relative;
+}
+
+button.cap {
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--field);
+  border-bottom-width: 3px;
+  border-radius: 7px;
+  background: var(--raised);
+  color: var(--ink);
+  font:
+    500 13px/1.2 Jost,
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
+  white-space: nowrap;
 }
 
-.chip kbd {
-  border: none;
-  background: none;
+button.cap:hover {
+  border-color: var(--ink-dim);
+  background: var(--raised);
 }
 
-.chip .remove {
-  padding: 0 6px;
-  border: none;
-  background: none;
+button.cap.empty {
+  border-style: dashed;
+  border-bottom-width: 1px;
+  background: transparent;
   color: var(--ink-dim);
 }
 
-.chip .remove:hover {
-  color: var(--bad);
+.cap.spare {
+  display: block;
+  min-height: 32px;
+  border: 1px dashed var(--row);
+  border-radius: 7px;
 }
 
-button.add.listening {
+button.cap.listening {
   border-color: var(--amber);
   color: var(--amber);
 }
 
+button.unbind {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--ink-dim);
+  font:
+    12px/1 Jost,
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
+  opacity: 0;
+}
+
+.slot:hover button.unbind,
+button.unbind:focus-visible {
+  opacity: 1;
+}
+
+button.unbind:hover {
+  border-color: var(--red);
+  background: var(--panel);
+  color: var(--red);
+}
+
+@media (hover: none) {
+  button.unbind {
+    opacity: 1;
+  }
+}
+
+/* The save bar shows only when there is something to save or say. */
 .savebar {
   position: sticky;
-  bottom: 0;
+  bottom: 16px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 8px 12px;
-  margin: 0 -16px;
+  margin-top: 28px;
   padding: 12px 16px;
-  border-top: 1px solid var(--line);
-  background: var(--void);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
 }
 
 .savebar .state {
   margin-right: auto;
-  color: var(--ink-dim);
+  color: var(--soft);
+}
+
+.savebar.dirty {
+  border-color: #6a4a2e;
 }
 
 .savebar.dirty .state {
-  color: var(--amber);
+  color: #f0c49c;
 }
 
 .savebar .error {
@@ -635,15 +803,37 @@ button.add.listening {
 
 kbd {
   display: inline-block;
-  min-width: 1.6em;
-  padding: 1px 6px;
+  min-width: 1.7em;
+  padding: 1px 7px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-bottom-width: 2px;
+  border-radius: 5px;
   background: var(--field);
   color: var(--ink);
-  font: inherit;
-  font-size: 12px;
+  font:
+    500 13px/1.5 Jost,
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
   text-align: center;
+}
+
+/* Help. */
+#help-view .intro {
+  max-width: 60ch;
+  margin: 0 0 8px;
+  color: var(--soft);
+}
+
+#help-view .card {
+  margin-top: 16px;
+  padding: 4px 18px;
+  border-radius: 12px;
+}
+
+#help-view .card h2 {
+  margin: 14px 0 4px;
+  font-size: 17px;
 }
 
 .help-keys {
@@ -654,9 +844,9 @@ kbd {
 
 .help-keys li {
   display: grid;
-  grid-template-columns: minmax(120px, 34%) 1fr;
-  gap: 4px 16px;
-  padding: 7px 0;
+  grid-template-columns: minmax(130px, 36%) 1fr;
+  gap: 4px 20px;
+  padding: 10px 0;
   border-top: 1px solid var(--row);
 }
 
@@ -668,13 +858,13 @@ kbd {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .help-keys .or,
 .help-keys .unbound {
   color: var(--ink-dim);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .help-keys .what {
@@ -682,17 +872,26 @@ kbd {
 }
 
 .help-keys small {
-  color: var(--ink-dim);
-  font-size: 12px;
+  color: var(--soft);
+  font-size: 13px;
 }
 
-@media (max-width: 480px) {
+@media (max-width: 560px) {
+  .row {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  .row .side {
+    justify-items: start;
+  }
+
+  .slots {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
   .help-keys li {
     grid-template-columns: 1fr;
   }
-}
-
-/* A key row with nothing to reset has no second line. */
-.bind-row .foot:has(.origin:empty) {
-  display: none;
 }
