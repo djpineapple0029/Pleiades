@@ -80,6 +80,13 @@ const MAP_TARGET = { kind: 'map', ring: 'top' }
 const MAP_TARGET_MORE = { kind: 'map', ring: 'more' }
 
 const nodeName = (node) => node.label || node.id
+// The layout shapes the tree_shape key steps through, in order (physics.js
+// `treeShape`). Off is the constellation layout, which has no tree.
+const SHAPES = [
+  { id: 'cone', name: 'cone' },
+  { id: 'disc', name: 'flat' },
+  { id: 'off', name: 'off (no tree)' },
+]
 
 function sameTarget(a, b) {
   if (a === b) return true
@@ -1116,26 +1123,14 @@ export function createInteraction({
 
     if (is('path') && !event.repeat && controls.isLocked && mode === 'idle') pathKey()
 
-    // TEMPORARY, for comparing the tree Balance's shapes (context/BALANCE2.md
-    // §8): T steps disc → cone → off (round 1's layout) and balances with it
-    // straight away, one undo entry like B. Hard-coded on purpose, not in
-    // the keybinds list; remove once a shape is picked.
-    if (
-      event.code === 'KeyT' &&
-      !event.repeat &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      !event.altKey &&
-      (controls.isLocked || overview.isActive) &&
-      mode !== 'menu'
-    ) {
-      const shapes = ['disc', 'cone', 'off']
-      physics.treeShape = shapes[(shapes.indexOf(physics.treeShape) + 1) % shapes.length]
+    // The layout's shape (context/BALANCE2.md §8): cone (the default) → flat
+    // → off, and balances with it straight away — one undo entry, like B.
+    if (is('tree_shape') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
+      const next = SHAPES[(SHAPES.findIndex((shape) => shape.id === physics.treeShape) + 1) % SHAPES.length]
+      physics.treeShape = next.id
       if (physics.isRunning) physics.stop()
       commands.toggleBalance()
-      status.info(
-        `tree shape: ${physics.treeShape === 'off' ? 'off (round-1 layout)' : physics.treeShape} · T: next`,
-      )
+      status.info(`layout: ${next.name} · ${keymap.label('tree_shape')}: next shape`)
     }
 
     if (is('heat') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {

@@ -22,6 +22,7 @@
     { "id": "rename", "group": "Edit", "label": "Rename the targeted star or link", "default": ["Enter"], "contexts": ["flight"], "scope": ["app"] },
     { "id": "edit_notes", "group": "Edit", "label": "Edit the targeted star's notes", "default": ["Mod+Enter"], "contexts": ["flight"], "scope": ["app"] },
     { "id": "balance", "group": "Edit", "label": "Balance the layout (again to stop)", "default": ["B"], "contexts": ["flight", "overview"], "scope": ["app"] },
+    { "id": "tree_shape", "group": "Edit", "label": "Change the layout shape (cone, flat, off) and balance", "default": ["T"], "contexts": ["flight", "overview"], "scope": ["app"] },
     { "id": "undo", "group": "Edit", "label": "Undo", "default": ["Mod+Z"], "contexts": ["flight", "free", "overview"], "printed": true, "scope": ["app"] },
     { "id": "redo", "group": "Edit", "label": "Redo", "default": ["Mod+Shift+Z", "Ctrl+Y"], "contexts": ["flight", "free", "overview"], "printed": true, "scope": ["app"] },
 
