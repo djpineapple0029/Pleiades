@@ -13,12 +13,14 @@
 :root[data-look='minimal'] {
   --void: #0d1016;
 }
-:root[data-look='cyberspace'] {
-  --void: #020008;
+:root[data-look='terminal'] {
+  --void: #000200;
+  --ink: #8cf5a4;
+  --ink-dim: #4f9a63;
 }
 
-/* Cyberspace's CRT: fine dark scanlines and a soft vignette over the scene,
-   under the HUD and panels like #look-fade. Only a few percent, so labels
+/* Terminal's CRT: fine dark scanlines and a light vignette over the scene,
+   under the HUD and panels like #look-fade. Only a few percent, so names
    stay crisp. */
 #look-scan {
   display: none;
@@ -27,10 +29,10 @@
   pointer-events: none;
   z-index: 0;
   background:
-    repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0, 0, 0, 0.16) 2px 3px),
-    radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.45) 100%);
+    repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0, 0, 0, 0.14) 2px 3px),
+    radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.35) 100%);
 }
-:root[data-look='cyberspace'] #look-scan {
+:root[data-look='terminal'] #look-scan {
   display: block;
 }
 

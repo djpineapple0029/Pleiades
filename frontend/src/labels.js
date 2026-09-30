@@ -218,6 +218,10 @@ const HALO_OPACITY = 0.85
 const FONT_PX = 40
 const FAMILY =
   'Jost, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+// The Terminal look's face (`looks.js`): whatever monospace the system has,
+// so nothing has to load. Already evenly spaced, so it takes less tracking.
+const MONO_FAMILY = 'ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace'
+const MONO_TRACKING = 0.35
 const WEIGHT = [400, 400, 500, 400]
 // Tracking, in ems of the font size. Wide on the capitals, a little air on the
 // rest; the hovered label opens up further still. A connection's name is
@@ -386,10 +390,23 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
   })
   const measure = scratch[0].ctx
 
+  let family = FAMILY
+  let trackingScale = 1
+
   /** The font and tracking of one tier, on any 2D context. */
   function useFont(ctx, tier, hovered) {
-    ctx.font = `${WEIGHT[tier]} ${FONT_PX}px ${FAMILY}`
-    ctx.letterSpacing = `${(TRACKING[tier] + (hovered ? HOVER_TRACKING : 0)) * FONT_PX}px`
+    ctx.font = `${WEIGHT[tier]} ${FONT_PX}px ${family}`
+    ctx.letterSpacing = `${(TRACKING[tier] + (hovered ? HOVER_TRACKING : 0)) * trackingScale * FONT_PX}px`
+  }
+
+  /** 'sans' (Jost, the default) or 'mono'. Every name is drawn again in it. */
+  function setFont(kind) {
+    const next = kind === 'mono' ? MONO_FAMILY : FAMILY
+    if (next === family) return
+    family = next
+    trackingScale = kind === 'mono' ? MONO_TRACKING : 1
+    readMetrics()
+    forgetRasters()
   }
 
   // Where the ink sits inside a cell, in texels. Read from the font itself, so
@@ -553,7 +570,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
   function textWidth(text, tier, hovered) {
     if (!text) return 0
     useFont(measure, tier, hovered)
-    const tracking = (TRACKING[tier] + (hovered ? HOVER_TRACKING : 0)) * FONT_PX
+    const tracking = (TRACKING[tier] + (hovered ? HOVER_TRACKING : 0)) * trackingScale * FONT_PX
     return Math.max(0, measure.measureText(text).width - tracking)
   }
 
@@ -1399,6 +1416,7 @@ export function createLabels(graph, parent, renderer, { radiusOf, baseRadius }) 
     setAim,
     reset,
     invalidateAtlas,
+    setFont,
     dispose,
     /**
      * Labels on screen after the last update: which kind it is, its id, text,

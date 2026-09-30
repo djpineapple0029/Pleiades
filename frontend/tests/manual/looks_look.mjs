@@ -48,7 +48,6 @@ await page.evaluate(async (input) => {
   const { createGraphView } = await import('/src/graphView.js')
   const { createDustRivers } = await import('/src/dustRivers.js')
   const { createLooks } = await import('/src/looks.js')
-  const { createGrid } = await import('/src/grid.js')
   const canvas = document.getElementById('c')
   const { renderer, scene, camera } = createScene(canvas)
   const skybox = createSkybox(renderer)
@@ -61,9 +60,7 @@ await page.evaluate(async (input) => {
   const view = createGraphView(graph, scene, renderer)
   view.sync()
   const rivers = createDustRivers(graph, scene, { radiusOf: view.radiusOf })
-  const grid = createGrid()
-  scene.add(grid.object)
-  const looks = createLooks({ renderer, skybox, dust, bloom, view, rivers, grid })
+  const looks = createLooks({ renderer, skybox, dust, bloom, view, rivers })
   let clock = 0
   const gl = renderer.getContext()
   const pixel = new Uint8Array(4)
@@ -72,7 +69,6 @@ await page.evaluate(async (input) => {
     clock += dt
     view.update(clock, camera, look.motion ? clock : 0)
     dust.update(look.motion ? dt : 0)
-    grid.update(look.motion ? dt : 0, camera, graph)
     if (look.rivers) rivers.update(dt, [])
     else rivers.hide()
   }
@@ -117,7 +113,7 @@ const near = [h[0] + 120, h[1] + 60, h[2] + 220]
 
 const report = {}
 const only = process.argv[2]?.split(',')
-for (const id of only ?? ['deep-space', 'deep-sea', 'cyberspace', 'minimal', 'shallow-space']) {
+for (const id of only ?? ['deep-space', 'deep-sea', 'terminal', 'minimal', 'shallow-space']) {
   await page.evaluate((look) => fx.setLook(look), id)
   await page.evaluate(() => fx.advance(6, 1 / 30))
   await page.evaluate(([from, at]) => fx.look(from, at), [far, centre])

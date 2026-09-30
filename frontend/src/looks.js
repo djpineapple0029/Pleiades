@@ -12,11 +12,11 @@
  * - Deep Sea: the same pipeline dressed as the deep ocean. A water column lit
  *   from above instead of a sky, jellies instead of stars, sinking marine
  *   snow instead of dust, and teal and violet colours.
- * - Cyberspace: a neon virtual world. A grid floor to the horizon under the
- *   map (in the world, so it slides by as you fly) with a scan pulse running
- *   across it, a skyline against a magenta horizon, holographic hexagons for
- *   stars, square data packets along the links, pixels rising in place of
- *   dust, and faint CRT scanlines over the view.
+ * - Terminal: abstract data, hacker green on black. Stars are data blocks in
+ *   bracketed frames with flickering bits, links stream square data packets,
+ *   a faint lattice of + marks fills space (so flying still reads as motion),
+ *   far-off pixels of data stand in for sky stars, names are set in
+ *   monospace, and faint scanlines lie over the view.
  * - Minimal: built for speed. Plain lit orbs on a flat ground, no glow, no
  *   bloom passes, no sky, no dust, nothing animated.
  *
@@ -70,21 +70,24 @@ const MINIMAL = {
   murk: 0,
 }
 
-const CYBER = {
-  clear: 0x020008,
-  // Neon: cyan, ice white, magenta.
+const TERMINAL = {
+  clear: 0x000200,
+  // Phosphor greens for an unclustered star: deep, bright, pale.
   tints: [
-    [0.2, 0.95, 1.0],
-    [0.85, 1.0, 1.0],
-    [1.0, 0.3, 0.85],
+    [0.15, 0.85, 0.35],
+    [0.6, 1.0, 0.65],
+    [0.85, 1.0, 0.75],
   ],
-  edges: { edge: 0x1fb5c9, mote: 0xaaffff, heat: [0x3f7bff, 0xb44dff, 0xff3fb4] },
+  // Cluster hues kept (they're how groups read) but pulled well toward green.
+  clusterPull: { color: [0.3, 1.0, 0.45], amount: 0.42 },
+  // Links heat from dim green through bright green to a pale lime white;
+  // amber stays the hover colour.
+  edges: { edge: 0x1c7a3a, mote: 0x9dffb0, heat: [0x2fd35a, 0x9dff6a, 0xe6ffd8] },
   rivers: [
-    [0.3, 1.0, 0.95],
-    [0.75, 0.3, 1.0],
+    [0.6, 1.0, 0.6],
+    [0.15, 0.6, 0.3],
   ],
   murk: 0,
-  grid: [0x0a5c78, 0xe0308f],
 }
 
 export const LOOKS = [
@@ -117,21 +120,22 @@ export const LOOKS = [
     palette: SEA,
   },
   {
-    id: 'cyberspace',
-    name: 'Cyberspace',
+    id: 'terminal',
+    name: 'Terminal',
     motion: true,
     sky: 'digital',
-    dust: 'digital',
-    grid: true,
+    dust: 'lattice',
     packets: true,
+    labelFont: 'mono',
     rivers: true,
     supernova: true,
     drift: true,
-    bloom: 1.5,
-    stars: 'hex',
+    bloom: 1.3,
+    stars: 'terminal',
     rays: 3,
-    palette: CYBER,
+    palette: TERMINAL,
   },
+
   {
     id: 'minimal',
     name: 'Minimal',
@@ -208,7 +212,6 @@ export function createLooks({
   bloom,
   view,
   rivers,
-  grid = null,
   supernova = null,
   fade = null,
   bloomStrength = 0.3,
@@ -234,9 +237,9 @@ export function createLooks({
       edges: palette.edges,
       drift: look.drift,
       packets: Boolean(look.packets),
+      clusterPull: palette.clusterPull ?? null,
+      labelFont: look.labelFont ?? 'sans',
     })
-    grid?.setOn(Boolean(look.grid))
-    if (look.grid) grid?.setColors(...palette.grid)
     rivers.setColors(...palette.rivers)
     if (!look.rivers) rivers.hide()
     if (!look.supernova) supernova?.clear()

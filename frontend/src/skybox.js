@@ -23,7 +23,7 @@ const PLANET = new THREE.Vector3(0.12, -1, 0.3).normalize()
 const PLANET_COS = 0.4
 const SUN = new THREE.Vector3(1, 0.12, 0.25).normalize()
 const ORBIT_GAIN = 1.0
-const DIGITAL_GAIN = 0.35
+const DIGITAL_GAIN = 0.6
 const STAR_COUNT = 6500
 // Share of the sky stars that crowd toward the band, and how tightly (radians).
 const BAND_SHARE = 0.45
@@ -315,55 +315,50 @@ void main() {
 }
 `
 
-// Cyberspace (`looks.js`): a virtual world's sky. Near-black overhead,
-// warming to violet and a hot magenta line at the horizon, where a skyline
-// of dark data towers stands against the glow with a few windows lit and a
-// cyan edge along each roof. The grid floor (`grid.js`) is drawn in the
-// scene, not here, so it moves under you; below the horizon this is only dark.
+// Terminal (`looks.js`): an abstract data space, not a place. Near-black
+// with the faintest green, and scattered square pixels of data far off, some
+// in short runs like bytes on a line; brighter and denser in a broad band so
+// the backdrop still gives a sense of direction.
 const DIGITAL_FRAGMENT = /* glsl */ `
 uniform vec3 ground;
+uniform vec3 bandNormal;
 varying vec3 vDirection;
 
-float hash11(float x) {
-  return fract(sin(x * 127.1) * 43758.5453);
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
 }
 
 void main() {
   vec3 d = normalize(vDirection);
-  float y = d.y;
-  float up = max(y, 0.0);
-  vec3 light = vec3(0.0006, 0.0, 0.0022);
-  light += vec3(0.09, 0.012, 0.16) * exp(-up / 0.2);
-  light += vec3(0.5, 0.06, 0.38) * exp(-up / 0.012);
-  // Below the horizon the glow carries on a few degrees down, fading to
-  // black: that's where the far edge of the grid floor meets the sky, and the
-  // floor adds its light over this, so there's no dark band between them.
-  if (y < 0.0) light = (vec3(0.09, 0.012, 0.16) + vec3(0.5, 0.06, 0.38)) * exp(y / 0.03);
+  float off = dot(d, bandNormal);
+  float band = exp(-off * off / 0.08);
+  vec3 light = vec3(0.0, 0.004, 0.0015) * (0.4 + band);
 
-  // The skyline: one tower per sliver of azimuth, most low, a few tall.
-  float az = atan(d.z, d.x) / 6.2831853 + 0.5;
-  float cell = floor(az * 300.0);
-  float across = fract(az * 300.0);
-  float tall = 0.012 + 0.05 * pow(hash11(cell), 3.0);
-  float gap = step(0.12, across) * step(across, 0.9); // a dark slit between towers
-  if (y > 0.0 && y < tall && gap > 0.0) {
-    vec3 tower = vec3(0.004, 0.001, 0.01);
-    // Windows: a grid on the tower's face, a few of them lit.
-    vec2 win = vec2(floor(across * 5.0), floor(y * 900.0));
-    float lit = step(0.9, hash11(cell * 13.1 + win.x * 3.7 + win.y * 1.3))
-      * step(0.35, fract(across * 5.0)) * step(0.4, fract(y * 900.0));
-    tower += vec3(0.05, 0.5, 0.6) * lit * 0.35;
-    // The roofline, lit cyan.
-    tower += vec3(0.05, 0.6, 0.75) * exp(-(tall - y) / 0.0012) * 0.5;
-    light = tower;
-  }
+  // Pixels on a grid of cells over the sphere, each cell a run of up to
+  // eight bits, a few of them lit. Rows of latitude get fewer cells toward
+  // the poles, so the pixels stay square and evenly spread there too.
+  float lat = asin(clamp(d.y, -1.0, 1.0));
+  float yCell = floor(lat * 280.0);
+  float across = max(8.0, floor(900.0 * cos((yCell + 0.5) / 280.0)));
+  float lon = atan(d.z, d.x) / 6.2831853 + 0.5;
+  vec2 cell = vec2(floor(lon * across), yCell);
+  vec2 inCell = vec2(fract(lon * across), fract(lat * 280.0));
+  float row = floor(cell.x / 8.0);
+  float runLit = step(0.985 - 0.02 * band, hash12(vec2(row, cell.y)));
+  float bit = step(0.5, hash12(cell + 17.0));
+  float pixel = step(0.2, inCell.x) * step(inCell.x, 0.8) * step(0.2, inCell.y) * step(inCell.y, 0.8);
+  float bright = 0.3 + 0.7 * hash12(vec2(row, cell.y) + 5.0);
+  light += vec3(0.1, 0.9, 0.3) * runLit * bit * pixel * bright * 0.25;
+
   gl_FragColor = vec4(ground + light * DIGITAL_GAIN, 1.0);
 }
 `
 
 /**
  * The backdrop for `variant` ('space': the nebula, 'sea': the water column,
- * 'orbit': the planet, 'digital': Cyberspace's horizon),
+ * 'orbit': the planet, 'digital': Terminal's data space),
  * rendered once into a cube map by a camera at the centre of a box.
  */
 function bakeNebula(renderer, variant = 'space') {
@@ -512,7 +507,7 @@ export function createSkybox(renderer) {
   /**
    * Which backdrop to show: 'space' (nebula and sky stars), 'sea' (the water
    * column, no stars), 'orbit' (the planet, sparse stars), 'digital'
-   * (Cyberspace's horizon) or null for none (the clear colour shows).
+   * (Terminal's data space) or null for none (the clear colour shows).
    */
   function setVariant(next) {
     group.visible = next !== null

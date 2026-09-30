@@ -107,7 +107,7 @@ def test_look_is_a_choice():
     assert errors == []
     assert values["visuals"]["look"] == "deep-sea"
     _values, errors = validate_values({"visuals": {"look": "neon"}}, strict=True)
-    assert errors == ["visuals.look: must be one of deep-space, deep-sea, cyberspace, minimal, shallow-space"]
+    assert errors == ["visuals.look: must be one of deep-space, deep-sea, terminal, minimal, shallow-space"]
 
 
 @pytest.mark.parametrize(

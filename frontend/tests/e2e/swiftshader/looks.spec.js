@@ -26,7 +26,7 @@ test('hold V to pick a look', async ({ page }) => {
 
   // Right: Deep Sea. The ring stays open through a right-button release.
   const sea = await holdV(page, 60, 0)
-  expect(sea.wedges).toEqual(['Deep Space ✓', 'Deep Sea', 'Cyberspace', 'Minimal', 'Shallow Space'])
+  expect(sea.wedges).toEqual(['Deep Space ✓', 'Deep Sea', 'Terminal', 'Minimal', 'Shallow Space'])
   expect(sea.armed).toBe('Deep Sea')
   await t(page, 'rightUp()')
   await settle(page)
@@ -42,12 +42,12 @@ test('hold V to pick a look', async ({ page }) => {
   await settle(page, 500)
   expect(await lookNow(page), 'a tap changes nothing').toBe('deep-sea')
 
-  // Down and right: Cyberspace, with its scanlines over the view.
-  const cyber = await holdV(page, 35, 49)
-  expect(cyber.armed).toBe('Cyberspace')
+  // Down and right: Terminal, with its scanlines over the view.
+  const terminal = await holdV(page, 35, 49)
+  expect(terminal.armed).toBe('Terminal')
   await page.keyboard.up('v')
   await settle(page, 500)
-  expect(await lookNow(page)).toBe('cyberspace')
+  expect(await lookNow(page)).toBe('terminal')
   expect(
     await page.evaluate(() => getComputedStyle(document.getElementById('look-scan')).display),
     'scanlines on',
@@ -55,7 +55,7 @@ test('hold V to pick a look', async ({ page }) => {
 
   // Down and left: Minimal, then remembered across a reload.
   const minimal = await holdV(page, -35, 49)
-  expect(minimal.wedges[2], 'the current look is ticked').toBe('Cyberspace ✓')
+  expect(minimal.wedges[2], 'the current look is ticked').toBe('Terminal ✓')
   expect(minimal.armed).toBe('Minimal')
   await page.keyboard.up('v')
   await settle(page, 500)

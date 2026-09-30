@@ -20,7 +20,7 @@ export const APP_ROWS = [
   { ids: ['heat'], text: 'connection heat colours on/off' },
   {
     ids: ['look'],
-    text: 'hold, point at a look, let go: Deep Space, Deep Sea, Cyberspace, Minimal, Shallow Space',
+    text: 'hold, point at a look, let go: Deep Space, Deep Sea, Terminal, Minimal, Shallow Space',
   },
   { ids: ['search'], text: 'find a star by name; Enter flies there' },
   { ids: ['jump_back'], text: 'fly back to where you were before the last jump' },

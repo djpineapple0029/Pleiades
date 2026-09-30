@@ -66,6 +66,8 @@ const END_FULL = 2.4
 const DRIFT_SLOTS = 16
 const DRIFT_SPACING = 40
 const DRIFT_SPEED = 9 // world units per second
+// Terminal's data packets stream this many times faster than drift.
+const PACKET_PACE = 4
 // Mote diameter in world units, drawn between MOTE_MIN_PX and MOTE_MAX_PX (CSS
 // px), and fainter by area below the minimum, like the edges.
 const MOTE_SIZE = 1.2
@@ -267,7 +269,7 @@ uniform vec3 moteColor;
 uniform vec3 hoverColor;
 uniform float dim; // 1 normally; lower while a search dims the map
 uniform float heat; // as for the lines
-uniform float packets; // 1: square data packets (Cyberspace), drawn bigger
+uniform float packets; // 1: square data packets (Terminal), drawn bigger
 ${HEAT_GLSL}
 attribute vec3 instanceStart;
 attribute vec3 instanceEnd;
@@ -467,6 +469,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
 
   let order = [] // index -> edge id
   let driftOn = true
+  let driftPace = 1 // times DRIFT_SPEED
   let fromIds = []
   let toIds = []
   let positions = new Float32Array(0) // per edge: from xyz, to xyz
@@ -791,7 +794,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
       // world units, so the phase rate depends on the length, and physics
       // changes lengths. A phase of clock * speed / length would jump every
       // mote at once whenever an edge stretched.
-      phases[i] = (phases[i] + (dt * DRIFT_SPEED) / Math.max(length, 1)) % 1
+      phases[i] = (phases[i] + (dt * DRIFT_SPEED * driftPace) / Math.max(length, 1)) % 1
       edgeData[i * 4 + 2] = phases[i]
     }
     edgeAttribute.needsUpdate = true
@@ -853,9 +856,11 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     heat?.forEach((hex, i) => heatRamp.value[i + 1].set(hex))
   }
 
-  /** Drift motes drawn as square data packets (Cyberspace) or round motes. */
+  /** Drift motes drawn as square data packets (Terminal), streaming at
+   *  PACKET_PACE times the speed, or round motes. */
   function setPackets(on) {
     driftMaterial.uniforms.packets.value = on ? 1 : 0
+    driftPace = on ? PACKET_PACE : 1
   }
 
   /** Drift motes on or off. Off, they are hidden and their phases stand still. */

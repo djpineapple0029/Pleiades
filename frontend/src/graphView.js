@@ -26,7 +26,7 @@ const SPACE_RAMP = [
   [1.0, 0.7, 0.42],
 ]
 // Star styles, the STAR_STYLE define: which fragment shader the stars run.
-const STAR_STYLES = { rays: 0, orbs: 1, jelly: 2, hex: 3 }
+const STAR_STYLES = { rays: 0, orbs: 1, jelly: 2, terminal: 3 }
 // Seconds per pulse at rate 1. Each node runs at k / PULSE_RATE_STEPS of that,
 // k drawn from PULSE_RATE_MIN..PULSE_RATE_MAX. Rates are quantised on purpose:
 // over PULSE_PERIOD * PULSE_RATE_STEPS seconds every node completes a whole
@@ -255,35 +255,40 @@ void main() {
   #include <colorspace_fragment>
 }
 #elif STAR_STYLE == 3
-// Cyberspace: a holographic hexagon. A neon outline, a faint scanlined fill,
-// a bright diamond core, a ring of dashes turning round it, and now and then
-// a glitch that throws a slice of it sideways for a moment.
-float hexDist(vec2 p) {
-  p = abs(p);
-  return max(dot(p, vec2(0.8660254, 0.5)), p.y);
+// Terminal: a block of data in a bracketed frame. Four corner brackets, a
+// solid square core that steps through the pulse in whole levels rather than
+// breathing smoothly, a faint scanlined fill, and eight bits round it that
+// flip on and off as the clock ticks. Square everywhere; nothing is round.
+float boxLine(float d, float at, float aa, float width) {
+  return 1.0 - smoothstep(width, width + 1.5 * aa, abs(d - at));
 }
 void main() {
   vec2 p = vOffset;
+  vec2 a = abs(p);
   float aa = length(fwidth(vOffset));
-  float swell = vPulse;
-  // About one node in fourteen is glitching at any moment, a quarter-beat each.
-  float slot = floor(pulseBeat * 4.0 + vSeed * 17.0);
-  float glitch = fract(sin(slot * 12.9898 + vSeed * 78.233) * 43758.5453);
-  if (glitch > 0.93) p.x += (fract(sin(floor(p.y * 5.0) * 7.13 + slot) * 437.585) - 0.5) * 0.45;
-  float r = length(p);
-  float h = hexDist(p);
-  float outline = 1.0 - smoothstep(0.0, 1.5 * aa + 0.035, abs(h - 1.0));
-  float fill = 1.0 - smoothstep(0.93, 0.93 + aa, h);
-  float scan = 0.45 + 0.55 * step(0.5, fract(gl_FragCoord.y * 0.25));
-  float core = 1.0 - smoothstep(0.32, 0.32 + 1.5 * aa, abs(p.x) + abs(p.y));
-  float turn = pulseBeat * 0.9 * (vSeed > 0.5 ? 1.0 : -1.0);
-  float dashes = step(0.45, fract((atan(p.y, p.x) + turn) * 12.0 / 6.2831853));
-  float orbit = (1.0 - smoothstep(0.0, 1.5 * aa + 0.025, abs(r - 1.5))) * dashes;
-  float halo = h > 1.0 ? exp(-3.5 * (h - 1.0)) : 0.0;
+  float box = max(a.x, a.y);
+  // Brackets: the frame's outline at 1.0, kept only near the corners.
+  float corner = step(0.62, min(a.x, a.y));
+  float bracket = boxLine(box, 1.0, aa, 0.045) * corner;
+  // The core, in four brightness steps.
+  float level = 0.55 + 0.15 * floor(vPulse * 3.99);
+  float core = 1.0 - smoothstep(0.36, 0.36 + 1.5 * aa, box);
+  float fill = (1.0 - smoothstep(0.96, 0.96 + aa, box)) * (0.45 + 0.55 * step(0.5, fract(gl_FragCoord.y * 0.25)));
+  // Eight bits on a square ring at 1.45 (the corners and the middle of each
+  // side), each a small square that is on or off for a tick.
+  const vec2 BITS[8] = vec2[8](vec2(-1.0, 1.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0),
+    vec2(1.0, -1.0), vec2(0.0, -1.0), vec2(-1.0, -1.0), vec2(-1.0, 0.0));
+  float bits = 0.0;
+  float tick = floor(pulseBeat * 3.0);
+  for (int i = 0; i < 8; i++) {
+    vec2 q = abs(p - BITS[i] * 1.45);
+    float on = step(0.45, fract(sin((float(i) + vSeed * 57.0) * 12.9898 + tick * 4.1414) * 43758.5453));
+    bits += on * (1.0 - smoothstep(0.1, 0.1 + 1.5 * aa, max(q.x, q.y)));
+  }
+  float halo = box > 1.0 ? exp(-4.0 * (box - 1.0)) : 0.0;
 
-  vec3 hot = mix(vec3(1.0), vTint, 0.3);
-  vec3 colour = vTint * (outline * (1.5 + 0.6 * swell) + fill * 0.16 * scan + orbit * 0.65 + halo * 0.3)
-    + hot * core * (1.3 + 0.5 * swell);
+  vec3 hot = mix(vec3(1.0), vTint, 0.35);
+  vec3 colour = vTint * (bracket * 1.6 + fill * 0.12 + bits * 0.8 + halo * 0.18) + hot * core * level * 1.8;
   colour *= vGlow * vFade * (1.0 - smoothstep(STAR_EXTENT * 0.9, STAR_EXTENT, length(vOffset)));
   gl_FragColor = vec4(colour, 1.0);
   #include <tonemapping_fragment>
@@ -537,6 +542,7 @@ export function createGraphView(graph, scene, renderer) {
     murk: { value: 0 },
   }
   let tintRamp = SPACE_RAMP.map(srgb)
+  let pull = null // a look pulling cluster colours toward one colour
   let starStyle = 'rays'
   const nodeMaterial = createStarMaterial(starUniforms)
   const matrix = new THREE.Matrix4()
@@ -642,6 +648,7 @@ export function createGraphView(graph, scene, renderer) {
       const node = graph.nodes.get(id)
       if (!node) continue // deleted, not yet synced
       targetTint(node, tint, tintRamp)
+      if (pull && node.cluster_color_id) tint.lerp(pull.color, pull.amount)
       let wanted = targetTints.get(id)
       if (!wanted) targetTints.set(id, (wanted = [0, 0, 0]))
       tint.toArray(wanted)
@@ -1176,17 +1183,31 @@ export function createGraphView(graph, scene, renderer) {
     /**
      * A look's appearance (`looks.js`), all parts optional:
      * - `stars`: 'rays' (the star), 'orbs' (plain lit balls, opaque, no glow)
-     *   'jelly' (Deep Sea) or 'hex' (Cyberspace). Recompiles the one star
+     *   'jelly' (Deep Sea) or 'terminal' (Terminal). Recompiles the one star
      *   shader.
      * - `rays`: 3 ray families (the full star) or 1 (calm: the long rays only).
      * - `tints`: three sRGB triples, the blue/white/warm stops of an
-     *   unclustered star; a clustered one keeps its cluster's hue.
+     *   unclustered star; a clustered one keeps its cluster's hue, pulled
+     *   `clusterPull.amount` of the way toward `clusterPull.color` (sRGB).
+     * - `labelFont`: 'sans' or 'mono' for the names.
      * - `murk`: light lost per world unit to underwater fog (jelly only).
      * - `voidColor`: the background, which a dimmed orb fades toward.
      * - `edges`: `edges.setColors` input; `drift`: motes along links on/off;
      *   `packets`: those motes as square data packets.
      */
-    setStyle({ stars, rays, tints, murk, voidColor, edges: edgeColors, drift, packets } = {}) {
+    setStyle({
+      stars,
+      rays,
+      tints,
+      clusterPull,
+      labelFont,
+      murk,
+      voidColor,
+      edges: edgeColors,
+      drift,
+      packets,
+    } = {}) {
+      if (labelFont !== undefined) labels.setFont(labelFont)
       if (rays !== undefined && rays !== nodeMaterial.defines.RAY_FAMILIES) {
         nodeMaterial.defines.RAY_FAMILIES = rays
         nodeMaterial.needsUpdate = true
@@ -1204,8 +1225,11 @@ export function createGraphView(graph, scene, renderer) {
         nodeMaterial.alphaToCoverage = opaque
         nodeMaterial.needsUpdate = true
       }
-      if (tints) {
-        tintRamp = tints.map(srgb)
+      if (clusterPull !== undefined) {
+        pull = clusterPull ? { color: srgb(clusterPull.color), amount: clusterPull.amount } : null
+      }
+      if (tints || clusterPull !== undefined) {
+        if (tints) tintRamp = tints.map(srgb)
         refreshTints()
         for (const id of slotIds) {
           const wanted = targetTints.get(id)
