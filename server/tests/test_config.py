@@ -16,6 +16,7 @@ from server.config import (
     hash_password,
     parse_chord,
     validate_keybinds,
+    validate_values,
     verify_password,
 )
 
@@ -99,6 +100,29 @@ def test_mod_overlaps_ctrl():
     _keybinds, errors = validate_keybinds({**default_keybinds(), "balance": ["Ctrl+S"]})
     assert any(e.startswith("keybinds.balance: Ctrl+S clashes with save") for e in errors), errors
     assert any(e.startswith("keybinds.save: Ctrl+S clashes with balance") for e in errors), errors
+
+
+def test_look_is_a_choice():
+    values, errors = validate_values({"visuals": {"look": "deep-sea"}}, strict=True)
+    assert errors == []
+    assert values["visuals"]["look"] == "deep-sea"
+    _values, errors = validate_values({"visuals": {"look": "neon"}}, strict=True)
+    assert errors == ["visuals.look: must be one of deep-space, deep-sea, terminal, minimal, shallow-space"]
+
+
+@pytest.mark.parametrize(
+    ("given", "look"),
+    [
+        ({"reduced_motion": True}, "shallow-space"),
+        ({"reduced_motion": False}, "deep-space"),
+        ({"reduced_motion": True, "look": "minimal"}, "minimal"),  # the new setting wins
+    ],
+)
+def test_retired_reduced_motion_reads_as_a_look_without_complaint(given, look):
+    values, errors = validate_values({"visuals": given}, strict=False)
+    assert errors == []
+    assert values["visuals"]["look"] == look
+    assert "reduced_motion" not in values["visuals"]
 
 
 # --- The file -----------------------------------------------------------------

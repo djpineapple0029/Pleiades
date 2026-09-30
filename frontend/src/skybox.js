@@ -13,6 +13,17 @@ const BAND_NORMAL = new THREE.Vector3(0.35, 0.85, 0.4).normalize()
 // Linear brightness of the nebula at full density. Its brightest clouds stay
 // well under the edges' colour, so the map always reads over the sky.
 const NEBULA_GAIN = 0.026
+// Deep Sea's shafts and caustics, over its own water colour.
+const SEA_GAIN = 0.35
+// Shallow Space: a planet under the map, filling most of the lower sky. Its
+// centre's direction, its angular radius (as a cosine, so a direction d is on
+// the planet when dot(d, PLANET) > PLANET_COS) and the sun, off to one side
+// above its rim, so a day/night line crosses it.
+const PLANET = new THREE.Vector3(0.12, -1, 0.3).normalize()
+const PLANET_COS = 0.4
+const SUN = new THREE.Vector3(1, 0.12, 0.25).normalize()
+const ORBIT_GAIN = 1.0
+const DIGITAL_GAIN = 0.6
 const STAR_COUNT = 6500
 // Share of the sky stars that crowd toward the band, and how tightly (radians).
 const BAND_SHARE = 0.45
@@ -130,6 +141,60 @@ void main() {
 }
 `
 
+// Deep Sea (`looks.js`): a water column instead of a sky. Lit from the surface
+// straight up, dark toward the abyss below, with shafts of light slanting
+// down from above and a caustic shimmer overhead. Like the nebula, it is a
+// function of direction alone, baked once.
+const SEA_FRAGMENT = /* glsl */ `
+uniform vec3 ground;
+varying vec3 vDirection;
+${SIMPLEX}
+
+float fbm(vec3 p) {
+  float sum = 0.0;
+  float amp = 0.5;
+  for (int i = 0; i < 4; i++) {
+    sum += amp * snoise(p);
+    p = p * 2.03 + vec3(19.1, 7.3, 3.7);
+    amp *= 0.5;
+  }
+  return sum;
+}
+
+void main() {
+  vec3 d = normalize(vDirection);
+  float up = d.y;
+  // The column: abyss, open water at the horizon, lighter toward the surface.
+  vec3 abyss = vec3(0.0004, 0.0016, 0.0035);
+  vec3 open = vec3(0.0025, 0.022, 0.045);
+  vec3 surface = vec3(0.02, 0.16, 0.2);
+  vec3 water = mix(abyss, open, smoothstep(-0.75, 0.05, up));
+  water = mix(water, surface, pow(smoothstep(0.0, 1.0, up), 1.6));
+
+  // Murky clouds of silt so the water isn't a flat gradient: looking around
+  // still shows which way you face.
+  float silt = fbm(d * 2.2 + 7.0) * 0.5 + 0.5;
+  water *= 0.75 + 0.5 * silt;
+
+  // Light shafts: bright wedges by azimuth, converging on the zenith, fading
+  // out as they go down into the dark.
+  vec2 ring = normalize(d.xz + 1e-5);
+  float shaft = snoise(vec3(ring * 5.0, 0.7)) * 0.5 + 0.5;
+  shaft = pow(shaft, 4.0) + 0.5 * pow(snoise(vec3(ring * 11.0, 3.1)) * 0.5 + 0.5, 6.0);
+  float reach = smoothstep(-0.15, 0.55, up) * (1.0 - smoothstep(0.85, 1.0, up));
+  vec3 shafts = vec3(0.05, 0.22, 0.24) * shaft * reach * (0.6 + 0.4 * silt);
+
+  // Caustics: the surface's ripples seen from below, a net of bright lines.
+  vec2 plane = d.xz / max(up, 0.05);
+  float n = 1.0 - abs(snoise(vec3(plane * 3.0, 1.7)));
+  float n2 = 1.0 - abs(snoise(vec3(plane * 6.1, 9.2)));
+  float caustic = pow(n, 8.0) + 0.6 * pow(n2, 10.0);
+  vec3 caustics = vec3(0.12, 0.34, 0.33) * caustic * smoothstep(0.55, 0.95, up);
+
+  gl_FragColor = vec4(ground + water + (shafts + caustics) * SEA_GAIN, 1.0);
+}
+`
+
 // A unit box turned with the view but never moved by it, pinned to the far
 // plane: the sky is at infinity, so flying never gets any closer to it.
 const SKY_VERTEX = /* glsl */ `
@@ -166,9 +231,12 @@ const STARS_VERTEX = /* glsl */ `
 attribute vec3 light; // linear RGB at the centre
 attribute float size; // CSS pixels
 uniform float pixelRatio;
+uniform vec4 occluder; // a planet's direction and angular-radius cosine; w > 1 for none
+uniform float faintCut; // stars dimmer than this are dropped
 varying vec3 vLight;
 void main() {
-  vLight = light;
+  float peak = max(light.r, max(light.g, light.b));
+  vLight = dot(position, occluder.xyz) > occluder.w ? vec3(0.0) : light * smoothstep(faintCut, faintCut * 1.5, peak);
   // Under two device pixels a point lands on one pixel or smears over two as
   // the view turns, and visibly twinkles.
   gl_PointSize = max(size * pixelRatio, 2.0);
@@ -185,8 +253,115 @@ void main() {
 }
 `
 
-/** The nebula, rendered once into a cube map by a camera at the centre of a box. */
-function bakeNebula(renderer) {
+// Shallow Space (`looks.js`): close to a planet instead of out in deep space.
+// Sparse stars on black above, the planet below: cloud-streaked ocean on its
+// day side, city lights on its night side, a thin blue atmosphere round its
+// rim, brightest toward the sun. Baked once, like the others.
+const ORBIT_FRAGMENT = /* glsl */ `
+uniform vec3 ground;
+uniform vec3 planet; // unit direction to its centre
+uniform float planetCos; // cosine of its angular radius
+uniform vec3 sun;
+varying vec3 vDirection;
+${SIMPLEX}
+
+float fbm(vec3 p) {
+  float sum = 0.0;
+  float amp = 0.5;
+  for (int i = 0; i < 5; i++) {
+    sum += amp * snoise(p);
+    p = p * 2.03 + vec3(19.1, 7.3, 3.7);
+    amp *= 0.5;
+  }
+  return sum;
+}
+
+void main() {
+  vec3 d = normalize(vDirection);
+  float t = dot(d, planet);
+  float sunward = max(dot(d, sun), 0.0);
+
+  // Sky: black, with the atmosphere's glow a few degrees thick above the rim,
+  // brighter toward the sun, and the sun's own glare.
+  float above = max(planetCos - t, 0.0);
+  vec3 sky = vec3(0.04, 0.13, 0.45) * exp(-above / 0.03) * (0.12 + 1.2 * pow(sunward, 4.0));
+  sky += vec3(1.0, 0.92, 0.8) * (0.9 * pow(sunward, 900.0) + 0.05 * pow(sunward, 60.0));
+
+  // The planet as a sphere of radius sqrt(1 - planetCos^2) one unit away.
+  // Clamped at the rim so the blend below never reads past it.
+  float r2 = 1.0 - planetCos * planetCos;
+  float disc = max(t * t - (1.0 - r2), 0.0);
+  vec3 hit = d * max(t - sqrt(disc), 0.0);
+  vec3 n = normalize(hit - planet + 1e-6);
+  float day = dot(n, sun);
+  float lit = smoothstep(-0.05, 0.3, day);
+  // Clouds in bands, as on a real world; ocean under them.
+  vec3 q = n * 3.0;
+  float cloud = smoothstep(0.1, 0.62, fbm(q + fbm(q * 0.7) * 0.8) * 0.5 + 0.5 + 0.12 * sin(n.y * 9.0));
+  vec3 surface = mix(vec3(0.004, 0.02, 0.055), vec3(0.34, 0.36, 0.4), cloud) * (0.3 + 0.7 * max(day, 0.0));
+  // City lights on the night side, where the clouds let them through.
+  float city = smoothstep(0.7, 0.88, fbm(n * 24.0) * 0.5 + 0.5) * (1.0 - cloud);
+  vec3 night = vec3(0.0006, 0.0008, 0.0016) + vec3(0.035, 0.018, 0.005) * city * (1.0 - lit);
+  vec3 ground_ = mix(night, surface, lit);
+  // The atmosphere seen edge-on at the rim: thin, blue, on the day side.
+  float edge = pow(1.0 - max(dot(n, -d), 0.0), 6.0);
+  ground_ += vec3(0.05, 0.16, 0.5) * edge * (0.08 + smoothstep(-0.2, 0.4, day));
+
+  // Blended across about two texels of the bake, so the rim doesn't
+  // stair-step when the sky is magnified on screen.
+  float onPlanet = smoothstep(planetCos - 0.0015, planetCos + 0.0025, t);
+  vec3 light = mix(sky, ground_, onPlanet);
+  gl_FragColor = vec4(ground + light * ORBIT_GAIN, 1.0);
+}
+`
+
+// Terminal (`looks.js`): an abstract data space, not a place. Near-black
+// with the faintest green, and scattered square pixels of data far off, some
+// in short runs like bytes on a line; brighter and denser in a broad band so
+// the backdrop still gives a sense of direction.
+const DIGITAL_FRAGMENT = /* glsl */ `
+uniform vec3 ground;
+uniform vec3 bandNormal;
+varying vec3 vDirection;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+void main() {
+  vec3 d = normalize(vDirection);
+  float off = dot(d, bandNormal);
+  float band = exp(-off * off / 0.08);
+  vec3 light = vec3(0.0, 0.004, 0.0015) * (0.4 + band);
+
+  // Pixels on a grid of cells over the sphere, each cell a run of up to
+  // eight bits, a few of them lit. Rows of latitude get fewer cells toward
+  // the poles, so the pixels stay square and evenly spread there too.
+  float lat = asin(clamp(d.y, -1.0, 1.0));
+  float yCell = floor(lat * 280.0);
+  float across = max(8.0, floor(900.0 * cos((yCell + 0.5) / 280.0)));
+  float lon = atan(d.z, d.x) / 6.2831853 + 0.5;
+  vec2 cell = vec2(floor(lon * across), yCell);
+  vec2 inCell = vec2(fract(lon * across), fract(lat * 280.0));
+  float row = floor(cell.x / 8.0);
+  float runLit = step(0.985 - 0.02 * band, hash12(vec2(row, cell.y)));
+  float bit = step(0.5, hash12(cell + 17.0));
+  float pixel = step(0.2, inCell.x) * step(inCell.x, 0.8) * step(0.2, inCell.y) * step(inCell.y, 0.8);
+  float bright = 0.3 + 0.7 * hash12(vec2(row, cell.y) + 5.0);
+  light += vec3(0.1, 0.9, 0.3) * runLit * bit * pixel * bright * 0.25;
+
+  gl_FragColor = vec4(ground + light * DIGITAL_GAIN, 1.0);
+}
+`
+
+/**
+ * The backdrop for `variant` ('space': the nebula, 'sea': the water column,
+ * 'orbit': the planet, 'digital': Terminal's data space),
+ * rendered once into a cube map by a camera at the centre of a box.
+ */
+function bakeNebula(renderer, variant = 'space') {
   const target = new THREE.WebGLCubeRenderTarget(BAKE_SIZE, {
     // Stored sRGB-encoded: in linear 8-bit the dark end, where all of the
     // nebula lives, would get only a handful of levels.
@@ -198,11 +373,20 @@ function bakeNebula(renderer) {
   const material = new THREE.ShaderMaterial({
     uniforms: {
       bandNormal: { value: BAND_NORMAL },
-      ground: { value: new THREE.Color(VOID_COLOR) },
+      ground: { value: new THREE.Color(variant === 'space' ? VOID_COLOR : 0x000000) },
+      planet: { value: PLANET },
+      planetCos: { value: PLANET_COS },
+      sun: { value: SUN },
     },
-    defines: { NEBULA_GAIN: NEBULA_GAIN.toFixed(3) },
+    defines: {
+      NEBULA_GAIN: NEBULA_GAIN.toFixed(3),
+      SEA_GAIN: SEA_GAIN.toFixed(3),
+      ORBIT_GAIN: ORBIT_GAIN.toFixed(3),
+      DIGITAL_GAIN: DIGITAL_GAIN.toFixed(3),
+    },
     vertexShader: BAKE_VERTEX,
-    fragmentShader: BAKE_FRAGMENT,
+    fragmentShader:
+      { sea: SEA_FRAGMENT, orbit: ORBIT_FRAGMENT, digital: DIGITAL_FRAGMENT }[variant] ?? BAKE_FRAGMENT,
     side: THREE.BackSide,
   })
   const box = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), material)
@@ -268,7 +452,11 @@ export function createSkybox(renderer) {
   const group = new THREE.Group()
   group.name = 'skybox'
 
-  let cube = bakeNebula(renderer)
+  // Baked on first use and kept: switching looks back and forth bakes each
+  // backdrop once. Deep Sea's is never baked for a session that stays in space.
+  const cubes = new Map([['space', bakeNebula(renderer, 'space')]])
+  let variant = 'space'
+  let cube = cubes.get(variant)
   const nebulaMaterial = new THREE.ShaderMaterial({
     uniforms: { map: { value: cube.texture } },
     vertexShader: SKY_VERTEX,
@@ -285,7 +473,11 @@ export function createSkybox(renderer) {
   group.add(nebula)
 
   const starMaterial = new THREE.ShaderMaterial({
-    uniforms: { pixelRatio: { value: 1 } },
+    uniforms: {
+      pixelRatio: { value: 1 },
+      occluder: { value: new THREE.Vector4(0, 0, 0, 2) },
+      faintCut: { value: 0 },
+    },
     vertexShader: STARS_VERTEX,
     fragmentShader: STARS_FRAGMENT,
     transparent: true,
@@ -305,18 +497,40 @@ export function createSkybox(renderer) {
   /** After a context loss: the cube map lived only on the GPU, so it came
    *  back black. Bakes it again and points the sky at the new one. */
   function rebake() {
-    cube.dispose()
-    cube = bakeNebula(renderer)
+    for (const baked of cubes.values()) baked.dispose()
+    cubes.clear()
+    cube = bakeNebula(renderer, variant)
+    cubes.set(variant, cube)
     nebulaMaterial.uniforms.map.value = cube.texture
   }
 
+  /**
+   * Which backdrop to show: 'space' (nebula and sky stars), 'sea' (the water
+   * column, no stars), 'orbit' (the planet, sparse stars), 'digital'
+   * (Terminal's data space) or null for none (the clear colour shows).
+   */
+  function setVariant(next) {
+    group.visible = next !== null
+    if (next === null) return
+    variant = next
+    if (!cubes.has(variant)) cubes.set(variant, bakeNebula(renderer, variant))
+    cube = cubes.get(variant)
+    nebulaMaterial.uniforms.map.value = cube.texture
+    // Sea and digital: none. Orbit: only the brighter third or so, and none
+    // through the planet.
+    stars.visible = variant === 'space' || variant === 'orbit'
+    const orbit = variant === 'orbit'
+    starMaterial.uniforms.occluder.value.set(PLANET.x, PLANET.y, PLANET.z, orbit ? PLANET_COS : 2)
+    starMaterial.uniforms.faintCut.value = orbit ? 0.09 : 0
+  }
+
   function dispose() {
-    cube.dispose()
+    for (const baked of cubes.values()) baked.dispose()
     nebula.geometry.dispose()
     nebulaMaterial.dispose()
     stars.geometry.dispose()
     starMaterial.dispose()
   }
 
-  return { object: group, rebake, dispose }
+  return { object: group, rebake, setVariant, dispose }
 }

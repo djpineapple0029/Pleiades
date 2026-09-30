@@ -16,31 +16,79 @@ const FADE_NEAR = 180
 const TOO_CLOSE = 12
 const SEED = 0x64757374
 
+// The looks (`looks.js`) that draw dust. Space: fixed, faint, pinpoint motes.
+// Sea: marine snow — bigger flakes, drawn to their size in the world, sinking
+// slowly and wandering a little from side to side.
+// Lattice: the same motes snapped onto a regular 3D grid and drawn as small
+// + marks, like the coordinate points of a space you're flying through.
+const STYLES = {
+  space: { color: [0.55, 0.62, 0.75], gain: 1, worldSize: 0, softness: 4, fall: 0, sway: 0, lattice: 0 },
+  sea: {
+    color: [0.62, 0.86, 0.82],
+    gain: 2.4,
+    worldSize: 0.9,
+    softness: 2.2,
+    fall: 2.2,
+    sway: 6,
+    lattice: 0,
+  },
+  lattice: { color: [0.3, 1.0, 0.45], gain: 2.4, worldSize: 2.6, softness: 0, fall: 0, sway: 0, lattice: 1 },
+}
+// Points per axis of the lattice inside one CELL; LATTICE^3 of the COUNT
+// motes are placed on it, the rest hidden.
+const LATTICE = 11
+const MAX_PX = 7 // a flake right by the camera stops growing here, in CSS px
+
 const VERTEX = /* glsl */ `
 attribute float shade; // 0..1, per mote
+attribute vec4 grid; // the mote's lattice point, and 1 if it has one
+uniform float lattice; // 1: on the lattice
 uniform float pixelRatio;
+uniform float pxPerUnit; // CSS px per world unit at distance 1
+uniform float worldSize; // 0: always MIN px
+uniform float sink; // world units fallen so far
+uniform float sway; // world units of side-to-side wander
+uniform float time;
 varying float vLight;
 void main() {
+  vec3 p = mix(position, grid.xyz, lattice);
+  p.y -= sink;
+  float phase = shade * 211.0;
+  p.xz += sway * vec2(sin(time * 0.31 + phase), cos(time * 0.23 + phase * 1.7));
   // The mote's copy nearest the camera: each axis wrapped into
   // [-CELL/2, CELL/2) around it.
-  vec3 offset = mod(position - cameraPosition + 0.5 * CELL, CELL) - 0.5 * CELL;
+  vec3 offset = mod(p - cameraPosition + 0.5 * CELL, CELL) - 0.5 * CELL;
   vec4 view = viewMatrix * vec4(cameraPosition + offset, 1.0);
   float dist = length(offset);
   vLight = shade * smoothstep(FADE_FAR, FADE_NEAR, dist) * smoothstep(0.0, TOO_CLOSE, dist);
-  gl_PointSize = max(1.5 * pixelRatio, 2.0);
+  vLight *= mix(1.0, grid.w, lattice);
+  float px = clamp(worldSize * pxPerUnit / dist, 1.5, MAX_PX);
+  gl_PointSize = max(px * pixelRatio, 2.0);
   gl_Position = projectionMatrix * view;
 }
 `
 
 const FRAGMENT = /* glsl */ `
+uniform vec3 color;
+uniform float gain;
+uniform float softness;
+uniform float lattice; // 1: a thin + mark instead of a soft dot
 varying float vLight;
 void main() {
   vec2 p = gl_PointCoord * 2.0 - 1.0;
-  gl_FragColor = vec4(vec3(0.55, 0.62, 0.75) * vLight * exp(-4.0 * dot(p, p)), 1.0);
+  vec2 a = abs(p);
+  float plus = step(max(a.x, a.y), 0.9) * step(min(a.x, a.y), 0.14);
+  float shape = mix(exp(-softness * dot(p, p)), plus, lattice);
+  gl_FragColor = vec4(color * gain * vLight * shape, 1.0);
   #include <colorspace_fragment>
 }
 `
 
+/**
+ * `object` goes in the scene. `setStyle('space' | 'sea' | 'lattice' | null)`
+ * picks the look's dust, null for none; `update(dt)` lets sea dust sink (pass
+ * 0 to hold it still).
+ */
 export function createDust() {
   const rand = seededRandom(SEED)
   const positions = new Float32Array(COUNT * 3)
@@ -49,13 +97,35 @@ export function createDust() {
     for (let a = 0; a < 3; a++) positions[i * 3 + a] = (rand() - 0.5) * CELL
     shades[i] = 0.05 + 0.1 * rand()
   }
+  // Lattice points, evenly through one cell; motes past LATTICE^3 get none.
+  const grid = new Float32Array(COUNT * 4)
+  const step = CELL / LATTICE
+  for (let i = 0; i < Math.min(COUNT, LATTICE ** 3); i++) {
+    grid[i * 4] = ((i % LATTICE) + 0.5) * step - CELL / 2
+    grid[i * 4 + 1] = ((Math.floor(i / LATTICE) % LATTICE) + 0.5) * step - CELL / 2
+    grid[i * 4 + 2] = (Math.floor(i / LATTICE ** 2) + 0.5) * step - CELL / 2
+    grid[i * 4 + 3] = 1
+  }
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('shade', new THREE.BufferAttribute(shades, 1))
+  geometry.setAttribute('grid', new THREE.BufferAttribute(grid, 4))
 
   const material = new THREE.ShaderMaterial({
-    uniforms: { pixelRatio: { value: 1 } },
+    uniforms: {
+      pixelRatio: { value: 1 },
+      pxPerUnit: { value: 1 },
+      worldSize: { value: 0 },
+      sink: { value: 0 },
+      sway: { value: 0 },
+      time: { value: 0 },
+      color: { value: new THREE.Vector3() },
+      gain: { value: 1 },
+      softness: { value: 4 },
+      lattice: { value: 0 },
+    },
     defines: {
+      MAX_PX: MAX_PX.toFixed(1),
       CELL: CELL.toFixed(1),
       FADE_FAR: FADE_FAR.toFixed(1),
       FADE_NEAR: FADE_NEAR.toFixed(1),
@@ -73,8 +143,43 @@ export function createDust() {
   // Positions are wrapped in the shader, so the geometry's bounds mean nothing.
   points.frustumCulled = false
   points.renderOrder = -1
-  points.onBeforeRender = (renderer) => {
+  const bufferSize = new THREE.Vector2()
+  points.onBeforeRender = (renderer, scene, camera) => {
     material.uniforms.pixelRatio.value = renderer.getPixelRatio()
+    // CSS px per unit at distance 1: half the view's CSS height times the
+    // projection's vertical scale.
+    renderer.getSize(bufferSize)
+    material.uniforms.pxPerUnit.value = 0.5 * bufferSize.y * camera.projectionMatrix.elements[5]
   }
-  return points
+
+  let style = STYLES.space
+  function setStyle(name) {
+    points.visible = name !== null
+    if (name === null) return
+    style = STYLES[name]
+    const u = material.uniforms
+    u.color.value.fromArray(style.color)
+    u.gain.value = style.gain
+    u.worldSize.value = style.worldSize
+    u.softness.value = style.softness
+    u.sway.value = style.sway
+    u.lattice.value = style.lattice
+  }
+  setStyle('space')
+
+  function update(dt) {
+    if (!style.fall && !style.sway) return
+    const u = material.uniforms
+    // Wrapped at a whole cell, which the shader's repeat can't tell apart
+    // from no fall at all, so the float never grows.
+    u.sink.value = (u.sink.value + dt * style.fall) % CELL
+    u.time.value = (u.time.value + dt) % 10000
+  }
+
+  function dispose() {
+    geometry.dispose()
+    material.dispose()
+  }
+
+  return { object: points, setStyle, update, dispose }
 }

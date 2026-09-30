@@ -22,6 +22,7 @@ export function defaultSettings() {
 
 function valid(spec, value) {
   if (spec.type === 'boolean') return typeof value === 'boolean'
+  if (spec.type === 'choice') return spec.options.includes(value)
   return typeof value === 'number' && Number.isFinite(value) && value >= spec.min && value <= spec.max
 }
 

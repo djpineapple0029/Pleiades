@@ -479,6 +479,11 @@ function settingRow(spec) {
     const box = Object.assign(document.createElement('input'), { type: 'checkbox', id, checked: value })
     box.addEventListener('change', () => set(box.checked))
     control.append(box)
+  } else if (spec.type === 'choice') {
+    const select = Object.assign(document.createElement('select'), { id })
+    for (const option of spec.options) select.append(new Option(option, option, false, option === value))
+    select.addEventListener('change', () => set(select.value))
+    control.append(select)
   } else if (spec.type === 'number' || spec.type === 'integer') {
     const step = spec.step ?? 1
     const number = Object.assign(document.createElement('input'), {

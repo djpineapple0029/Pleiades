@@ -184,8 +184,31 @@ export function createBloom(renderer, scene, camera, options = {}) {
   }
 
   const clearColor = new THREE.Color()
+  let enabled = true
+
+  /**
+   * Without bloom (the Minimal look): one pass straight onto the canvas with
+   * the stars in it, then the labels. No star target, no chain, no
+   * composite — the cheapest frame there is.
+   */
+  function renderPlain() {
+    const layers = camera.layers.mask
+    const background = scene.background
+    const autoClear = renderer.autoClear
+    renderer.setRenderTarget(null)
+    camera.layers.enable(STAR_LAYER)
+    renderer.render(scene, camera)
+    renderer.autoClear = false
+    camera.layers.set(LABEL_LAYER)
+    scene.background = null
+    renderer.render(scene, camera)
+    camera.layers.mask = layers
+    scene.background = background
+    renderer.autoClear = autoClear
+  }
 
   function render() {
+    if (!enabled) return renderPlain()
     // Following the drawing buffer here rather than a resize event also
     // catches a pixel-ratio change, and costs one vector read per frame.
     renderer.getDrawingBufferSize(size)
@@ -244,5 +267,16 @@ export function createBloom(renderer, scene, camera, options = {}) {
     quad.dispose()
   }
 
-  return { render, dispose }
+  return {
+    render,
+    dispose,
+    /** Bloom on, or off for a plain single pass (see `renderPlain`). */
+    setEnabled(on) {
+      enabled = Boolean(on)
+    },
+    /** Share of star light spread out as glow; see STRENGTH. */
+    setStrength(value) {
+      composite.uniforms.strength.value = value
+    },
+  }
 }

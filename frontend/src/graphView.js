@@ -17,10 +17,16 @@ export const NODE_RADIUS = 5
 // Half-width of a star's billboard, in node radii. The glow and rays have to
 // fade out inside it; anything reaching the edge gets clipped into a square.
 const STAR_EXTENT = 4
-// Star tints, sampled along blue -> white -> warm by a hash of the node id.
-const TINT_BLUE = new THREE.Color().setRGB(0.5, 0.68, 1.0, THREE.SRGBColorSpace)
-const TINT_WHITE = new THREE.Color().setRGB(0.92, 0.94, 1.0, THREE.SRGBColorSpace)
-const TINT_WARM = new THREE.Color().setRGB(1.0, 0.7, 0.42, THREE.SRGBColorSpace)
+// Star tints, sampled along blue -> white -> warm by a hash of the node id. A
+// look (`looks.js`) can swap the three stops with `setTintRamp`.
+const srgb = ([r, g, b]) => new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace)
+const SPACE_RAMP = [
+  [0.5, 0.68, 1.0],
+  [0.92, 0.94, 1.0],
+  [1.0, 0.7, 0.42],
+]
+// Star styles, the STAR_STYLE define: which fragment shader the stars run.
+const STAR_STYLES = { rays: 0, orbs: 1, jelly: 2, terminal: 3 }
 // Seconds per pulse at rate 1. Each node runs at k / PULSE_RATE_STEPS of that,
 // k drawn from PULSE_RATE_MIN..PULSE_RATE_MAX. Rates are quantised on purpose:
 // over PULSE_PERIOD * PULSE_RATE_STEPS seconds every node completes a whole
@@ -104,7 +110,7 @@ function writeStar(id, star, slot) {
  * hue if it has none yet, lifted toward white by that same hash so the stars
  * inside one cluster still vary.
  */
-function targetTint(node, out) {
+function targetTint(node, out, [TINT_BLUE, TINT_WHITE, TINT_WARM]) {
   const g = hash32(node.id, 0x9e3779b9)
   // Skewed toward the blue end, where most of an unclustered map sits.
   const t = ((g >>> 16) / 0x10000) ** 1.4
@@ -132,6 +138,8 @@ varying float vFade;
 varying vec3 vRight;
 varying vec3 vUp;
 varying vec3 vToCamera;
+varying float vDist; // camera to the star's centre, world units
+varying vec2 vDown; // world down in the billboard's own axes (jelly tendrils)
 
 void main() {
   // Squared so a star spends most of its cycle near the trough and swells
@@ -158,6 +166,8 @@ void main() {
   vRight = viewToWorld[0];
   vUp = viewToWorld[1];
   vToCamera = viewToWorld * (-centre.xyz / dist);
+  vDist = dist;
+  vDown = vec2(-vRight.y, -vUp.y);
 
   vOffset = position.xy * STAR_EXTENT;
   centre.xy += vOffset * radius;
@@ -167,6 +177,8 @@ void main() {
 
 const STAR_FRAGMENT = /* glsl */ `
 uniform float pulseBeat;
+uniform vec3 voidColor; // what a dimmed orb fades toward
+uniform float murk; // underwater fog: share of light lost per world unit (0 in space)
 varying vec2 vOffset;
 varying vec3 vTint;
 varying float vGlow;
@@ -176,6 +188,113 @@ varying float vFade;
 varying vec3 vRight;
 varying vec3 vUp;
 varying vec3 vToCamera;
+varying float vDist;
+varying vec2 vDown;
+
+#if STAR_STYLE == 1
+// Minimal: a plain lit ball, no glow, no rays, no pulse. Opaque inside the
+// disc (it writes depth, so lines behind it are hidden), with a one-pixel
+// feathered rim so the edge doesn't stair-step.
+void main() {
+  float r = length(vOffset);
+  float aa = length(fwidth(vOffset));
+  float alpha = 1.0 - smoothstep(1.0 - aa, 1.0, r);
+  if (alpha <= 0.0) discard;
+  vec3 normal = vec3(vOffset, sqrt(max(0.0, 1.0 - r * r)));
+  vec3 light = normalize(vec3(-0.45, 0.6, 0.66));
+  float diffuse = max(dot(normal, light), 0.0);
+  float spec = pow(max(dot(reflect(-light, normal), vec3(0.0, 0.0, 1.0)), 0.0), 28.0);
+  vec3 colour = vTint * (0.28 + 0.8 * diffuse) + 0.22 * spec;
+  colour = mix(voidColor, colour, vGlow);
+  gl_FragColor = vec4(colour, alpha * vFade);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}
+#elif STAR_STYLE == 2
+// Deep Sea: a bioluminescent jelly instead of a star. A soft glowing body, a
+// bright membrane round its bell, and a few tendrils trailing downward (world
+// down, as seen from here) that sway with the pulse clock. No rays, so it is
+// far cheaper than the star. Far ones sink into the murk.
+void main() {
+  float r = length(vOffset);
+  float swell = vPulse;
+  float bell = 0.95 + 0.12 * swell;
+  float membrane = exp(-pow((r - bell) / (0.1 + 0.03 * swell), 2.0));
+  float body = exp(-r * r / (0.28 + 0.1 * swell));
+  float halo = exp(-1.7 * r) * max(0.0, 1.0 - r / (STAR_EXTENT * 0.9));
+
+  float downLen = length(vDown);
+  vec2 down = downLen > 1e-3 ? vDown / downLen : vec2(0.0, -1.0);
+  float along = dot(vOffset, down); // past the bell's centre, downward
+  float across = dot(vOffset, vec2(-down.y, down.x));
+  float reach = STAR_EXTENT * 0.92;
+  float tendrils = 0.0;
+  if (along > 0.4 && along < reach) {
+    float seed = vSeed * 61.0;
+    for (int i = 0; i < 5; i++) {
+      float fi = float(i);
+      float lane = (fi - 2.0) * 0.26;
+      float len = reach * (0.55 + 0.45 * fract(sin(seed + fi * 12.9898) * 43758.5453));
+      float t = (along - 0.4) / len;
+      if (t >= 1.0) continue;
+      float sway = 0.22 * t * sin(along * 2.4 - pulseBeat * 3.14159 + seed + fi * 1.9);
+      float d = (across - lane * (1.0 - 0.35 * t) - sway) / (0.045 + 0.02 * (1.0 - t));
+      tendrils += exp(-d * d) * (1.0 - t) * (1.0 - t);
+    }
+    // Looking straight up or down the tendrils would point at the camera.
+    tendrils *= smoothstep(0.15, 0.5, downLen);
+  }
+
+  vec3 hot = mix(vec3(1.0), vTint, 0.45);
+  vec3 colour = hot * body * (1.1 + 0.9 * swell)
+    + vTint * (membrane * (0.9 + 0.8 * swell) + halo * (0.35 + 0.5 * swell) + tendrils * (0.45 + 0.35 * swell));
+  float sink = mix(0.12, 1.0, exp(-vDist * murk));
+  colour *= sink * vGlow * vFade * (1.0 - smoothstep(STAR_EXTENT * 0.9, STAR_EXTENT, r));
+  gl_FragColor = vec4(colour, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}
+#elif STAR_STYLE == 3
+// Terminal: a block of data in a bracketed frame. Four corner brackets, a
+// solid square core that steps through the pulse in whole levels rather than
+// breathing smoothly, a faint scanlined fill, and eight bits round it that
+// flip on and off as the clock ticks. Square everywhere; nothing is round.
+float boxLine(float d, float at, float aa, float width) {
+  return 1.0 - smoothstep(width, width + 1.5 * aa, abs(d - at));
+}
+void main() {
+  vec2 p = vOffset;
+  vec2 a = abs(p);
+  float aa = length(fwidth(vOffset));
+  float box = max(a.x, a.y);
+  // Brackets: the frame's outline at 1.0, kept only near the corners.
+  float corner = step(0.62, min(a.x, a.y));
+  float bracket = boxLine(box, 1.0, aa, 0.045) * corner;
+  // The core, in four brightness steps.
+  float level = 0.55 + 0.15 * floor(vPulse * 3.99);
+  float core = 1.0 - smoothstep(0.36, 0.36 + 1.5 * aa, box);
+  float fill = (1.0 - smoothstep(0.96, 0.96 + aa, box)) * (0.45 + 0.55 * step(0.5, fract(gl_FragCoord.y * 0.25)));
+  // Eight bits on a square ring at 1.45 (the corners and the middle of each
+  // side), each a small square that is on or off for a tick.
+  const vec2 BITS[8] = vec2[8](vec2(-1.0, 1.0), vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0),
+    vec2(1.0, -1.0), vec2(0.0, -1.0), vec2(-1.0, -1.0), vec2(-1.0, 0.0));
+  float bits = 0.0;
+  float tick = floor(pulseBeat * 3.0);
+  for (int i = 0; i < 8; i++) {
+    vec2 q = abs(p - BITS[i] * 1.45);
+    float on = step(0.45, fract(sin((float(i) + vSeed * 57.0) * 12.9898 + tick * 4.1414) * 43758.5453));
+    bits += on * (1.0 - smoothstep(0.1, 0.1 + 1.5 * aa, max(q.x, q.y)));
+  }
+  float halo = box > 1.0 ? exp(-4.0 * (box - 1.0)) : 0.0;
+
+  vec3 hot = mix(vec3(1.0), vTint, 0.35);
+  vec3 colour = vTint * (bracket * 1.6 + fill * 0.12 + bits * 0.8 + halo * 0.18) + hot * core * level * 1.8;
+  colour *= vGlow * vFade * (1.0 - smoothstep(STAR_EXTENT * 0.9, STAR_EXTENT, length(vOffset)));
+  gl_FragColor = vec4(colour, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}
+#else
 
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -325,10 +444,15 @@ void main() {
   // with G (more rays, each capped thinner by the cell size), so the dense
   // ones are weighted down or they add up to a grey haze around the core.
   float reach = STAR_EXTENT * (0.8 + 0.15 * swell);
-  float light =
-      2.4 * rayFamily(r, u, w, n, pxPerRadius, 4.0, reach, 0.045, 0.5, seed)
-    + 1.3 * rayFamily(r, u, w, n, pxPerRadius, 7.0, reach * 0.85, 0.03, 1.0, seed + 31.0)
+  float light = 2.4 * rayFamily(r, u, w, n, pxPerRadius, 4.0, reach, 0.045, 0.5, seed);
+  #if RAY_FAMILIES > 1
+  light += 1.3 * rayFamily(r, u, w, n, pxPerRadius, 7.0, reach * 0.85, 0.03, 1.0, seed + 31.0)
     + 0.5 * rayFamily(r, u, w, n, pxPerRadius, 11.0, reach * 0.65, 0.02, 1.5, seed + 59.0);
+  #else
+  // Calm stars (Shallow Space): the few long rays alone, shorter and softer,
+  // with no fine ones filling in round the core.
+  light *= 0.55;
+  #endif
 
   // Saturated ball of light, a bright Gaussian skirt that carries it into the
   // rays, then a faint wider glow forced to zero well inside the billboard.
@@ -354,6 +478,7 @@ void main() {
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
+#endif
 `
 
 /**
@@ -366,7 +491,7 @@ void main() {
 function createStarMaterial(uniforms) {
   return new THREE.ShaderMaterial({
     uniforms,
-    defines: { STAR_EXTENT: STAR_EXTENT.toFixed(1) },
+    defines: { STAR_EXTENT: STAR_EXTENT.toFixed(1), STAR_STYLE: STAR_STYLES.rays, RAY_FAMILIES: 3 },
     vertexShader: STAR_VERTEX,
     fragmentShader: STAR_FRAGMENT,
     transparent: true,
@@ -411,7 +536,14 @@ export function createGraphView(graph, scene, renderer) {
   root.name = 'graph'
   scene.add(root)
 
-  const starUniforms = { pulseBeat: { value: 0 } }
+  const starUniforms = {
+    pulseBeat: { value: 0 },
+    voidColor: { value: new THREE.Color(0x05060a) },
+    murk: { value: 0 },
+  }
+  let tintRamp = SPACE_RAMP.map(srgb)
+  let pull = null // a look pulling cluster colours toward one colour
+  let starStyle = 'rays'
   const nodeMaterial = createStarMaterial(starUniforms)
   const matrix = new THREE.Matrix4()
 
@@ -515,7 +647,8 @@ export function createGraphView(graph, scene, renderer) {
     for (const id of slotIds) {
       const node = graph.nodes.get(id)
       if (!node) continue // deleted, not yet synced
-      targetTint(node, tint)
+      targetTint(node, tint, tintRamp)
+      if (pull && node.cluster_color_id) tint.lerp(pull.color, pull.amount)
       let wanted = targetTints.get(id)
       if (!wanted) targetTints.set(id, (wanted = [0, 0, 0]))
       tint.toArray(wanted)
@@ -1046,6 +1179,72 @@ export function createGraphView(graph, scene, renderer) {
       aim = null
       aimKey = null
       applyFocus()
+    },
+    /**
+     * A look's appearance (`looks.js`), all parts optional:
+     * - `stars`: 'rays' (the star), 'orbs' (plain lit balls, opaque, no glow)
+     *   'jelly' (Deep Sea) or 'terminal' (Terminal). Recompiles the one star
+     *   shader.
+     * - `rays`: 3 ray families (the full star) or 1 (calm: the long rays only).
+     * - `tints`: three sRGB triples, the blue/white/warm stops of an
+     *   unclustered star; a clustered one keeps its cluster's hue, pulled
+     *   `clusterPull.amount` of the way toward `clusterPull.color` (sRGB).
+     * - `labelFont`: 'sans' or 'mono' for the names.
+     * - `murk`: light lost per world unit to underwater fog (jelly only).
+     * - `voidColor`: the background, which a dimmed orb fades toward.
+     * - `edges`: `edges.setColors` input; `drift`: motes along links on/off;
+     *   `packets`: those motes as square data packets.
+     */
+    setStyle({
+      stars,
+      rays,
+      tints,
+      clusterPull,
+      labelFont,
+      murk,
+      voidColor,
+      edges: edgeColors,
+      drift,
+      packets,
+    } = {}) {
+      if (labelFont !== undefined) labels.setFont(labelFont)
+      if (rays !== undefined && rays !== nodeMaterial.defines.RAY_FAMILIES) {
+        nodeMaterial.defines.RAY_FAMILIES = rays
+        nodeMaterial.needsUpdate = true
+      }
+      if (stars !== undefined && stars !== starStyle) {
+        starStyle = stars
+        const opaque = stars === 'orbs'
+        nodeMaterial.defines.STAR_STYLE = STAR_STYLES[stars]
+        // Orbs are solid: in the opaque pass, ahead of the lines, writing
+        // depth so a line behind one is hidden by it. Alpha to coverage
+        // smooths their rim on the multisampled canvas.
+        nodeMaterial.transparent = !opaque
+        nodeMaterial.blending = opaque ? THREE.NormalBlending : THREE.AdditiveBlending
+        nodeMaterial.depthWrite = opaque
+        nodeMaterial.alphaToCoverage = opaque
+        nodeMaterial.needsUpdate = true
+      }
+      if (clusterPull !== undefined) {
+        pull = clusterPull ? { color: srgb(clusterPull.color), amount: clusterPull.amount } : null
+      }
+      if (tints || clusterPull !== undefined) {
+        if (tints) tintRamp = tints.map(srgb)
+        refreshTints()
+        for (const id of slotIds) {
+          const wanted = targetTints.get(id)
+          if (wanted) shownTint.set(id, [wanted[0], wanted[1], wanted[2]])
+        }
+        writeTints()
+      }
+      if (murk !== undefined) starUniforms.murk.value = murk
+      if (voidColor !== undefined) starUniforms.voidColor.value.set(voidColor)
+      if (edgeColors) edges.setColors(edgeColors)
+      if (drift !== undefined) edges.setDrift(drift)
+      if (packets !== undefined) edges.setPackets(packets)
+    },
+    get starStyle() {
+      return starStyle
     },
     /** Nebulae behind colour groups on or off (`nebulae.js`). */
     setNebulae(on) {

@@ -296,6 +296,10 @@ def validate_setting(spec: dict, value: object) -> tuple[Any, str | None]:
         if not math.isfinite(value) or not spec["min"] <= value <= spec["max"]:
             return None, f"{where}: must be between {spec['min']} and {spec['max']}"
         return (int(value) if kind == "integer" else float(value)), None
+    if kind == "choice":
+        if isinstance(value, str) and value in spec["options"]:
+            return value, None
+        return None, f"{where}: must be one of {', '.join(spec['options'])}"
     if kind == "networks":
         if isinstance(value, str):
             value = [line for line in value.replace(",", "\n").splitlines() if line.strip()]
@@ -318,6 +322,12 @@ def default_settings() -> dict[str, dict[str, Any]]:
     return out
 
 
+# Settings that have been replaced. A file that still has one is read for what
+# it meant (when the new setting isn't there too) and never reported.
+# visuals.reduced_motion became the Shallow Space look.
+RETIRED = {("visuals", "reduced_motion"): ("look", {True: "shallow-space"})}
+
+
 def validate_values(raw: dict, *, strict: bool) -> tuple[dict, list[str]]:
     """Validate `{"keybinds": {...}, "<section>": {...}}`.
 
@@ -337,6 +347,11 @@ def validate_values(raw: dict, *, strict: bool) -> tuple[dict, list[str]]:
             continue
         for key, value in given.items():
             spec = SETTINGS.get((section, key))
+            if (section, key) in RETIRED:
+                new_key, meaning = RETIRED[(section, key)]
+                if new_key not in given and isinstance(value, bool) and value in meaning:
+                    settings[section][new_key] = meaning[value]
+                continue
             if spec is None:
                 errors.append(f"{section}.{key}: no such setting")
                 continue

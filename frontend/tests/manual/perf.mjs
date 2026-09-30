@@ -38,7 +38,7 @@ const res = await page.evaluate(async () => {
   gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4))
   const bakeMs = performance.now() - t0
   scene.add(sky.object)
-  const dust = createDust()
+  const dust = createDust().object
   scene.add(dust)
   const camera = new THREE.PerspectiveCamera(70, W / H, 0.5, 20000)
   scene.add(camera)

@@ -4,6 +4,7 @@ import { createScene } from './scene.js'
 import { createFlight } from './flight.js'
 import { createSkybox } from './skybox.js'
 import { createDust } from './dust.js'
+import { createLooks, storedLook } from './looks.js'
 import { createDustRivers } from './dustRivers.js'
 import { createSupernova } from './supernova.js'
 import { createBloom } from './bloom.js'
@@ -68,7 +69,7 @@ const { renderer, scene, camera, dispose: disposeScene } = sceneParts
 const skybox = createSkybox(renderer)
 scene.add(skybox.object)
 const dust = createDust()
-scene.add(dust)
+scene.add(dust.object)
 const bloom = createBloom(renderer, scene, camera, { strength: visuals.bloom_strength })
 
 const flight = createFlight(camera, canvas, { keymap, ...settings.flight })
@@ -107,25 +108,38 @@ const overview = createOverview({ camera, canvas, graph, view, controls: flight.
 // Search jumps and Backspace fly the same camera, with flight suspended.
 const flyTo = createFlyTo(camera)
 
-// Minimal, in-memory only: freezes the star-pulse clock read by the frame
-// loop below, and switches the dust rivers and the delete supernova off.
-// The config sets where it starts; the More menu still flips it.
-let reducedMotion = visuals.reduced_motion
+const clock = new THREE.Clock()
+
+// The look (`looks.js`, hold V): which layers draw, how the stars look, and
+// whether anything moves. A look without motion freezes the star-pulse clock
+// read by the frame loop below; the others carry on from where it stopped.
 let frozenElapsed = 0
+const looks = createLooks({
+  renderer,
+  skybox,
+  dust,
+  bloom,
+  view,
+  rivers,
+  supernova,
+  fade: document.getElementById('look-fade'),
+  bloomStrength: visuals.bloom_strength,
+  onChange: (look) => {
+    if (!look.motion) frozenElapsed = clock.elapsedTime
+  },
+})
+looks.set(storedLook() ?? visuals.look, { instant: true, remember: false })
+
 const renderSettings = {
+  /** True in a look that doesn't move: jumps cut instead of flying. */
   get reducedMotion() {
-    return reducedMotion
+    return !looks.current.motion
   },
-  /** The config's "supernova on delete"; reduced motion also stops it. */
+  /** The config's "supernova on delete", in a look that has them. */
   get supernova() {
-    return visuals.supernova
+    return visuals.supernova && looks.current.supernova
   },
-  toggleReducedMotion() {
-    reducedMotion = !reducedMotion
-    if (reducedMotion) frozenElapsed = clock.elapsedTime
-    // Motion off means no dust rivers and no supernova, not frozen ones.
-    if (reducedMotion) supernova.clear()
-  },
+  looks,
 }
 
 const interaction = createInteraction({
@@ -212,8 +226,6 @@ document.addEventListener('pointerlockerror', () => {
   resumePill.hidden = true
 })
 
-const clock = new THREE.Clock()
-
 // `files.js` is the one thing here the viewer bundle never has, so the tab
 // title is owned here, not in interaction.js or viewerInteraction.js.
 let lastTitle = null
@@ -278,12 +290,14 @@ function frame() {
   // the pulse's reading of it: the stars stop breathing, but sizes, tints and
   // label fades still step (a frozen clock for all of it left new labels
   // invisible and edits un-eased with motion off).
-  view.update(clock.elapsedTime, camera, reducedMotion ? frozenElapsed : clock.elapsedTime)
-  // After the view: the rivers read the stars' drawn radii. With motion off
-  // neither is drawn at all (deletes don't start a burst then, either).
-  if (reducedMotion || !visuals.dust_rivers) {
+  const look = looks.current
+  view.update(clock.elapsedTime, camera, look.motion ? clock.elapsedTime : frozenElapsed)
+  dust.update(look.motion ? delta : 0)
+  // After the view: the rivers read the stars' drawn radii. A look without
+  // them draws neither (deletes don't start a burst then, either).
+  if (!look.rivers || !visuals.dust_rivers) {
     rivers.hide()
-    if (!reducedMotion) supernova.update(delta)
+    if (look.supernova) supernova.update(delta)
   } else {
     supernova.update(delta)
     rivers.setDim(view.mapDim) // a search dims the rivers with the edges
@@ -319,8 +333,7 @@ if (import.meta.hot) {
     supernova.dispose()
     bloom.dispose()
     skybox.dispose()
-    dust.geometry.dispose()
-    dust.material.dispose()
+    dust.dispose()
     flight.dispose()
     disposeScene()
   })

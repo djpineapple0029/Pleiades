@@ -66,12 +66,12 @@ kbd { color: var(--amber); }
 
 label { display: grid; gap: 4px; margin: 0 0 12px; color: var(--ink-dim); }
 
-input, textarea, button {
+input, textarea, button, select {
   font: inherit;
   color: var(--ink);
 }
 
-input[type="password"], input[type="number"], input[type="text"], textarea {
+input[type="password"], input[type="number"], input[type="text"], textarea, select {
   width: 100%;
   padding: 7px 9px;
   border: 1px solid var(--line);
@@ -79,7 +79,7 @@ input[type="password"], input[type="number"], input[type="text"], textarea {
   background: var(--field);
 }
 textarea { resize: vertical; min-height: 64px; }
-input:focus-visible, textarea:focus-visible, button:focus-visible {
+input:focus-visible, textarea:focus-visible, button:focus-visible, select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -202,6 +202,7 @@ button.quiet:hover { border-color: var(--ink-dim); }
 .setting .help { color: var(--ink-dim); margin: 2px 0 0; }
 .setting .control { display: flex; align-items: center; gap: 10px; }
 .setting input[type="number"] { width: 110px; }
+.setting select { width: auto; }
 .setting input[type="range"] { width: 160px; accent-color: var(--accent); }
 .setting input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
 .setting textarea { margin-top: 8px; }

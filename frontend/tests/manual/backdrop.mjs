@@ -31,7 +31,7 @@ const frames = await page.evaluate(async () => {
   document.body.append(canvas)
   const { renderer, scene, camera } = createScene(canvas)
   scene.add(createSkybox(renderer).object)
-  scene.add(createDust())
+  scene.add(createDust().object)
   const graph = createGraph()
   const view = createGraphView(graph, scene, renderer)
   const physics = createPhysics(graph, view)
