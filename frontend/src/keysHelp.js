@@ -25,6 +25,7 @@ export const APP_ROWS = [
   { ids: ['search'], text: 'find a star by name; Enter flies there' },
   { ids: ['jump_back'], text: 'fly back to where you were before the last jump' },
   { ids: ['balance'], text: 'balance the layout, press again to stop' },
+  { ids: ['tree_shape'], text: 'hold, point at a layout shape, let go: Cone, Flat, Off; balances with it' },
   { ids: ['overview'], text: 'overview: orbit the whole map, press again to fly' },
   { ids: ['undo'], text: 'undo' },
   { ids: ['redo'], text: 'redo' },

@@ -84,15 +84,21 @@ const LOOK_MENU = (current) =>
 const MAP_TARGET = { kind: 'map', ring: 'top' }
 const MAP_TARGET_MORE = { kind: 'map', ring: 'more' }
 const LOOK_TARGET = { kind: 'look' }
+const SHAPE_TARGET = { kind: 'shape' }
 
 const nodeName = (node) => node.label || node.id
-// The layout shapes the tree_shape key steps through, in order (physics.js
-// `treeShape`). Off is the constellation layout, which has no tree.
+// The layout shapes (physics.js `treeShape`), clockwise from the top. Off is
+// the constellation layout, which has no tree.
 const SHAPES = [
-  { id: 'cone', name: 'cone' },
-  { id: 'disc', name: 'flat' },
-  { id: 'off', name: 'off (no tree)' },
+  { id: 'cone', name: 'cone', label: 'Cone' },
+  { id: 'disc', name: 'flat', label: 'Flat' },
+  { id: 'off', name: 'off (no tree)', label: 'Off' },
 ]
+
+// The shape ring, the current one ticked. Held open by the tree_shape key (T)
+// and picked on its release, like the look ring.
+const SHAPE_MENU = (current) =>
+  SHAPES.map((shape) => ({ key: shape.id, label: shape.id === current ? `${shape.label} ✓` : shape.label }))
 
 function sameTarget(a, b) {
   if (a === b) return true
@@ -154,7 +160,7 @@ export function createInteraction({
   let moveDistance = 0 // camera-to-node distance captured when the move started
   const lastGhostPoint = new THREE.Vector3()
   let menuTarget = null
-  let lookKeyHeld = false // the look ring is open on a held look key
+  let heldKey = null // the action ('look' or 'tree_shape') whose held key has a ring open
   let dwellKey = null // submenu wedge ('more', 'type' or 'back') currently being held
   let dwellSince = 0
   let lastLeftDown = 0
@@ -944,13 +950,16 @@ export function createInteraction({
     menu.open(ring === 'top' ? MAP_MENU : MORE_MENU)
   }
 
-  /** The look ring, held open by the look key and picked on its release. */
-  function openLookMenu() {
-    menuTarget = LOOK_TARGET
-    lookKeyHeld = true
+  /**
+   * A ring held open by a key (look: V, tree_shape: T) and picked on that
+   * key's release rather than the right button's.
+   */
+  function openKeyMenu(action) {
+    menuTarget = action === 'look' ? LOOK_TARGET : SHAPE_TARGET
+    heldKey = action
     mode = 'menu'
     beginModal()
-    menu.open(LOOK_MENU(renderSettings.looks.current))
+    menu.open(action === 'look' ? LOOK_MENU(renderSettings.looks.current) : SHAPE_MENU(physics.treeShape))
   }
 
   function closeMenu() {
@@ -958,7 +967,7 @@ export function createInteraction({
     const target = menuTarget
     menuTarget = null
     endModal()
-    lookKeyHeld = false
+    heldKey = null
     if (!key || !target) return
 
     if (target.kind === 'look') {
@@ -967,6 +976,18 @@ export function createInteraction({
         renderSettings.looks.set(look.id)
         status.info(`look: ${look.name} · hold ${keymap.label('look')} to change`)
       }
+      return
+    }
+
+    // The layout's shape (context/BALANCE2.md §8), balanced with it straight
+    // away — one undo entry, like B. Picking the current shape re-balances.
+    if (target.kind === 'shape') {
+      const shape = SHAPES.find((item) => item.id === key)
+      if (!shape) return
+      physics.treeShape = shape.id
+      if (physics.isRunning) physics.stop()
+      commands.toggleBalance()
+      status.info(`layout: ${shape.name} · hold ${keymap.label('tree_shape')} to change`)
       return
     }
 
@@ -1054,8 +1075,8 @@ export function createInteraction({
   }
 
   function onMouseUp(event) {
-    // A look ring held open by its key closes on that key's release.
-    if (event.button === 2 && mode === 'menu' && !lookKeyHeld) {
+    // A ring held open by a key closes on that key's release instead.
+    if (event.button === 2 && mode === 'menu' && !heldKey) {
       event.preventDefault()
       closeMenu()
     }
@@ -1066,7 +1087,7 @@ export function createInteraction({
   }
 
   function onKeyUp(event) {
-    if (lookKeyHeld && mode === 'menu' && keymap.is(event, 'look')) closeMenu()
+    if (heldKey && mode === 'menu' && keymap.is(event, heldKey)) closeMenu()
   }
 
   function onKeyDown(event) {
@@ -1153,21 +1174,14 @@ export function createInteraction({
 
     if (is('path') && !event.repeat && controls.isLocked && mode === 'idle') pathKey()
 
-    // The layout's shape (context/BALANCE2.md §8): cone (the default) → flat
-    // → off, and balances with it straight away — one undo entry, like B.
-    if (is('tree_shape') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
-      const next = SHAPES[(SHAPES.findIndex((shape) => shape.id === physics.treeShape) + 1) % SHAPES.length]
-      physics.treeShape = next.id
-      if (physics.isRunning) physics.stop()
-      commands.toggleBalance()
-      status.info(`layout: ${next.name} · ${keymap.label('tree_shape')}: next shape`)
-    }
-
-    // Hold to open the look ring, move the mouse onto one, let go.
-    if (is('look') && !event.repeat && (controls.isLocked || overview.isActive) && mode === 'idle') {
-      event.preventDefault()
-      openLookMenu()
-      return
+    // Hold to open the look ring or the layout-shape ring, move the mouse
+    // onto one, let go.
+    for (const action of ['look', 'tree_shape']) {
+      if (is(action) && !event.repeat && (controls.isLocked || overview.isActive) && mode === 'idle') {
+        event.preventDefault()
+        openKeyMenu(action)
+        return
+      }
     }
 
     if (is('heat') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
@@ -1203,7 +1217,7 @@ export function createInteraction({
     if (flyTo.isActive) flyTo.cancel()
     if (mode === 'searching' || mode === 'flying') view.setEmphasis(null)
     menuTarget = null
-    lookKeyHeld = false
+    heldKey = null
     if (mode === 'connecting') cancelConnect()
     else if (mode === 'moving') cancelMove() // never commit on lock loss
     endModal()
