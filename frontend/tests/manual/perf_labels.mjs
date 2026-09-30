@@ -33,7 +33,7 @@ const res = await page.evaluate(async () => {
   const gl = renderer.getContext()
   const scene = new THREE.Scene()
   scene.add(createSkybox(renderer).object)
-  scene.add(createDust())
+  scene.add(createDust().object)
   const camera = new THREE.PerspectiveCamera(70, 1280 / 800, 0.5, 20000)
   scene.add(camera)
   const graph = createGraph()

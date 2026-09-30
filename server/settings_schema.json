@@ -15,6 +15,7 @@
     { "id": "search", "group": "View", "label": "Find a star by name", "default": ["/", "Mod+F"], "contexts": ["flight", "free", "overview"], "scope": ["app"] },
     { "id": "jump_back", "group": "View", "label": "Fly back to before the last jump", "default": ["Backspace"], "contexts": ["flight"], "scope": ["app"] },
     { "id": "notes_sidebar", "group": "View", "label": "Notes sidebar on/off", "default": ["N"], "contexts": ["flight", "overview"], "scope": ["app"] },
+    { "id": "look", "group": "View", "label": "Hold, move the mouse onto a look, let go: Deep Space, Deep Sea, Minimal, Shallow Space", "default": ["V"], "contexts": ["flight", "overview"], "scope": ["app"] },
     { "id": "heat", "group": "View", "label": "Connection heat colours on/off", "default": ["H"], "contexts": ["flight", "overview"], "scope": ["app", "viewer"] },
     { "id": "orbit", "group": "View", "label": "Lay the map out round the targeted star (Ctrl+Z goes back)", "default": ["O"], "contexts": ["flight"], "scope": ["app"] },
     { "id": "path", "group": "View", "label": "Show the path between two stars: press on one, then on the other", "default": ["P"], "contexts": ["flight"], "scope": ["app"] },
@@ -37,7 +38,7 @@
     { "section": "flight", "key": "move_speed", "label": "Base flight speed", "type": "number", "min": 10, "max": 1000, "step": 5, "default": 90, "scope": "client", "help": "World units per second at 1.00x, before the scroll wheel multiplier." },
     { "section": "flight", "key": "max_speed_multiplier", "label": "Top scroll speed", "type": "number", "min": 1, "max": 50, "step": 0.5, "default": 10, "scope": "client", "help": "The highest multiplier the scroll wheel can reach." },
 
-    { "section": "visuals", "key": "reduced_motion", "label": "Start with reduced motion", "type": "boolean", "default": false, "scope": "client", "help": "Stars stop pulsing, no dust rivers or supernovas, and search jumps cut instead of flying. Still switchable from the More menu." },
+    { "section": "visuals", "key": "look", "label": "Starting look", "type": "choice", "options": ["deep-space", "deep-sea", "minimal", "shallow-space"], "default": "deep-space", "scope": "client", "help": "Deep Space: everything moving. Shallow Space: the same stars and sky, standing still. Deep Sea: the ocean. Minimal: plain orbs, nothing animated, fastest. A browser that has picked one with V keeps its own choice." },
     { "section": "visuals", "key": "dust_rivers", "label": "Dust rivers", "type": "boolean", "default": true, "scope": "client", "help": "Dust that orbits stars and flows along links." },
     { "section": "visuals", "key": "supernova", "label": "Supernova on delete", "type": "boolean", "default": true, "scope": "client", "help": "A flash and shockwave when a star is deleted." },
     { "section": "visuals", "key": "bloom_strength", "label": "Bloom strength", "type": "number", "min": 0, "max": 1, "step": 0.05, "default": 0.3, "scope": "client", "help": "Share of star light spread out as glow." },

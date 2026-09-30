@@ -5,6 +5,30 @@
   --void: #05060a;
 }
 
+/* The looks (looks.js) set data-look on <html>; the page ground matches the
+   scene's clear colour, which only shows before the first frame. */
+:root[data-look='deep-sea'] {
+  --void: #000306;
+}
+:root[data-look='minimal'] {
+  --void: #0d1016;
+}
+
+#look-fade {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+  /* Over the canvas only: the HUD and panels come later in the page and
+     stay readable through a switch. */
+  z-index: 0;
+}
+#look-fade.on {
+  opacity: 1;
+}
+
 * {
   box-sizing: border-box;
 }

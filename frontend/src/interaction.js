@@ -8,6 +8,7 @@ import { focusSetOf } from './heat.js'
 import { orbitFocus, shortestPath } from './paths.js'
 import { FLY_DURATION } from './flyTo.js'
 import { createKeymap } from './keymap.js'
+import { LOOKS } from './looks.js'
 
 const SPAWN_DISTANCE = 90 // world units ahead of the camera for a new node
 const DOUBLE_CLICK_MS = 320
@@ -66,18 +67,25 @@ const MAP_MENU = [
   { key: 'more', label: 'More…' },
 ]
 
-// "Motion: on/off" takes the top wedge, which has the most horizontal room;
+// "Look…" takes the top wedge, which has the most horizontal room;
 // "Overview" is short enough to sit comfortably in the tighter side slot.
-const MORE_MENU = (reducedMotion) => [
-  { key: 'reduced-motion', label: reducedMotion ? 'Motion: off' : 'Motion: on' },
+const MORE_MENU = [
+  { key: 'look', label: 'Look…' },
   { key: 'overview', label: 'Overview' },
   { key: 'back', label: 'Back' },
 ]
+
+// The looks (`looks.js`), clockwise from the top, the current one ticked.
+// Held open by the look key (V) and picked on its release, or reached from
+// More… with the right button like any other ring.
+const LOOK_MENU = (current) =>
+  LOOKS.map((look) => ({ key: look.id, label: look.id === current?.id ? `${look.name} ✓` : look.name }))
 
 // Sentinels for `menuTarget` when the menu isn't over a node or edge. Distinct
 // object identities, never compared to `null` (which means "menu closed").
 const MAP_TARGET = { kind: 'map', ring: 'top' }
 const MAP_TARGET_MORE = { kind: 'map', ring: 'more' }
+const LOOK_TARGET = { kind: 'look' }
 
 const nodeName = (node) => node.label || node.id
 // The layout shapes the tree_shape key steps through, in order (physics.js
@@ -148,6 +156,7 @@ export function createInteraction({
   let moveDistance = 0 // camera-to-node distance captured when the move started
   const lastGhostPoint = new THREE.Vector3()
   let menuTarget = null
+  let lookKeyHeld = false // the look ring is open on a held look key
   let dwellKey = null // submenu wedge ('more', 'type' or 'back') currently being held
   let dwellSince = 0
   let lastLeftDown = 0
@@ -934,7 +943,16 @@ export function createInteraction({
     menuTarget = ring === 'top' ? MAP_TARGET : MAP_TARGET_MORE
     mode = 'menu'
     beginModal() // idempotent if already modal from the ring we're leaving — do not guard it
-    menu.open(ring === 'top' ? MAP_MENU : MORE_MENU(renderSettings.reducedMotion))
+    menu.open(ring === 'top' ? MAP_MENU : MORE_MENU)
+  }
+
+  /** The look ring. `byKey`: held open by the look key, picked on its release. */
+  function openLookMenu({ byKey = false } = {}) {
+    menuTarget = LOOK_TARGET
+    lookKeyHeld = byKey
+    mode = 'menu'
+    beginModal()
+    menu.open(LOOK_MENU(renderSettings.looks.current))
   }
 
   function closeMenu() {
@@ -942,7 +960,17 @@ export function createInteraction({
     const target = menuTarget
     menuTarget = null
     endModal()
+    lookKeyHeld = false
     if (!key || !target) return
+
+    if (target.kind === 'look') {
+      const look = LOOKS.find((item) => item.id === key)
+      if (look && look !== renderSettings.looks.current) {
+        renderSettings.looks.set(look.id)
+        status.info(`look: ${look.name} · hold ${keymap.label('look')} to change`)
+      }
+      return
+    }
 
     if (target.kind === 'map') {
       if (target.ring === 'top') {
@@ -956,7 +984,7 @@ export function createInteraction({
       }
       if (key === 'back') return openMapMenu('top')
       if (key === 'overview') overview.toggle()
-      else if (key === 'reduced-motion') renderSettings.toggleReducedMotion()
+      else if (key === 'look') openLookMenu()
       return
     }
 
@@ -1029,7 +1057,8 @@ export function createInteraction({
   }
 
   function onMouseUp(event) {
-    if (event.button === 2 && mode === 'menu') {
+    // A look ring held open by its key closes on that key's release.
+    if (event.button === 2 && mode === 'menu' && !lookKeyHeld) {
       event.preventDefault()
       closeMenu()
     }
@@ -1037,6 +1066,10 @@ export function createInteraction({
 
   function onMouseMove(event) {
     if (mode === 'menu') menu.track(event.movementX, event.movementY)
+  }
+
+  function onKeyUp(event) {
+    if (lookKeyHeld && mode === 'menu' && keymap.is(event, 'look')) closeMenu()
   }
 
   function onKeyDown(event) {
@@ -1133,6 +1166,13 @@ export function createInteraction({
       status.info(`layout: ${next.name} · ${keymap.label('tree_shape')}: next shape`)
     }
 
+    // Hold to open the look ring, move the mouse onto one, let go.
+    if (is('look') && !event.repeat && (controls.isLocked || overview.isActive) && mode === 'idle') {
+      event.preventDefault()
+      openLookMenu({ byKey: true })
+      return
+    }
+
     if (is('heat') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
       view.setHeat(!view.heatOn)
       status.info(`connection heat ${view.heatOn ? 'on' : 'off'}`)
@@ -1166,6 +1206,7 @@ export function createInteraction({
     if (flyTo.isActive) flyTo.cancel()
     if (mode === 'searching' || mode === 'flying') view.setEmphasis(null)
     menuTarget = null
+    lookKeyHeld = false
     if (mode === 'connecting') cancelConnect()
     else if (mode === 'moving') cancelMove() // never commit on lock loss
     endModal()
@@ -1176,6 +1217,7 @@ export function createInteraction({
   window.addEventListener('mouseup', onMouseUp)
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('keyup', onKeyUp)
   window.addEventListener('contextmenu', onContextMenu)
   controls.addEventListener('unlock', onUnlock)
 
@@ -1184,6 +1226,7 @@ export function createInteraction({
     window.removeEventListener('mouseup', onMouseUp)
     window.removeEventListener('mousemove', onMouseMove)
     window.removeEventListener('keydown', onKeyDown)
+    window.removeEventListener('keyup', onKeyUp)
     window.removeEventListener('contextmenu', onContextMenu)
     controls.removeEventListener('unlock', onUnlock)
   }

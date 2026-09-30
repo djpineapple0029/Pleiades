@@ -18,6 +18,7 @@ import { createScene } from './scene.js'
 import { createFlight } from './flight.js'
 import { createSkybox } from './skybox.js'
 import { createDust } from './dust.js'
+import { createLooks, storedLook } from './looks.js'
 import { createDustRivers } from './dustRivers.js'
 import { createBloom } from './bloom.js'
 import { createGraph } from './graph.js'
@@ -86,7 +87,8 @@ try {
 const { renderer, scene, camera } = sceneParts
 const skybox = createSkybox(renderer)
 scene.add(skybox.object)
-scene.add(createDust())
+const dust = createDust()
+scene.add(dust.object)
 const bloom = createBloom(renderer, scene, camera, { strength: settings.visuals.bloom_strength })
 
 const flight = createFlight(camera, canvas, { keymap, ...settings.flight })
@@ -97,6 +99,18 @@ const view = createGraphView(graph, scene, renderer)
 view.setHeat(settings.visuals.connection_heat, { instant: true })
 const rivers = createDustRivers(graph, scene, { radiusOf: view.radiusOf })
 const overview = createOverview({ camera, canvas, graph, view, controls: flight.controls })
+// The look (`looks.js`): this browser's own choice if it made one in the app
+// at this address, else the exporting server's starting look. No picker here.
+const looks = createLooks({
+  renderer,
+  skybox,
+  dust,
+  bloom,
+  view,
+  rivers,
+  bloomStrength: settings.visuals.bloom_strength,
+})
+looks.set(storedLook() ?? settings.visuals.look, { instant: true, remember: false })
 
 const interaction = createViewerInteraction({
   camera,
@@ -210,8 +224,11 @@ function frame() {
   // pointer lock takes a moment to actually go.
   overview.update(delta)
   interaction.update()
-  view.update(clock.elapsedTime, camera) // getDelta above has just advanced it
-  if (settings.visuals.dust_rivers) rivers.update(delta)
+  // getDelta above has just advanced it. A still look holds the pulse at 0.
+  const look = looks.current
+  view.update(clock.elapsedTime, camera, look.motion ? clock.elapsedTime : 0)
+  dust.update(look.motion ? delta : 0)
+  if (look.rivers && settings.visuals.dust_rivers) rivers.update(delta)
   else rivers.hide()
   bloom.render() // the whole frame, stars and bloom included
 }

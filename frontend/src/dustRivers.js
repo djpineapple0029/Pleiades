@@ -377,8 +377,8 @@ export function createDustRivers(graph, parent, { radiusOf }) {
     time: { value: 0 },
     shockAt: { value: Array.from({ length: river.MAX_SHOCKS }, () => new THREE.Vector4()) },
     shockBirth: { value: new Array(river.MAX_SHOCKS).fill(0) },
-    warm: { value: WARM },
-    cool: { value: COOL },
+    warm: { value: WARM.clone() },
+    cool: { value: COOL.clone() },
     dim: { value: 1 },
   }
   let tablesVersion = flow.tablesVersion
@@ -627,11 +627,18 @@ export function createDustRivers(graph, parent, { radiusOf }) {
     shared.dim.value = level
   }
 
+  /** A look's grain colours (`looks.js`), sRGB triples: by a star, and out in the river. */
+  function setColors(warm, cool) {
+    shared.warm.value.setRGB(...warm, THREE.SRGBColorSpace)
+    shared.cool.value.setRGB(...cool, THREE.SRGBColorSpace)
+  }
+
   return {
     update,
     hide,
     restore,
     setDim,
+    setColors,
     dispose,
     object: points,
     streaks,

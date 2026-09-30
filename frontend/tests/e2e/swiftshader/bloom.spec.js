@@ -42,7 +42,7 @@ test('bloom pipeline and sky: layers, composite, roundness, orientation', async 
     const sky = createSkybox(renderer)
     const bakeMs = performance.now() - t0
     scene.add(sky.object)
-    const dust = createDust()
+    const dust = createDust().object
     scene.add(dust)
 
     const graph = createGraph()

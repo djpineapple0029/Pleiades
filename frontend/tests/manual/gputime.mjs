@@ -83,7 +83,7 @@ const res = await page.evaluate(async () => {
     const mod = await import(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })))
     const scene = new THREE.Scene()
     scene.add(createSkybox(renderer).object)
-    scene.add(createDust())
+    scene.add(createDust().object)
     const camera = new THREE.PerspectiveCamera(70, W / H, 0.5, 20000)
     scene.add(camera)
     const graph = createGraph()

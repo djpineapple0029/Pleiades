@@ -50,7 +50,7 @@ for (const shape of ['disc', 'cone', 'off']) {
       const canvas = document.getElementById('c')
       const { renderer, scene, camera } = createScene(canvas)
       scene.add(createSkybox(renderer).object)
-      scene.add(createDust())
+      scene.add(createDust().object)
       const bloom = createBloom(renderer, scene, camera)
       const view = createGraphView(graph, scene, renderer)
       const physics = createPhysics(graph, view, { layout: { tree: treeShape } })

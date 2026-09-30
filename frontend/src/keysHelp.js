@@ -18,6 +18,7 @@ export const APP_ROWS = [
   { ids: ['edit_notes'], text: "edit the targeted node's notes" },
   { ids: ['notes_sidebar'], text: 'notes sidebar on/off' },
   { ids: ['heat'], text: 'connection heat colours on/off' },
+  { ids: ['look'], text: 'hold, point at a look, let go: Deep Space, Deep Sea, Minimal, Shallow Space' },
   { ids: ['search'], text: 'find a star by name; Enter flies there' },
   { ids: ['jump_back'], text: 'fly back to where you were before the last jump' },
   { ids: ['balance'], text: 'balance the layout, press again to stop' },

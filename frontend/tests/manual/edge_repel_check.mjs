@@ -36,7 +36,7 @@ const out = await page.evaluate(async () => {
   document.body.append(canvas)
   const { renderer, scene, camera } = createScene(canvas)
   scene.add(createSkybox(renderer).object)
-  scene.add(createDust())
+  scene.add(createDust().object)
   const pipeline = createBloom(renderer, scene, camera)
 
   let s = 42

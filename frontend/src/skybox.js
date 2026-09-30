@@ -13,6 +13,8 @@ const BAND_NORMAL = new THREE.Vector3(0.35, 0.85, 0.4).normalize()
 // Linear brightness of the nebula at full density. Its brightest clouds stay
 // well under the edges' colour, so the map always reads over the sky.
 const NEBULA_GAIN = 0.026
+// Deep Sea's shafts and caustics, over its own water colour.
+const SEA_GAIN = 0.35
 const STAR_COUNT = 6500
 // Share of the sky stars that crowd toward the band, and how tightly (radians).
 const BAND_SHARE = 0.45
@@ -130,6 +132,60 @@ void main() {
 }
 `
 
+// Deep Sea (`looks.js`): a water column instead of a sky. Lit from the surface
+// straight up, dark toward the abyss below, with shafts of light slanting
+// down from above and a caustic shimmer overhead. Like the nebula, it is a
+// function of direction alone, baked once.
+const SEA_FRAGMENT = /* glsl */ `
+uniform vec3 ground;
+varying vec3 vDirection;
+${SIMPLEX}
+
+float fbm(vec3 p) {
+  float sum = 0.0;
+  float amp = 0.5;
+  for (int i = 0; i < 4; i++) {
+    sum += amp * snoise(p);
+    p = p * 2.03 + vec3(19.1, 7.3, 3.7);
+    amp *= 0.5;
+  }
+  return sum;
+}
+
+void main() {
+  vec3 d = normalize(vDirection);
+  float up = d.y;
+  // The column: abyss, open water at the horizon, lighter toward the surface.
+  vec3 abyss = vec3(0.0004, 0.0016, 0.0035);
+  vec3 open = vec3(0.0025, 0.022, 0.045);
+  vec3 surface = vec3(0.02, 0.16, 0.2);
+  vec3 water = mix(abyss, open, smoothstep(-0.75, 0.05, up));
+  water = mix(water, surface, pow(smoothstep(0.0, 1.0, up), 1.6));
+
+  // Murky clouds of silt so the water isn't a flat gradient: looking around
+  // still shows which way you face.
+  float silt = fbm(d * 2.2 + 7.0) * 0.5 + 0.5;
+  water *= 0.75 + 0.5 * silt;
+
+  // Light shafts: bright wedges by azimuth, converging on the zenith, fading
+  // out as they go down into the dark.
+  vec2 ring = normalize(d.xz + 1e-5);
+  float shaft = snoise(vec3(ring * 5.0, 0.7)) * 0.5 + 0.5;
+  shaft = pow(shaft, 4.0) + 0.5 * pow(snoise(vec3(ring * 11.0, 3.1)) * 0.5 + 0.5, 6.0);
+  float reach = smoothstep(-0.15, 0.55, up) * (1.0 - smoothstep(0.85, 1.0, up));
+  vec3 shafts = vec3(0.05, 0.22, 0.24) * shaft * reach * (0.6 + 0.4 * silt);
+
+  // Caustics: the surface's ripples seen from below, a net of bright lines.
+  vec2 plane = d.xz / max(up, 0.05);
+  float n = 1.0 - abs(snoise(vec3(plane * 3.0, 1.7)));
+  float n2 = 1.0 - abs(snoise(vec3(plane * 6.1, 9.2)));
+  float caustic = pow(n, 8.0) + 0.6 * pow(n2, 10.0);
+  vec3 caustics = vec3(0.12, 0.34, 0.33) * caustic * smoothstep(0.55, 0.95, up);
+
+  gl_FragColor = vec4(ground + water + (shafts + caustics) * SEA_GAIN, 1.0);
+}
+`
+
 // A unit box turned with the view but never moved by it, pinned to the far
 // plane: the sky is at infinity, so flying never gets any closer to it.
 const SKY_VERTEX = /* glsl */ `
@@ -185,8 +241,11 @@ void main() {
 }
 `
 
-/** The nebula, rendered once into a cube map by a camera at the centre of a box. */
-function bakeNebula(renderer) {
+/**
+ * The backdrop for `variant` ('space': the nebula, 'sea': the water column),
+ * rendered once into a cube map by a camera at the centre of a box.
+ */
+function bakeNebula(renderer, variant = 'space') {
   const target = new THREE.WebGLCubeRenderTarget(BAKE_SIZE, {
     // Stored sRGB-encoded: in linear 8-bit the dark end, where all of the
     // nebula lives, would get only a handful of levels.
@@ -198,11 +257,11 @@ function bakeNebula(renderer) {
   const material = new THREE.ShaderMaterial({
     uniforms: {
       bandNormal: { value: BAND_NORMAL },
-      ground: { value: new THREE.Color(VOID_COLOR) },
+      ground: { value: new THREE.Color(variant === 'sea' ? 0x000000 : VOID_COLOR) },
     },
-    defines: { NEBULA_GAIN: NEBULA_GAIN.toFixed(3) },
+    defines: { NEBULA_GAIN: NEBULA_GAIN.toFixed(3), SEA_GAIN: SEA_GAIN.toFixed(3) },
     vertexShader: BAKE_VERTEX,
-    fragmentShader: BAKE_FRAGMENT,
+    fragmentShader: variant === 'sea' ? SEA_FRAGMENT : BAKE_FRAGMENT,
     side: THREE.BackSide,
   })
   const box = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), material)
@@ -268,7 +327,11 @@ export function createSkybox(renderer) {
   const group = new THREE.Group()
   group.name = 'skybox'
 
-  let cube = bakeNebula(renderer)
+  // Baked on first use and kept: switching looks back and forth bakes each
+  // backdrop once. Deep Sea's is never baked for a session that stays in space.
+  const cubes = new Map([['space', bakeNebula(renderer, 'space')]])
+  let variant = 'space'
+  let cube = cubes.get(variant)
   const nebulaMaterial = new THREE.ShaderMaterial({
     uniforms: { map: { value: cube.texture } },
     vertexShader: SKY_VERTEX,
@@ -305,18 +368,34 @@ export function createSkybox(renderer) {
   /** After a context loss: the cube map lived only on the GPU, so it came
    *  back black. Bakes it again and points the sky at the new one. */
   function rebake() {
-    cube.dispose()
-    cube = bakeNebula(renderer)
+    for (const baked of cubes.values()) baked.dispose()
+    cubes.clear()
+    cube = bakeNebula(renderer, variant)
+    cubes.set(variant, cube)
     nebulaMaterial.uniforms.map.value = cube.texture
   }
 
+  /**
+   * Which backdrop to show: 'space' (nebula and sky stars), 'sea' (the water
+   * column, no stars) or null for none (the clear colour shows).
+   */
+  function setVariant(next) {
+    group.visible = next !== null
+    if (next === null) return
+    variant = next
+    if (!cubes.has(variant)) cubes.set(variant, bakeNebula(renderer, variant))
+    cube = cubes.get(variant)
+    nebulaMaterial.uniforms.map.value = cube.texture
+    stars.visible = variant === 'space'
+  }
+
   function dispose() {
-    cube.dispose()
+    for (const baked of cubes.values()) baked.dispose()
     nebula.geometry.dispose()
     nebulaMaterial.dispose()
     stars.geometry.dispose()
     starMaterial.dispose()
   }
 
-  return { object: group, rebake, dispose }
+  return { object: group, rebake, setVariant, dispose }
 }

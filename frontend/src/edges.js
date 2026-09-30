@@ -370,7 +370,8 @@ export function createEdges(graph, parent, renderer, radiusOf) {
   lineMaterial.uniforms.hoverColor = hoverColor
   // Shared with the motes, like `hovered`.
   const heatUniform = { value: 1 }
-  const heatRamp = { value: HEAT_RAMP }
+  // Copies, so a look (`setColors`) retints this map's ramp only.
+  const heatRamp = { value: HEAT_RAMP.map((color) => color.clone()) }
   lineMaterial.uniforms.heat = heatUniform
   lineMaterial.uniforms.heatRamp = heatRamp
   lineMaterial.uniforms.fogRange = { value: new THREE.Vector2(FOG_NEAR_MIN, FOG_NEAR_MIN + FOG_SPAN_MIN) }
@@ -403,7 +404,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
       resolution: lineMaterial.uniforms.resolution, // same object, kept current by the lines
       pixelRatio: { value: 1 },
       hovered,
-      moteColor: { value: MOTE_COLOR },
+      moteColor: { value: MOTE_COLOR.clone() },
       hoverColor,
       dim: { value: 1 },
       heat: heatUniform,
@@ -458,6 +459,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
   parent.add(laneLines)
 
   let order = [] // index -> edge id
+  let driftOn = true
   let fromIds = []
   let toIds = []
   let positions = new Float32Array(0) // per edge: from xyz, to xyz
@@ -634,7 +636,8 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     writeHeat()
     snapFocus()
 
-    lines.visible = drift.visible = count > 0
+    lines.visible = count > 0
+    drift.visible = count > 0 && driftOn
   }
 
   /**
@@ -769,7 +772,7 @@ export function createEdges(graph, parent, renderer, radiusOf) {
   /** Advances the drift by `dt` seconds, and eases heat and focus. */
   function update(dt) {
     if (lookEasing && dt > 0) lookEasing = easeLook(dt)
-    if (order.length === 0 || dt <= 0) return
+    if (!driftOn || order.length === 0 || dt <= 0) return
     for (let i = 0; i < order.length; i++) {
       const o = i * 6
       const length = Math.hypot(
@@ -828,6 +831,27 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     driftMaterial.uniforms.dim.value = level
   }
 
+  /**
+   * A look's colours (`looks.js`): `edge` for a plain line (and the heat
+   * ramp's cool end), `mote` for the drift, `heat` the ramp's other three
+   * stops. Hex numbers; anything left out keeps its colour.
+   */
+  function setColors({ edge, mote, heat } = {}) {
+    if (edge !== undefined) {
+      lineMaterial.color.set(edge)
+      laneMaterial.color.set(edge)
+      heatRamp.value[0].set(edge)
+    }
+    if (mote !== undefined) driftMaterial.uniforms.moteColor.value.set(mote)
+    heat?.forEach((hex, i) => heatRamp.value[i + 1].set(hex))
+  }
+
+  /** Drift motes on or off. Off, they are hidden and their phases stand still. */
+  function setDrift(on) {
+    driftOn = Boolean(on)
+    drift.visible = order.length > 0 && driftOn
+  }
+
   /** Connection heat colours on or off, easing unless `instant`. */
   function setHeat(on, { instant = false } = {}) {
     heatOn = Boolean(on)
@@ -854,6 +878,8 @@ export function createEdges(graph, parent, renderer, radiusOf) {
     setHovered,
     setDim,
     setHeat,
+    setColors,
+    setDrift,
     setFocus,
     setLanes,
     raycast,

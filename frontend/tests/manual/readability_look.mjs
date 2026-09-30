@@ -50,7 +50,7 @@ await page.evaluate(async (input) => {
   const canvas = document.getElementById('c')
   const { renderer, scene, camera } = createScene(canvas)
   scene.add(createSkybox(renderer).object)
-  scene.add(createDust())
+  scene.add(createDust().object)
   const bloom = createBloom(renderer, scene, camera)
   const graph = createGraph()
   graph.load(input)
