@@ -1,6 +1,6 @@
 // The account shell's list wording (src/shell/format.js).
 import { describe, it, expect } from 'vitest'
-import { formatSize, mapSummary, relativeTime } from '../../src/shell/format.js'
+import { dateTime, formatSize, mapSummary, relativeTime, versionSummary } from '../../src/shell/format.js'
 
 describe('shell format', () => {
   const now = 1_800_000_000
@@ -29,5 +29,18 @@ describe('shell format', () => {
     expect(mapSummary({ node_count: 12, updated_at: now - 120, size_bytes: 2048 }, now)).toBe(
       '12 stars · 2 min ago · 2.0 KB',
     )
+  })
+
+  it('versions', () => {
+    const version = { node_count: 1, size_bytes: 2048, reason: 'rolling' }
+    expect(versionSummary(version)).toBe('1 star · 2.0 KB')
+    expect(versionSummary({ ...version, reason: 'before-restore' })).toBe(
+      '1 star · 2.0 KB · kept before a restore',
+    )
+    expect(
+      versionSummary({ ...version, reason: 'from-a-later-server' }),
+      'an unknown reason says nothing',
+    ).toBe('1 star · 2.0 KB')
+    expect(dateTime(now)).toMatch(/\d/)
   })
 })

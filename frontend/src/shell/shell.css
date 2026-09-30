@@ -322,3 +322,69 @@ button.small {
 .map .rename {
   width: 100%;
 }
+
+/* A map's history, opened under its row. */
+.map .history {
+  flex-basis: 100%;
+  margin: 2px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--row);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--ink-dim);
+}
+
+.history p {
+  margin: 0;
+}
+
+.history .done {
+  margin-bottom: 6px;
+  color: var(--accent);
+}
+
+.history .note {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.versions {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 16px;
+  padding: 6px 0;
+  border-top: 1px solid var(--row);
+}
+
+.version .info {
+  display: grid;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.version .when {
+  color: var(--ink);
+}
+
+.version .meta {
+  font-size: 12px;
+}
+
+.version .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.version .confirm {
+  color: var(--amber);
+}

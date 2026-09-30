@@ -407,6 +407,26 @@ describe('serverMap backup in this browser', () => {
     await answer({ ok: false, status: 409, error: 'You have the most maps this server allows (1).' })
     expect(await full).toMatchObject({ ok: false, status: 409 })
   })
+
+  it('keepInHistory sends the edits here, based on the revision they started from', async () => {
+    const { map, calls, edit, advance, answer } = setup({ revision: 3 })
+    expect(await map.keepInHistory()).toEqual({ ok: true, unchanged: true })
+    expect(calls).toHaveLength(0)
+
+    edit()
+    advance(DEBOUNCE_MS)
+    await answer({ ok: false, status: 409, data: { revision: 4 }, error: 'changed' })
+    const kept = map.keepInHistory()
+    expect(calls[1]).toMatchObject({ path: 'api/maps/abcdefghijklmnop/snapshots', method: 'POST' })
+    expect(calls[1].body.revision).toBe(3)
+    expect(calls[1].body.payload.nodes).toHaveLength(1)
+    await answer({ ok: true, status: 201, data: { id: 7 } })
+    expect(await kept).toEqual({ ok: true })
+
+    const failed = map.keepInHistory()
+    await answer({ ok: false, status: 0, error: 'could not reach the server' })
+    expect(await failed).toMatchObject({ ok: false, status: 0 })
+  })
 })
 
 describe('loadServerMap', () => {

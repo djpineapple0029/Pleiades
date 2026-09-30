@@ -230,6 +230,20 @@ export function createServerMap({
       if (typeof result.data?.id !== 'string') return { ok: false, status: 0, error: 'unexpected answer' }
       return { ok: true, id: result.data.id, name: result.data.name ?? copyName }
     },
+    /**
+     * Keeps this map as it stands here in its history on the server, without
+     * making it the current version (the conflict panel's "load theirs", before
+     * it drops these edits). `{ ok: true }` at once when there's nothing
+     * unsaved to keep, else `{ ok: true }` or the failure.
+     */
+    async keepInHistory() {
+      if (!isDirty()) return { ok: true, unchanged: true }
+      const result = await request(`api/maps/${encodeURIComponent(id)}/snapshots`, {
+        method: 'POST',
+        body: { payload: toPayload(), revision },
+      })
+      return result.ok ? { ok: true } : result
+    },
     /** The graph now holds the edits from this browser's backup: remove it once they're saved. */
     adoptBackup() {
       backupToken = null

@@ -8,7 +8,7 @@
 import './shell.css'
 import { BASE, appUrl, request } from '../api.js'
 import { createBackupStore } from '../localBackup.js'
-import { mapSummary } from './format.js'
+import { dateTime, mapSummary, relativeTime, versionSummary } from './format.js'
 
 const $ = (id) => document.getElementById(id)
 const backups = createBackupStore()
@@ -143,8 +143,13 @@ async function refreshList() {
   renderList(result.data.maps)
 }
 
+// The list as last shown, by id.
+const mapsById = new Map()
+
 function renderList(maps) {
   const now = Date.now() / 1000
+  mapsById.clear()
+  for (const map of maps) mapsById.set(map.id, map)
   $('maps').replaceChildren(...maps.map((map) => mapRow(map, now)))
   $('empty').hidden = maps.length > 0
   $('map-count').textContent = maps.length ? `(${maps.length})` : ''
@@ -178,6 +183,7 @@ function mapRow(map, now) {
   const actions = document.createElement('div')
   actions.className = 'actions'
   actions.append(
+    button('History', () => toggleHistory(row, map)),
     button('Rename', () => startRename(row, map)),
     button('Duplicate', () => duplicate(map)),
     button('Delete', () => confirmDelete(row, map)),
@@ -189,6 +195,113 @@ function mapRow(map, now) {
 
   row.append(info, actions, error)
   return row
+}
+
+// --- History (server/history.py) ------------------------------------------------
+
+/** Opens or closes a map's earlier versions under its row. */
+function toggleHistory(row, map, message = '') {
+  const open = row.querySelector('.history')
+  if (open) {
+    open.remove()
+    return
+  }
+  const panel = document.createElement('div')
+  panel.className = 'history'
+  panel.setAttribute('aria-label', `History of ${map.name}`)
+  panel.textContent = 'Loading history…'
+  row.querySelector('.error').before(panel)
+  loadHistory(row, map, panel, message)
+}
+
+async function loadHistory(row, map, panel, message) {
+  const result = await request(`api/maps/${encodeURIComponent(map.id)}/snapshots`)
+  if (!result.ok) {
+    panel.remove()
+    return signedOutBy(result) || rowError(row, `Could not load the history: ${result.error}`)
+  }
+  const now = Date.now() / 1000
+  const { snapshots, updated_at: updatedAt } = result.data
+
+  const current = document.createElement('p')
+  current.className = 'now'
+  current.textContent = `Now: saved ${dateTime(updatedAt)} (${relativeTime(updatedAt, now)})`
+  const head = [current]
+  if (message) {
+    const done = document.createElement('p')
+    done.className = 'done'
+    done.setAttribute('role', 'status')
+    done.textContent = message
+    head.unshift(done)
+  }
+  if (!snapshots.length) {
+    const none = document.createElement('p')
+    none.className = 'note'
+    none.textContent =
+      'No earlier versions yet. One is kept when you save more than an hour after the last, and before any restore.'
+    panel.replaceChildren(...head, none)
+    return
+  }
+  const list = document.createElement('ol')
+  list.className = 'versions'
+  list.append(...snapshots.map((snapshot) => versionRow(row, map, snapshot, now)))
+  const note = document.createElement('p')
+  note.className = 'note'
+  note.textContent =
+    'Kept: everything from the last hour, then one an hour for a day, then one a day for 30 days.'
+  panel.replaceChildren(...head, list, note)
+}
+
+function versionRow(row, map, snapshot, now) {
+  const item = document.createElement('li')
+  item.className = 'version'
+  item.dataset.id = String(snapshot.id)
+  const info = document.createElement('div')
+  info.className = 'info'
+  const when = document.createElement('span')
+  when.className = 'when'
+  when.textContent = `${dateTime(snapshot.created_at)} (${relativeTime(snapshot.created_at, now)})`
+  const meta = document.createElement('span')
+  meta.className = 'meta'
+  meta.textContent = versionSummary(snapshot)
+  info.append(when, meta)
+  const actions = document.createElement('div')
+  actions.className = 'actions'
+  const offer = () =>
+    actions.replaceChildren(button('Restore', () => confirmRestore(row, map, snapshot, actions, offer)))
+  offer()
+  item.append(info, actions)
+  return item
+}
+
+function confirmRestore(row, map, snapshot, actions, cancel) {
+  const question = document.createElement('span')
+  question.className = 'confirm'
+  question.textContent = 'Make this the current version? The current one is kept here first.'
+  const yes = button(
+    'Restore',
+    async () => {
+      yes.disabled = true
+      const result = await request(
+        `api/maps/${encodeURIComponent(map.id)}/snapshots/${snapshot.id}/restore`,
+        { method: 'POST' },
+      )
+      if (!result.ok) {
+        yes.disabled = false
+        return signedOutBy(result) || rowError(row, result.error)
+      }
+      await refreshList()
+      // Stay on the history, which now also holds the version just replaced.
+      const again = $('maps').querySelector(`.map[data-id="${CSS.escape(map.id)}"]`)
+      const fresh = mapsById.get(map.id)
+      if (again && fresh) {
+        toggleHistory(again, fresh, `Restored the version from ${dateTime(snapshot.created_at)}.`)
+      }
+    },
+    'danger small',
+  )
+  actions.replaceChildren(question, yes, button('Cancel', cancel))
+  yes.focus()
 }
 
 function rowError(row, text) {

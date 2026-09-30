@@ -33,3 +33,27 @@ export function mapSummary(map, now) {
     ' · ',
   )
 }
+
+// Why a version was kept (server/history.py's reasons). A plain hourly one says nothing.
+const REASONS = {
+  'before-restore': 'kept before a restore',
+  'unsaved-edits': 'edits a tab dropped to load a newer version',
+  'before-upload-replace': 'kept before an upload replaced it',
+}
+
+/** "Sep 30, 2:05 PM", in the reader's own locale and time zone. Unix seconds. */
+export function dateTime(then) {
+  return new Date(then * 1000).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+/** "12 stars · 3.2 KB · kept before a restore" */
+export function versionSummary(snapshot) {
+  const parts = [plural(snapshot.node_count, 'star'), formatSize(snapshot.size_bytes)]
+  if (REASONS[snapshot.reason]) parts.push(REASONS[snapshot.reason])
+  return parts.join(' · ')
+}

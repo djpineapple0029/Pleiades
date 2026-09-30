@@ -1,4 +1,5 @@
-"""A signed-in user's maps: list, create, open, save, rename, duplicate, delete.
+"""A signed-in user's maps: list, create, open, save, rename, duplicate, delete,
+and each map's history (earlier versions, restore; see history.py).
 
 The server keeps the same JSON payload that goes inside an `.atlasmap` file,
 zlib-compressed and otherwise untouched: unknown fields pass straight through,
@@ -21,6 +22,7 @@ import zlib
 from flask import Blueprint, Response, abort, jsonify, request
 
 from . import db as dbmod
+from . import history
 from .accounts import current_user, database, fail, finish, gate, json_body, signed_in, store
 
 maps = Blueprint("maps", __name__, url_prefix="/api/maps")
@@ -175,24 +177,35 @@ def save_map(map_id: str) -> Response | tuple[Response, int]:
 
     with database().transaction() as conn:
         now = dbmod.now()
-        changed = conn.execute(
-            "UPDATE maps SET payload = ?, size_bytes = ?, node_count = ?, revision = revision + 1, updated_at = ? "
-            "WHERE id = ? AND user_id = ? AND revision = ?",
-            (blob, len(blob), node_count, now, map_id, user_id(), base),
-        ).rowcount
         row = conn.execute(
-            "SELECT revision, updated_at FROM maps WHERE id = ? AND user_id = ?", (map_id, user_id())
+            "SELECT revision, updated_at, payload, node_count FROM maps WHERE id = ? AND user_id = ?",
+            (map_id, user_id()),
         ).fetchone()
-    if row is None:
-        abort(404)
-    if not changed:
-        return fail(
-            "This map was changed in another tab or device.",
-            409,
-            revision=row["revision"],
-            updated_at=row["updated_at"],
+        if row is None:
+            abort(404)
+        if row["revision"] != base:
+            return fail(
+                "This map was changed in another tab or device.",
+                409,
+                revision=row["revision"],
+                updated_at=row["updated_at"],
+            )
+        if history.rolling_due(conn, map_id, now):
+            history.add(
+                conn,
+                map_id,
+                revision=row["revision"],
+                payload=row["payload"],
+                node_count=row["node_count"],
+                reason="rolling",
+                now=now,
+            )
+        conn.execute(
+            "UPDATE maps SET payload = ?, size_bytes = ?, node_count = ?, revision = revision + 1, updated_at = ? "
+            "WHERE id = ?",
+            (blob, len(blob), node_count, now, map_id),
         )
-    return jsonify(revision=row["revision"], updated_at=row["updated_at"])
+    return jsonify(revision=base + 1, updated_at=now)
 
 
 @maps.patch("/<map_id>")
@@ -237,3 +250,87 @@ def delete_map(map_id: str) -> Response:
     if not changed:
         abort(404)
     return jsonify(ok=True)
+
+
+# --- History (server/history.py) -----------------------------------------------
+
+
+def owned_map(conn: sqlite3.Connection, map_id: str) -> sqlite3.Row:
+    row = conn.execute(
+        "SELECT revision, updated_at, payload, node_count FROM maps WHERE id = ? AND user_id = ?",
+        (check_id(map_id), user_id()),
+    ).fetchone()
+    if row is None:
+        abort(404)
+    return row
+
+
+@maps.get("/<map_id>/snapshots")
+@signed_in
+def list_snapshots(map_id: str) -> Response:
+    with database().connect() as conn:
+        row = owned_map(conn, map_id)
+        snapshots = history.listing(conn, map_id)
+    return jsonify(revision=row["revision"], updated_at=row["updated_at"], snapshots=snapshots)
+
+
+@maps.post("/<map_id>/snapshots")
+@signed_in
+def keep_unsaved_edits(map_id: str) -> Response | tuple[Response, int]:
+    """Edits a tab is about to drop (the conflict panel's "load theirs"), kept in
+    history rather than lost. They never were a revision; `revision` says which
+    one they were based on."""
+    body = json_body()
+    payload = body.get("payload")
+    if not isinstance(payload, dict):
+        return fail("`payload` must be a JSON object.", 400)
+    try:
+        blob, node_count = pack(payload)
+    except ValueError:
+        return fail("`payload` holds a number JSON can't represent.", 400)
+    base = body.get("revision")
+    with database().transaction() as conn:
+        row = owned_map(conn, map_id)
+        if not isinstance(base, int) or isinstance(base, bool) or not 1 <= base <= row["revision"]:
+            base = row["revision"]
+        snapshot_id = history.add(
+            conn,
+            map_id,
+            revision=base,
+            payload=blob,
+            node_count=node_count,
+            reason="unsaved-edits",
+            now=dbmod.now(),
+        )
+    return jsonify(id=snapshot_id), 201
+
+
+@maps.post("/<map_id>/snapshots/<int:snapshot_id>/restore")
+@signed_in
+def restore_snapshot(map_id: str, snapshot_id: int) -> Response:
+    """Makes a snapshot the current version, as a new revision. The version it
+    replaces is kept first, so a restore can be undone the same way. A tab
+    still open on the map finds out at its next save (409)."""
+    with database().transaction() as conn:
+        row = owned_map(conn, map_id)
+        snapshot = conn.execute(
+            "SELECT payload, node_count FROM snapshots WHERE id = ? AND map_id = ?", (snapshot_id, map_id)
+        ).fetchone()
+        if snapshot is None:
+            abort(404)
+        now = dbmod.now()
+        history.add(
+            conn,
+            map_id,
+            revision=row["revision"],
+            payload=row["payload"],
+            node_count=row["node_count"],
+            reason="before-restore",
+            now=now,
+        )
+        revision = row["revision"] + 1
+        conn.execute(
+            "UPDATE maps SET payload = ?, size_bytes = ?, node_count = ?, revision = ?, updated_at = ? WHERE id = ?",
+            (snapshot["payload"], len(snapshot["payload"]), snapshot["node_count"], revision, now, map_id),
+        )
+    return jsonify(revision=revision, updated_at=now)

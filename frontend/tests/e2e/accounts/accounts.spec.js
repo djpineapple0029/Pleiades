@@ -1,8 +1,8 @@
-// Accounts, milestones 2 and 3 (USERS.md): sign-up in the account shell, the
+// Accounts, milestones 2 to 4 (USERS.md): sign-up in the account shell, the
 // map list, opening a server map, autosave, Ctrl+S, back to the list, and the
 // safety rails around them: a second tab never overwrites (the conflict
 // panel), edits made offline survive in this browser and are offered back,
-// signed-out goes to sign-in. Runs against a Flask of its own
+// earlier versions can be restored, signed-out goes to sign-in. Runs against a Flask of its own
 // (playwright.accounts.config.js).
 import { test, expect } from '@playwright/test'
 import { collectConsoleErrors, installGestures, pickMenu, settle, t } from '../helpers/gestures.js'
@@ -155,19 +155,25 @@ test('a second tab never overwrites the first; its edits can become a copy', asy
     .toContain('Twins (conflict copy) · saved · 1 nodes')
 })
 
-test('load theirs drops the edits in this tab and opens the saved map', async ({ page }) => {
+test('load theirs keeps the edits in this tab in history and opens the saved map', async ({ page }) => {
   await signUp(page)
   const id = await newMap(page, 'Gemini')
   const theirs = (await serverMap(page, id)).payload
   const other = await makeConflict(page, id)
-  await expect(panel(other)).toContainText('L: load theirs')
+  await expect(panel(other)).toContainText("keeps yours in this map's history")
   await Promise.all([other.waitForEvent('load'), other.keyboard.press('l')])
   await other.waitForTimeout(1500)
-  // No offer of the dropped edits: they were the user's to drop.
+  // No offer of the dropped edits in this browser: history has them.
   await expect(panel(other)).toBeHidden()
   await expect.poll(() => other.locator('#hud').textContent()).toContain('Gemini · saved · 1 nodes')
   expect(theirs.nodes).toHaveLength(0)
   expect((await serverMap(page, id)).revision).toBe(2)
+  const { snapshots } = await (await page.request.get(`/api/maps/${id}/snapshots`)).json()
+  // Newest first: tab B's star (based on revision 1), then revision 1 as tab A's save replaced it.
+  expect(snapshots.map((s) => [s.reason, s.revision, s.node_count])).toEqual([
+    ['unsaved-edits', 1, 1],
+    ['rolling', 1, 0],
+  ])
 })
 
 async function signIn(page, username) {
@@ -310,6 +316,58 @@ test('the list: rename, duplicate, delete', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Sign out' }).click()
   await expect(page.locator('#sign-in-form')).toBeVisible()
+})
+
+test('history: restore an earlier version from the list, then undo the restore', async ({ page }) => {
+  await signUp(page)
+  const id = await newMap(page, 'Cygnus')
+  await t(page, 'doubleClick()')
+  await settle(page)
+  // The first save keeps the empty revision 1 in history.
+  await page.keyboard.press('ControlOrMeta+s')
+  await expect.poll(async () => (await serverMap(page, id)).revision).toBe(2)
+  await page.goto('/account.html')
+
+  const row = page.locator('.map').first()
+  await expect(row.locator('.meta')).toContainText('1 star')
+  await row.getByRole('button', { name: 'History' }).click()
+  const versions = row.locator('.version')
+  await expect(versions).toHaveCount(1)
+  await expect(versions.first()).toContainText('0 stars')
+
+  await versions.first().getByRole('button', { name: 'Restore' }).click()
+  await expect(versions.first()).toContainText('Make this the current version?')
+  await versions.first().getByRole('button', { name: 'Restore' }).click()
+  // The list and its history come back, with what the restore replaced on top.
+  const again = page.locator('.map').first()
+  await expect(again.locator('.history .done')).toContainText('Restored the version from')
+  await expect(again.locator('.meta').first()).toContainText('0 stars')
+  const after = again.locator('.version')
+  await expect(after).toHaveCount(2)
+  await expect(after.first()).toContainText('1 star · ')
+  await expect(after.first()).toContainText('kept before a restore')
+  const restored = await serverMap(page, id)
+  expect([restored.revision, restored.payload.nodes.length]).toEqual([3, 0])
+
+  // Undo it the same way.
+  await after.first().getByRole('button', { name: 'Restore' }).click()
+  await after.first().getByRole('button', { name: 'Restore' }).click()
+  await expect(page.locator('.map').first().locator('.history .done')).toBeVisible()
+  const undone = await serverMap(page, id)
+  expect([undone.revision, undone.payload.nodes.length]).toEqual([4, 1])
+
+  // Opening it shows the restored star, saved.
+  await page.locator('.map .name').first().click()
+  await page.waitForTimeout(1500)
+  await expect.poll(() => page.locator('#hud').textContent()).toContain('Cygnus · saved · 1 nodes')
+
+  // History closes again from the list.
+  await page.goto('/account.html')
+  const closing = page.locator('.map').first()
+  await closing.getByRole('button', { name: 'History' }).click()
+  await expect(closing.locator('.version')).toHaveCount(3)
+  await closing.getByRole('button', { name: 'History' }).click()
+  await expect(closing.locator('.history')).toHaveCount(0)
 })
 
 test('signed out, a map link goes to sign-in; a missing map says so', async ({ page, browser }) => {

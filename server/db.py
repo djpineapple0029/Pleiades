@@ -70,6 +70,15 @@ MIGRATIONS: list[list[str]] = [
             json TEXT NOT NULL
         )""",
     ],
+    # 2: history (server/history.py). A version's size and star count, so the
+    # list doesn't have to unpack every payload to show them.
+    [
+        "ALTER TABLE snapshots ADD COLUMN size_bytes INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE snapshots ADD COLUMN node_count INTEGER NOT NULL DEFAULT 0",
+        "UPDATE snapshots SET size_bytes = length(payload)",
+        "DROP INDEX snapshots_map",
+        "CREATE INDEX snapshots_map ON snapshots(map_id, created_at)",
+    ],
 ]
 
 

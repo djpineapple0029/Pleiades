@@ -751,7 +751,7 @@ export function createInteraction({
           : ''
         choice = await askChoice(
           `${serverMap.name} was changed in another tab or device${at}`,
-          'Your changes here are not saved. Loading theirs drops them.',
+          "Your changes here are not saved. Loading theirs keeps yours in this map's history (My maps → History).",
           [
             { key: 'l', label: 'L: load theirs' },
             { key: 'c', label: 'C: save mine as a copy' },
@@ -765,6 +765,14 @@ export function createInteraction({
         )
       }
       if (choice === 'l') {
+        // Kept on the server before they're dropped here; if that can't
+        // happen, nothing is dropped.
+        status.busy('keeping your changes in history')
+        const kept = await serverMap.keepInHistory()
+        if (!kept.ok) {
+          status.error(`not loaded: could not keep your changes (${kept.error})`)
+          return kept
+        }
         serverMap.leave()
         await serverMap.forgetBackup()
         goToMap(serverMap.id)
