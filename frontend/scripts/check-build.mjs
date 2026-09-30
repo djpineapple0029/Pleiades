@@ -1,4 +1,4 @@
-// Post-build sanity check for CI (V2.md §2.7.5): both entry points exist and
+// Post-build sanity check for CI (V2.md §2.7.5): every entry point exists and
 // nothing has ballooned. Budgets sit ~25% above the sizes on 2026-09-25
 // (app JS 800 kB, viewer template 693 kB); raise them on purpose, not by drift.
 // The viewer module-graph guard belongs to §2.4.6 and isn't built yet.
@@ -12,6 +12,20 @@ const BUDGETS = [
   { label: 'viewer-template.html', match: /^viewer-template\.html$/, dir: '', max: 875 * KB },
   { label: 'app JS', match: /^index-.*\.js$/, dir: 'assets', max: 1000 * KB },
   { label: 'app CSS', match: /^index-.*\.css$/, dir: 'assets', max: 16 * KB },
+  // The account shell must stay small: no three, no scene code.
+  { label: 'account.html', match: /^account\.html$/, dir: '', max: 8 * KB },
+  // Settings and Help (2026-09-30) brought in the schema, keymap and looks,
+  // and set those pages in Jost (its @font-face rules are most of the CSS):
+  // JS 20.3 kB, CSS 10 kB then.
+  { label: 'account JS', match: /^account-.*\.js$/, dir: 'assets', max: 28 * KB },
+  { label: 'account CSS', match: /^account-.*\.css$/, dir: 'assets', max: 14 * KB },
+  // three, split out of the app on 2026-09-30 so the homepage's hero shares it
+  // (530 kB then; the app JS above dropped by the same amount).
+  { label: 'three chunk', match: /^three-.*\.js$/, dir: 'assets', max: 680 * KB },
+  // The homepage: its own code is small; the hero borrows the three chunk.
+  { label: 'home.html', match: /^home\.html$/, dir: '', max: 24 * KB },
+  { label: 'home JS', match: /^home-.*\.js$/, dir: 'assets', max: 16 * KB },
+  { label: 'home CSS', match: /^home-.*\.css$/, dir: 'assets', max: 16 * KB },
 ]
 
 let failed = false

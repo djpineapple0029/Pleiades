@@ -100,10 +100,12 @@ class Guard:
             _count, until = self.failures.get(ip, (0, 0.0))
             return max(0.0, until - now)
 
-    def fail(self, ip: str, attempts: int, minutes: int) -> None:
+    def fail(self, ip: str, attempts: int, minutes: int, *, count_globally: bool = True) -> None:
+        """`count_globally=False` when one wrong password is recorded under a second key."""
         now = time.monotonic()
         with self.lock:
-            self.recent_failures.append(now)
+            if count_globally:
+                self.recent_failures.append(now)
             count, _until = self.failures.get(ip, (0, 0.0))
             count += 1
             if count >= attempts:

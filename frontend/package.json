@@ -17,9 +17,11 @@
     "test:e2e": "playwright test --project=swiftshader",
     "test:e2e:headed": "playwright test --project=headed-lock",
     "test:e2e:prod": "playwright test --config=playwright.prod.config.js",
+    "test:e2e:accounts": "playwright test --config=playwright.accounts.config.js",
     "test:all": "npm run test && npm run test:e2e"
   },
   "dependencies": {
+    "@fontsource-variable/newsreader": "^5.3.0",
     "@fontsource/jost": "^5.3.0",
     "d3-force-3d": "^3.0.6",
     "graphology": "^0.26.0",

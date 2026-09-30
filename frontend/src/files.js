@@ -249,7 +249,10 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
     // from before this marker lacks it, and the viewer uses defaults.
     let html = template
     if (settings) {
-      const copy = JSON.stringify(settings).replaceAll('<', '\\u003c')
+      // The exporter's own settings if they're signed in, but not the fact:
+      // the viewer has no account to keep anything in.
+      const { account: _account, ...shared } = settings
+      const copy = JSON.stringify(shared).replaceAll('<', '\\u003c')
       html = html.replace(SETTINGS_MARK, () => copy)
     }
     // Replacement *functions*, because both the JSON and the title can contain
@@ -295,6 +298,12 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
       // password) — distinct from `null`, "nothing has been set up yet".
       password = nextPassword ?? ''
       const trimmed = (nextFilename ?? '').trim()
+      filename = !trimmed ? DEFAULT_FILENAME : trimmed.endsWith(SUFFIX) ? trimmed : `${trimmed}${SUFFIX}`
+    },
+    /** The name "Save to file" offers first, without setting a password — a
+     *  server map's own name, so its first save to a file still asks for one. */
+    setFilename(nextFilename) {
+      const trimmed = (nextFilename ?? '').trim().replace(/[\\/:*?"<>|]/g, '')
       filename = !trimmed ? DEFAULT_FILENAME : trimmed.endsWith(SUFFIX) ? trimmed : `${trimmed}${SUFFIX}`
     },
     /** Forgets password, filename and the last file's passed-through fields —

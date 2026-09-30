@@ -363,6 +363,112 @@ def validate_values(raw: dict, *, strict: bool) -> tuple[dict, list[str]]:
     return {"keybinds": keybinds, **settings}, errors
 
 
+# --- A user's own settings ----------------------------------------------------
+#
+# A signed-in user may override what the schema marks `user: true` (server/
+# account.py). Their overrides hold only the keys they changed, in the same
+# shape as the client values: `{"keybinds": {id: [...]}, "<section>": {...}}`.
+# Effective value = theirs ?? the admin's ?? the schema default.
+
+USER_ACTIONS: set[str] = {action_id for action_id, action in ACTIONS.items() if action.get("user")}
+USER_SETTINGS: dict[tuple[str, str], dict] = {where: spec for where, spec in SETTINGS.items() if spec.get("user")}
+# How many rounds of dropping clashing keys a read may take before it gives up
+# on the user's keys altogether.
+MAX_OVERRIDE_ROUNDS = 5
+
+
+def validate_overrides(raw: object, admin_keybinds: dict[str, list[str]]) -> tuple[dict, list[str]]:
+    """Strict check of a user's overrides against the admin's keymap. Returns (clean, errors)."""
+    if not isinstance(raw, dict):
+        return {}, ["settings must be an object"]
+    errors: list[str] = []
+    clean: dict[str, dict] = {}
+    for section, given in raw.items():
+        if section == "keybinds":
+            continue
+        if not isinstance(given, dict):
+            errors.append(f"{section}: must be an object")
+            continue
+        for key, value in given.items():
+            spec = USER_SETTINGS.get((section, key))
+            if spec is None:
+                why = "only the server admin sets this" if (section, key) in SETTINGS else "no such setting"
+                errors.append(f"{section}.{key}: {why}")
+                continue
+            value, error = validate_setting(spec, value)
+            if error:
+                errors.append(error)
+            else:
+                clean.setdefault(section, {})[key] = value
+
+    binds = raw.get("keybinds", {})
+    if not isinstance(binds, dict):
+        errors.append("keybinds: must be an object of action: [keys]")
+    elif binds:
+        for action_id in binds:
+            if action_id not in USER_ACTIONS:
+                why = "only the server admin sets this" if action_id in ACTIONS else "no such action"
+                errors.append(f"keybinds.{action_id}: {why}")
+        mine = {k: v for k, v in binds.items() if k in USER_ACTIONS}
+        keymap, kb_errors = validate_keybinds({**admin_keybinds, **mine})
+        errors += kb_errors
+        if not kb_errors and mine:
+            clean["keybinds"] = {action_id: keymap[action_id] for action_id in mine}
+    return (clean, errors) if not errors else ({}, errors)
+
+
+def apply_overrides(client: dict, overrides: object) -> tuple[dict, dict, list[str]]:
+    """Layer stored overrides over `client_values()`, leniently. Returns
+    (merged values, the overrides still in force, problems).
+
+    What was valid when saved can stop being valid when the admin changes
+    something (a key the admin takes for another action now clashes). Each
+    value that no longer passes is dropped, the admin's used instead, and
+    listed in the problems.
+    """
+    merged = deepcopy(client)
+    kept: dict[str, dict] = {}
+    problems: list[str] = []
+    if not isinstance(overrides, dict):
+        return merged, kept, problems
+    for section, given in overrides.items():
+        if section == "keybinds" or not isinstance(given, dict):
+            continue
+        for key, value in given.items():
+            spec = USER_SETTINGS.get((section, key))
+            if spec is None:
+                problems.append(f"{section}.{key}: no longer something you can set; the default is used")
+                continue
+            value, error = validate_setting(spec, value)
+            if error:
+                problems.append(f"{error}; the default is used")
+            else:
+                merged.setdefault(section, {})[key] = value
+                kept.setdefault(section, {})[key] = value
+
+    binds = overrides.get("keybinds")
+    mine = {k: v for k, v in binds.items() if k in USER_ACTIONS} if isinstance(binds, dict) else {}
+    for _ in range(MAX_OVERRIDE_ROUNDS):
+        if not mine:
+            break
+        keymap, errors = validate_keybinds({**client["keybinds"], **mine})
+        if not errors:
+            merged["keybinds"] = keymap
+            kept["keybinds"] = {action_id: keymap[action_id] for action_id in mine}
+            return merged, kept, problems
+        # Drop only the user's own actions an error names.
+        named = {e.split(":", 1)[0].removeprefix("keybinds.") for e in errors}
+        dropped = named & set(mine)
+        for action_id in sorted(dropped):
+            problems.append(f"keybinds.{action_id}: your keys for this no longer work here; the default is used")
+            del mine[action_id]
+        if not dropped:
+            break
+    if mine:
+        problems.append("keybinds: your keys could not be used; the defaults are used")
+    return merged, kept, problems
+
+
 # --- Passwords ----------------------------------------------------------------
 
 # scrypt at N=2^15 is ~60 ms here: slow enough to make guessing expensive,

@@ -1,0 +1,879 @@
+/* The account shell: the app's dark palette (../style.css, admin.css), set in
+   Jost, the face the map draws star names in, so these pages read as part of
+   the map rather than as a form. */
+:root {
+  color-scheme: dark;
+  --ink: #c8d2e0;
+  --ink-dim: #6b7789;
+  --soft: #97a2b4; /* secondary text: a step brighter than --ink-dim, to read */
+  --void: #05060a;
+  --panel: #0b0e15;
+  --raised: #141925;
+  --field: #11141c;
+  --line: #2a3140;
+  --row: #1a1f2b;
+  --accent: #8fd6ff;
+  --accent-deep: #2d5c8a;
+  --amber: #d99a6c;
+  --bad: #ff8a80;
+  --red: #ff8a80;
+  --red-deep: #3a1715;
+  --sans: Jost, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: radial-gradient(ellipse at 50% -10%, rgba(45, 92, 138, 0.18), transparent 60%), var(--void);
+  color: var(--ink);
+  font: 400 15px/1.5 var(--sans);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.top,
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 20px;
+  padding-top: 22px;
+  padding-bottom: 14px;
+}
+
+main {
+  padding-bottom: 96px;
+}
+
+a {
+  color: var(--accent);
+}
+
+/* The wordmark. */
+.top h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.top h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Signed in: My maps, Settings, Help. */
+.pages {
+  display: flex;
+  gap: 2px;
+  margin-right: auto;
+}
+
+.pages a {
+  padding: 4px 11px;
+  border-radius: 7px;
+  color: var(--soft);
+  text-decoration: none;
+}
+
+.pages a:hover {
+  color: var(--ink);
+}
+
+.pages a[aria-current='page'] {
+  background: var(--row);
+  color: var(--ink);
+}
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--soft);
+}
+
+/* A page's title, what it's for, and its one page-wide action. */
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin: 8px 0 20px;
+}
+
+.page-head h1 {
+  margin: 0 0 4px;
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.page-head h1 span {
+  color: var(--ink-dim);
+  font-weight: 400;
+}
+
+.page-head p {
+  margin: 0;
+  color: var(--soft);
+}
+
+h2 {
+  margin: 36px 0 10px;
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 500;
+}
+
+.card {
+  margin: 0 0 16px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.card h2 {
+  margin: 0 0 12px;
+}
+
+.narrow {
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#signed-out,
+#insecure,
+#off {
+  margin-top: 32px;
+}
+
+.note,
+.aside {
+  color: var(--soft);
+}
+
+.note {
+  margin: 12px 0 0;
+  font-size: 14px;
+}
+
+.aside {
+  margin: 0;
+  text-align: center;
+}
+
+.banner {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid #6a4a2e;
+  border-radius: 10px;
+  background: #1c140c;
+  color: #f0c49c;
+}
+
+.card.warn {
+  border-color: #6a4a2e;
+}
+
+.card.warn h2 {
+  color: #f0c49c;
+}
+
+.card.warn p {
+  margin: 12px 0 0;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+label {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 14px;
+  color: var(--soft);
+}
+
+label small {
+  font-size: 13px;
+}
+
+input,
+button,
+select,
+.button {
+  font: inherit;
+  color: var(--ink);
+}
+
+input[type='text'],
+input[type='password'] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+input:focus-visible,
+button:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button,
+.button {
+  display: inline-block;
+  padding: 7px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent-deep);
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+button:hover,
+.button:hover {
+  background: #356b9f;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.quiet,
+.button.quiet {
+  border-color: var(--line);
+  background: transparent;
+}
+
+button.quiet:hover,
+.button.quiet:hover {
+  border-color: var(--ink-dim);
+}
+
+button.danger {
+  border-color: var(--bad);
+  background: var(--red-deep);
+}
+
+button.danger:hover {
+  background: #52201d;
+}
+
+button.small {
+  padding: 3px 10px;
+  font-size: 13px;
+}
+
+.error {
+  margin: 8px 0 0;
+  color: var(--bad);
+}
+
+.error:empty {
+  display: none;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: -6px 0 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tabs button {
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--soft);
+  font-size: 15px;
+}
+
+.tabs button[aria-selected='true'] {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+}
+
+/* My maps. */
+.inline-form {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.page-head .inline-form {
+  flex: 1 1 260px;
+  max-width: 360px;
+}
+
+.maps {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  list-style: none;
+}
+
+.maps:empty {
+  display: none;
+}
+
+.map {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--row);
+}
+
+.map:first-child {
+  border-top: none;
+}
+
+.map .info {
+  display: grid;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.map .name {
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 500;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map .name:hover {
+  text-decoration: underline;
+}
+
+.map .meta {
+  color: var(--soft);
+  font-size: 13px;
+}
+
+.map .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.map .confirm {
+  color: var(--amber);
+}
+
+.map .error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.map .rename {
+  width: 100%;
+}
+
+#empty {
+  margin: 0;
+  padding: 28px 20px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  text-align: center;
+}
+
+#signed-in .aside {
+  margin-top: 16px;
+}
+
+/* A map's history, opened under its row. */
+.map .history {
+  flex-basis: 100%;
+  margin: 2px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--row);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--soft);
+}
+
+.history p {
+  margin: 0;
+}
+
+.history .done {
+  margin-bottom: 6px;
+  color: var(--accent);
+}
+
+.history .note {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.versions {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 16px;
+  padding: 8px 0;
+  border-top: 1px solid var(--row);
+}
+
+.version .info {
+  display: grid;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.version .when {
+  color: var(--ink);
+}
+
+.version .meta {
+  font-size: 13px;
+}
+
+.version .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.version .confirm {
+  color: var(--amber);
+}
+
+/* Settings and Help. */
+#settings-view h3 {
+  margin: 0;
+  padding: 14px 18px 4px;
+  color: var(--soft);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.lede {
+  max-width: 58ch;
+  margin: -4px 0 12px;
+  color: var(--soft);
+}
+
+.banner.problems {
+  margin-top: 20px;
+}
+
+.banner.problems p,
+.banner.problems ul {
+  margin: 0;
+}
+
+.banner.problems ul {
+  padding-left: 18px;
+}
+
+/* One rounded panel per group, rows divided inside it. */
+.rows {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.keys .rows + .rows {
+  margin-top: 12px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 28px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--row);
+}
+
+.rows > .row:first-child,
+.rows > h3 + .row {
+  border-top: none;
+}
+
+.row .text {
+  min-width: 0;
+}
+
+.row label,
+.row .label {
+  display: block;
+  margin: 0;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.row .description {
+  max-width: 55ch;
+  margin: 2px 0 0;
+  color: var(--soft);
+  font-size: 13.5px;
+}
+
+.row .side {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
+
+.row .control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.row > .error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+/* A changed row: a thin mark down its left edge, and its reset button. */
+.row.overridden {
+  box-shadow: inset 3px 0 0 var(--accent-deep);
+}
+
+.origin:empty {
+  display: none;
+}
+
+button.reset {
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 138, 128, 0.45);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--red);
+  font: inherit;
+  font-size: 13px;
+}
+
+button.reset:hover {
+  border-color: var(--red);
+  background: var(--red-deep);
+}
+
+button.reset:disabled {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--ink-dim);
+}
+
+select,
+input[type='number'] {
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+input[type='number'] {
+  width: 72px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+input[type='range'] {
+  width: 150px;
+  accent-color: var(--accent);
+}
+
+/* On/off as a switch, not a checkbox. */
+input.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--field);
+  cursor: pointer;
+  appearance: none;
+  transition: background 0.15s;
+}
+
+input.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--ink-dim);
+  transition: transform 0.15s;
+}
+
+input.switch:checked {
+  border-color: var(--accent);
+  background: var(--accent-deep);
+}
+
+input.switch:checked::after {
+  background: var(--ink);
+  transform: translateX(18px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  input.switch,
+  input.switch::after {
+    transition: none;
+  }
+}
+
+/* Key slots, drawn as keycaps: a deeper bottom edge, like a real key. */
+.slots {
+  display: grid;
+  grid-template-columns: repeat(3, 112px);
+  gap: 8px;
+}
+
+.slot {
+  position: relative;
+}
+
+button.cap {
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-bottom-width: 3px;
+  border-radius: 7px;
+  background: var(--raised);
+  color: var(--ink);
+  font:
+    500 13px/1.2 Jost,
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
+  white-space: nowrap;
+}
+
+button.cap:hover {
+  border-color: var(--ink-dim);
+  background: var(--raised);
+}
+
+button.cap.empty {
+  border-style: dashed;
+  border-bottom-width: 1px;
+  background: transparent;
+  color: var(--ink-dim);
+}
+
+.cap.spare {
+  display: block;
+  min-height: 32px;
+  border: 1px dashed var(--row);
+  border-radius: 7px;
+}
+
+button.cap.listening {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+button.unbind {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--ink-dim);
+  font:
+    12px/1 Jost,
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
+  opacity: 0;
+}
+
+.slot:hover button.unbind,
+button.unbind:focus-visible {
+  opacity: 1;
+}
+
+button.unbind:hover {
+  border-color: var(--red);
+  background: var(--panel);
+  color: var(--red);
+}
+
+@media (hover: none) {
+  button.unbind {
+    opacity: 1;
+  }
+}
+
+/* The save bar shows only when there is something to save or say. */
+.savebar {
+  position: sticky;
+  bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+  margin-top: 28px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+
+.savebar .state {
+  margin-right: auto;
+  color: var(--soft);
+}
+
+.savebar.dirty {
+  border-color: #6a4a2e;
+}
+
+.savebar.dirty .state {
+  color: #f0c49c;
+}
+
+.savebar .error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.7em;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--field);
+  color: var(--ink);
+  font:
+    500 13px/1.5 Jost,
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
+  text-align: center;
+}
+
+/* Help. */
+#help-view .card {
+  margin-top: 16px;
+  padding: 4px 18px;
+  border-radius: 12px;
+}
+
+#help-view .card h2 {
+  margin: 14px 0 4px;
+  font-size: 17px;
+}
+
+.help-keys {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.help-keys li {
+  display: grid;
+  grid-template-columns: minmax(130px, 36%) 1fr;
+  gap: 4px 20px;
+  padding: 10px 0;
+  border-top: 1px solid var(--row);
+}
+
+.help-keys li:first-child {
+  border-top: none;
+}
+
+.help-keys .keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.help-keys .or,
+.help-keys .unbound {
+  color: var(--ink-dim);
+  font-size: 13px;
+}
+
+.help-keys .what {
+  display: grid;
+}
+
+.help-keys small {
+  color: var(--soft);
+  font-size: 13px;
+}
+
+@media (max-width: 560px) {
+  .row {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  .row .side {
+    justify-items: start;
+  }
+
+  .slots {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .help-keys li {
+    grid-template-columns: 1fr;
+  }
+}

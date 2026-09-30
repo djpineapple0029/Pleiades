@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="description" content="A mind map you fly through in 3D." />
+    <title>AtlasMap</title>
+  </head>
+  <body>
+    <header class="bar">
+      <a class="wordmark" href="./home.html">AtlasMap</a>
+      <nav class="account" id="account" hidden>
+        <a class="sign-up-link" id="sign-up" href="./account.html#sign-up" hidden>Create an account</a>
+        <a class="button outline" id="sign-in" href="./account.html">Sign in</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <canvas id="galaxy" aria-hidden="true"></canvas>
+      <!-- Shown instead of the canvas when there's no WebGL. -->
+      <svg class="galaxy-still" id="galaxy-still" viewBox="0 0 800 600" aria-hidden="true" hidden></svg>
+      <div class="hero-copy">
+        <h1>A mind map you fly through.</h1>
+        <p class="lede">
+          Every idea is a star. Link the ones that go together and they gather into coloured clusters. Then
+          you fly around the whole thing in 3D with the keyboard and mouse, the way you'd move in a game.
+        </p>
+        <p class="actions">
+          <a class="button solid" id="get-started" href="./?local">Get started</a>
+          <span class="aside">No account needed. You save your map as a file.</span>
+        </p>
+      </div>
+    </section>
+
+    <main>
+      <section class="how" aria-labelledby="how-title">
+        <h2 id="how-title">How it works</h2>
+        <ol class="route">
+          <li class="step">
+            <div class="step-text">
+              <h3>Drop a star</h3>
+              <p>
+                Double-click anywhere in empty space and a star appears where you're looking. Press
+                <kbd data-key="rename">Enter</kbd> to name it, or
+                <kbd data-key="edit_notes">Ctrl/⌘+Enter</kbd> to write longer notes inside it.
+              </p>
+            </div>
+            <svg
+              class="diagram"
+              viewBox="0 0 320 200"
+              role="img"
+              aria-label="A new star appearing at the crosshair, named Tea"
+            >
+              <g class="field">
+                <circle cx="46" cy="40" r="1.2" />
+                <circle cx="270" cy="30" r="1" />
+                <circle cx="292" cy="150" r="1.3" />
+                <circle cx="30" cy="170" r="1" />
+                <circle cx="120" cy="178" r="1.1" />
+                <circle cx="228" cy="186" r="0.9" />
+              </g>
+              <g class="crosshair" transform="translate(160 100)">
+                <path d="M-34 0h-14M34 0h14M0 -34v-14M0 34v14" />
+              </g>
+              <circle class="ripple" cx="160" cy="100" r="26" />
+              <circle class="ripple faint" cx="160" cy="100" r="40" />
+              <circle class="glow" cx="160" cy="100" r="16" fill="url(#glow-a)" />
+              <circle class="core" cx="160" cy="100" r="4.5" />
+              <text class="label" x="200" y="70">Tea</text>
+              <defs>
+                <radialGradient id="glow-a">
+                  <stop offset="0" stop-color="#f6d8a8" stop-opacity=".9" />
+                  <stop offset="1" stop-color="#f6d8a8" stop-opacity="0" />
+                </radialGradient>
+              </defs>
+            </svg>
+          </li>
+
+          <li class="step">
+            <div class="step-text">
+              <h3>Link two stars</h3>
+              <p>
+                Hold the right mouse button on a star and a ring menu opens. Move onto Connect and let go,
+                then click the star it should link to. Links can have names too, so “caused by” or “see also”
+                can sit right on the line.
+              </p>
+            </div>
+            <svg
+              class="diagram"
+              viewBox="0 0 320 200"
+              role="img"
+              aria-label="The ring menu on a star with Connect chosen, and a dashed link reaching to a second star"
+            >
+              <g class="ring" transform="translate(96 104)">
+                <path
+                  class="wedge on"
+                  d="M-26.8 -44.6A52 52 0 0 1 26.8 -44.6L11.3 -18.9A22 22 0 0 0 -11.3 -18.9Z"
+                />
+                <path class="wedge" d="M34.1 -39.2A52 52 0 0 1 50.7 11.7L21.4 4.9A22 22 0 0 0 14.4 -16.6Z" />
+                <path class="wedge" d="M47.9 20.3A52 52 0 0 1 4.5 51.8L1.9 21.9A22 22 0 0 0 20.3 8.6Z" />
+                <path class="wedge" d="M-4.5 51.8A52 52 0 0 1 -47.9 20.3L-20.3 8.6A22 22 0 0 0 -1.9 21.9Z" />
+                <path
+                  class="wedge"
+                  d="M-50.7 11.7A52 52 0 0 1 -34.1 -39.2L-14.4 -16.6A22 22 0 0 0 -21.4 4.9Z"
+                />
+                <text class="wedge-label on" x="0" y="-60">Connect</text>
+              </g>
+              <circle class="glow" cx="96" cy="104" r="14" fill="url(#glow-b)" />
+              <circle class="core" cx="96" cy="104" r="4" />
+              <path class="link pending" d="M100 100 C150 70 200 64 246 76" />
+              <circle class="glow" cx="252" cy="78" r="16" fill="url(#glow-c)" />
+              <circle class="core" cx="252" cy="78" r="4.5" />
+              <text class="label" x="232" y="112">Sleep</text>
+              <text class="label small" x="148" y="60">helps with</text>
+              <defs>
+                <radialGradient id="glow-b">
+                  <stop offset="0" stop-color="#f6d8a8" stop-opacity=".9" />
+                  <stop offset="1" stop-color="#f6d8a8" stop-opacity="0" />
+                </radialGradient>
+                <radialGradient id="glow-c">
+                  <stop offset="0" stop-color="#b9c6ff" stop-opacity=".9" />
+                  <stop offset="1" stop-color="#b9c6ff" stop-opacity="0" />
+                </radialGradient>
+              </defs>
+            </svg>
+          </li>
+
+          <li class="step">
+            <div class="step-text">
+              <h3>Watch the clusters form</h3>
+              <p>
+                Stars that are closely linked get grouped, and each group gets its own colour. You don't sort
+                anything into folders. The groups come from what you've connected, so they shift as the map
+                grows.
+              </p>
+            </div>
+            <svg
+              class="diagram"
+              viewBox="0 0 320 200"
+              role="img"
+              aria-label="Three groups of linked stars, each group a different colour"
+            >
+              <g class="cluster" style="--c: #9ff0b4">
+                <path class="link" d="M70 60L102 48M70 60L60 94M70 60L98 84M98 84L60 94M102 48L128 62" />
+                <circle cx="70" cy="60" r="5" />
+                <circle cx="102" cy="48" r="3.2" />
+                <circle cx="60" cy="94" r="3.4" />
+                <circle cx="98" cy="84" r="3" />
+                <circle cx="128" cy="62" r="2.6" />
+              </g>
+              <g class="cluster" style="--c: #f3a6ee">
+                <path
+                  class="link"
+                  d="M236 56L268 70M236 56L214 84M236 56L262 38M214 84L250 96M268 70L250 96"
+                />
+                <circle cx="236" cy="56" r="5" />
+                <circle cx="268" cy="70" r="3.4" />
+                <circle cx="214" cy="84" r="3" />
+                <circle cx="262" cy="38" r="2.6" />
+                <circle cx="250" cy="96" r="3" />
+              </g>
+              <g class="cluster" style="--c: #f5c79a">
+                <path
+                  class="link"
+                  d="M154 146L120 160M154 146L186 164M154 146L162 116M120 160L140 180M186 164L208 150"
+                />
+                <circle cx="154" cy="146" r="5" />
+                <circle cx="120" cy="160" r="3.2" />
+                <circle cx="186" cy="164" r="3.4" />
+                <circle cx="162" cy="116" r="2.8" />
+                <circle cx="140" cy="180" r="2.6" />
+                <circle cx="208" cy="150" r="3" />
+              </g>
+              <path class="link between" d="M128 62L162 116M214 84L162 116" />
+            </svg>
+          </li>
+
+          <li class="step">
+            <div class="step-text">
+              <h3>Fly around it</h3>
+              <p>
+                <kbd data-key="move_forward">W</kbd> <kbd data-key="move_left">A</kbd>
+                <kbd data-key="move_back">S</kbd> <kbd data-key="move_right">D</kbd> to move, the mouse to
+                look, the scroll wheel for speed. Click a star and only its links stay lit. Press
+                <kbd data-key="search">/</kbd> to find a star by name and fly straight to it, or
+                <kbd data-key="overview">Tab</kbd> to pull back and see the whole map at once.
+              </p>
+            </div>
+            <svg
+              class="diagram"
+              viewBox="0 0 320 200"
+              role="img"
+              aria-label="A flight path curving past stars toward a lit star in the distance"
+            >
+              <g class="field">
+                <circle cx="40" cy="30" r="1" />
+                <circle cx="290" cy="40" r="1.2" />
+                <circle cx="210" cy="20" r="0.9" />
+                <circle cx="300" cy="120" r="1" />
+                <circle cx="20" cy="110" r="1.1" />
+              </g>
+              <circle class="far" cx="92" cy="58" r="2.2" />
+              <circle class="far" cx="120" cy="40" r="1.8" />
+              <circle class="far" cx="248" cy="92" r="2.4" />
+              <circle class="far" cx="276" cy="70" r="1.6" />
+              <path class="link lit" d="M212 58L248 92M212 58L178 36M212 58L240 30" />
+              <circle class="glow" cx="212" cy="58" r="16" fill="url(#glow-d)" />
+              <circle class="core" cx="212" cy="58" r="4.5" />
+              <path class="flight" d="M40 196 C90 150 120 110 196 70" />
+              <path class="arrow" d="M186 70l12 -1 -6 10" />
+              <circle class="near" cx="58" cy="132" r="7" />
+              <circle class="near" cx="268" cy="160" r="9" />
+              <defs>
+                <radialGradient id="glow-d">
+                  <stop offset="0" stop-color="#9ff0b4" stop-opacity=".9" />
+                  <stop offset="1" stop-color="#9ff0b4" stop-opacity="0" />
+                </radialGradient>
+              </defs>
+            </svg>
+          </li>
+
+          <li class="step">
+            <div class="step-text">
+              <h3>Tidy it up</h3>
+              <p>
+                Once it gets tangled, press <kbd data-key="balance">B</kbd> and the map rearranges itself into
+                a tree hanging off its main stars. Hold <kbd data-key="tree_shape">T</kbd> to choose the
+                shape: a cone you can fly into, or flat like a chart.
+              </p>
+            </div>
+            <svg
+              class="diagram"
+              viewBox="0 0 320 200"
+              role="img"
+              aria-label="Stars arranged as a tree below one main star"
+            >
+              <path
+                class="link"
+                d="M160 34L96 92M160 34L160 92M160 34L224 92M96 92L64 150M96 92L112 150M160 92L148 150M160 92L178 150M224 92L212 150M224 92L256 150M64 150L54 186M112 150L118 186M256 150L270 186"
+              />
+              <circle class="glow" cx="160" cy="34" r="18" fill="url(#glow-e)" />
+              <circle class="core" cx="160" cy="34" r="5.5" />
+              <g class="tree">
+                <circle cx="96" cy="92" r="4" />
+                <circle cx="160" cy="92" r="4" />
+                <circle cx="224" cy="92" r="4" />
+                <circle cx="64" cy="150" r="3" />
+                <circle cx="112" cy="150" r="3" />
+                <circle cx="148" cy="150" r="3" />
+                <circle cx="178" cy="150" r="3" />
+                <circle cx="212" cy="150" r="3" />
+                <circle cx="256" cy="150" r="3" />
+                <circle cx="54" cy="186" r="2.2" />
+                <circle cx="118" cy="186" r="2.2" />
+                <circle cx="270" cy="186" r="2.2" />
+              </g>
+              <defs>
+                <radialGradient id="glow-e">
+                  <stop offset="0" stop-color="#e2ecff" stop-opacity=".9" />
+                  <stop offset="1" stop-color="#e2ecff" stop-opacity="0" />
+                </radialGradient>
+              </defs>
+            </svg>
+          </li>
+        </ol>
+      </section>
+
+      <section class="keep" aria-labelledby="keep-title">
+        <h2 id="keep-title">Where your maps live</h2>
+        <div class="ways">
+          <div class="way">
+            <h3>In a file</h3>
+            <p>
+              <kbd data-key="save">Ctrl/⌘+S</kbd> saves the map as an <code>.atlasmap</code> file on your
+              computer. Give it a password and the file is encrypted, so nobody can open it without that
+              password, including whoever runs this server. If you forget the password, there's no way back
+              in.
+            </p>
+          </div>
+          <div class="way" id="way-account" hidden>
+            <h3>In an account</h3>
+            <p>
+              Sign in and your maps sit on this server in a list. They save themselves a few seconds after you
+              stop, and older versions are kept so you can go back. One thing to know: they're stored
+              unencrypted, so the person who runs the server could read them.
+            </p>
+          </div>
+        </div>
+        <p class="share">
+          Either way, <kbd data-key="export">Ctrl/⌘+E</kbd> exports a view-only <code>.html</code> file you
+          can send to anyone. It opens in any browser; they can fly around your map but can't change it.
+        </p>
+      </section>
+
+      <section class="keys-section" aria-labelledby="keys-title">
+        <h2 id="keys-title">All the keys</h2>
+        <p>
+          You can bring this list up in the app too: press <kbd data-key="help">?</kbd> while the pointer is
+          free.
+        </p>
+        <ul class="keys" id="keys"></ul>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <p class="actions">
+        <a class="button solid" href="./?local" id="get-started-foot">Get started</a>
+        <span class="aside">Opens an empty map. There's nothing to install.</span>
+      </p>
+    </footer>
+
+    <script type="module" src="/src/home/main.js"></script>
+  </body>
+</html>

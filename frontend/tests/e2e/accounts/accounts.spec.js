@@ -1,0 +1,586 @@
+// Accounts, milestones 2 to 4 (USERS.md): sign-up in the account shell, the
+// map list, opening a server map, autosave, Ctrl+S, back to the list, and the
+// safety rails around them: a second tab never overwrites (the conflict
+// panel), edits made offline survive in this browser and are offered back,
+// earlier versions can be restored, signed-out goes to sign-in. Plus the
+// homepage in front of it all, and the warning before signing in over plain
+// HTTP. Runs against a Flask of its own (playwright.accounts.config.js).
+import { test, expect } from '@playwright/test'
+import { collectConsoleErrors, installGestures, pickMenu, settle, t } from '../helpers/gestures.js'
+
+const PASSWORD = 'e2e password 1'
+let counter = 0
+// One account per test: the database outlives each test within a run.
+const freshName = () => `e2e${Date.now().toString(36)}${counter++}`
+
+async function signUp(page, username = freshName()) {
+  // Signed out, `/` is the homepage; its "Create an account" opens the form.
+  await page.goto('/')
+  await page.getByRole('link', { name: 'Create an account' }).click()
+  await expect(page).toHaveURL(/account\.html$/)
+  await expect(page.getByRole('tab', { name: 'Create account' })).toHaveAttribute('aria-selected', 'true')
+  await page.locator('#sign-up-username').fill(username)
+  await page.locator('#sign-up-password').fill(PASSWORD)
+  await page.locator('#sign-up-confirm').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Create account' }).click()
+  await expect(page.locator('#who-name')).toHaveText(username)
+  return username
+}
+
+async function newMap(page, name) {
+  await page.locator('#new-map-name').fill(name)
+  await page.getByRole('button', { name: 'New map' }).click()
+  await expect(page).toHaveURL(/\?map=[\w-]{16}$/)
+  await page.waitForTimeout(1500)
+  await installGestures(page)
+  return new URL(page.url()).searchParams.get('map')
+}
+
+const hud = (page) => t(page, 'hud()')
+const panel = (page) => page.locator('#editor')
+
+// The same map in a second tab of the same browser (same session cookie).
+async function openAgain(page, id) {
+  const other = await page.context().newPage()
+  await other.goto(`/?map=${id}`)
+  await other.waitForTimeout(1500)
+  await installGestures(other)
+  return other
+}
+
+// Tab A saves a star; tab B, still on revision 1, adds its own and is refused.
+async function makeConflict(page, id) {
+  const other = await openAgain(page, id)
+  await t(page, 'doubleClick()')
+  await settle(page)
+  await page.keyboard.press('ControlOrMeta+s')
+  await expect.poll(async () => (await serverMap(page, id)).revision).toBe(2)
+  await t(other, 'look(300, 0)')
+  await settle(other)
+  await t(other, 'doubleClick()')
+  await settle(other)
+  await t(other, 'look(0, 200)')
+  await settle(other)
+  await other.keyboard.press('ControlOrMeta+s')
+  return other
+}
+const serverMap = async (page, id) => (await page.request.get(`/api/maps/${id}`)).json()
+
+test('sign up, make a map, and it saves itself', async ({ page }) => {
+  const errors = collectConsoleErrors(page)
+  await signUp(page)
+  await expect(page.locator('#empty')).toBeVisible()
+
+  const id = await newMap(page, 'Orion')
+  expect(await page.title()).toBe('Orion — AtlasMap')
+  await expect.poll(() => hud(page)).toContain('Orion · saved · 0 nodes')
+
+  await t(page, 'doubleClick()')
+  await settle(page)
+  // Off the new star, so the HUD shows the map rather than describing it.
+  await t(page, 'look(300, 0)')
+  await settle(page)
+  expect(await hud(page)).toMatch(/unsaved|saving/)
+  expect(await page.title()).toBe('• Orion — AtlasMap')
+  // Nothing goes out before the debounce...
+  expect((await serverMap(page, id)).payload.nodes).toHaveLength(0)
+  // ...and then it does, with no keypress.
+  await expect.poll(() => hud(page), { timeout: 15_000 }).toContain('Orion · saved · 1 nodes')
+  const saved = await serverMap(page, id)
+  expect(saved.payload.nodes).toHaveLength(1)
+  expect(saved.revision).toBe(2)
+  expect(await page.title()).toBe('Orion — AtlasMap')
+
+  // A reload opens what was saved.
+  await page.reload()
+  await page.waitForTimeout(1500)
+  await expect.poll(() => page.locator('#hud').textContent()).toContain('Orion · saved · 1 nodes')
+  expect(errors).toEqual([])
+})
+
+test('Ctrl+S saves at once, and My maps goes back to the list', async ({ page }) => {
+  await signUp(page)
+  const id = await newMap(page, 'Lyra')
+  await t(page, 'doubleClick()')
+  await settle(page)
+  await page.keyboard.press('ControlOrMeta+s')
+  // Well inside the 3 s debounce.
+  await expect.poll(async () => (await serverMap(page, id)).revision, { timeout: 2000 }).toBe(2)
+  await expect.poll(() => hud(page)).toContain(' · saved')
+
+  // An edit, then straight back to the list: leaving saves it first.
+  await t(page, 'look(300, 0)')
+  await settle(page)
+  await t(page, 'doubleClick()')
+  await settle(page)
+  await t(page, 'look(300, 0)')
+  await settle(page)
+  // pickMenu's own settle would run on a page that has already navigated.
+  await t(page, 'rightDown()')
+  await settle(page)
+  expect(await t(page, 'wedges()')).toEqual(['My maps', 'Save', 'Export', 'Balance', 'More…'])
+  await t(page, 'look(0, -60)')
+  expect(await t(page, 'armed()')).toBe('My maps')
+  await Promise.all([page.waitForURL(/account\.html$/), t(page, 'rightUp()')])
+  expect((await serverMap(page, id)).payload.nodes).toHaveLength(2)
+  await expect(page.locator('.map .meta')).toContainText('2 stars')
+})
+
+test('a second tab never overwrites the first; its edits can become a copy', async ({ page }) => {
+  await signUp(page)
+  const id = await newMap(page, 'Twins')
+  const other = await makeConflict(page, id)
+
+  // The panel comes up by itself; Esc puts it off, Ctrl+S brings it back.
+  await expect(panel(other)).toContainText('Twins was changed in another tab or device at')
+  await other.keyboard.press('Escape')
+  await expect(panel(other)).toBeHidden()
+  await expect.poll(() => t(other, 'hud()')).toContain('changed in another tab or device')
+  const stored = await serverMap(page, id)
+  expect(stored.revision).toBe(2)
+  expect(stored.payload.nodes).toHaveLength(1)
+  await other.keyboard.press('ControlOrMeta+s')
+  await expect(panel(other)).toContainText('L: load theirs')
+
+  await Promise.all([other.waitForURL((url) => !url.search.includes(id)), other.keyboard.press('c')])
+  const copyId = new URL(other.url()).searchParams.get('map')
+  const copy = await serverMap(page, copyId)
+  expect(copy.name).toBe('Twins (conflict copy)')
+  expect(copy.payload.nodes).toHaveLength(1)
+  const at = (node) => [node.x, node.y, node.z]
+  expect(at(copy.payload.nodes[0])).not.toEqual(at(stored.payload.nodes[0]))
+  // The original is untouched, and the copy opens clean, with nothing to restore.
+  expect((await serverMap(page, id)).revision).toBe(2)
+  await other.waitForTimeout(1500)
+  await expect(panel(other)).toBeHidden()
+  await expect
+    .poll(() => other.locator('#hud').textContent())
+    .toContain('Twins (conflict copy) · saved · 1 nodes')
+})
+
+test('load theirs keeps the edits in this tab in history and opens the saved map', async ({ page }) => {
+  await signUp(page)
+  const id = await newMap(page, 'Gemini')
+  const theirs = (await serverMap(page, id)).payload
+  const other = await makeConflict(page, id)
+  await expect(panel(other)).toContainText("keeps yours in this map's history")
+  await Promise.all([other.waitForEvent('load'), other.keyboard.press('l')])
+  await other.waitForTimeout(1500)
+  // No offer of the dropped edits in this browser: history has them.
+  await expect(panel(other)).toBeHidden()
+  await expect.poll(() => other.locator('#hud').textContent()).toContain('Gemini · saved · 1 nodes')
+  expect(theirs.nodes).toHaveLength(0)
+  expect((await serverMap(page, id)).revision).toBe(2)
+  const { snapshots } = await (await page.request.get(`/api/maps/${id}/snapshots`)).json()
+  // Newest first: tab B's star (based on revision 1), then revision 1 as tab A's save replaced it.
+  expect(snapshots.map((s) => [s.reason, s.revision, s.node_count])).toEqual([
+    ['unsaved-edits', 1, 1],
+    ['rolling', 1, 0],
+  ])
+})
+
+async function signIn(page, username) {
+  await page.goto('/account.html')
+  await page.locator('#sign-in-username').fill(username)
+  await page.locator('#sign-in-password').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.locator('#who-name')).toHaveText(username)
+}
+
+// Adds a star while this browser is offline, waits for the HUD to say so, then
+// leaves the page for good (a dead laptop, a closed tab) and signs back in.
+// Only what this browser kept survives. Chromium still lets the keepalive save
+// sent on the way out through under setOffline, so the session is ended first
+// (as if it expired meanwhile) and that save is refused.
+async function editOfflineAndLeave(page, context, username) {
+  await context.setOffline(true)
+  await t(page, 'doubleClick()')
+  await settle(page)
+  await t(page, 'look(300, 0)')
+  await settle(page)
+  await expect.poll(() => hud(page), { timeout: 15_000 }).toContain('offline, not saved (retrying)')
+  await page.request.post('/api/auth/logout', { headers: { 'X-Atlas': '1' } })
+  await page.goto('about:blank')
+  await context.setOffline(false)
+  await signIn(page, username)
+}
+
+test('offline: keeps retrying, keeps the edits in this browser, and offers them back', async ({
+  page,
+  context,
+}) => {
+  page.on('dialog', (dialog) => dialog.accept())
+  const username = await signUp(page)
+  const id = await newMap(page, 'Vela')
+  await editOfflineAndLeave(page, context, username)
+  expect((await serverMap(page, id)).revision).toBe(1)
+
+  await page.goto(`/?map=${id}`)
+  await page.waitForTimeout(1500)
+  await expect(panel(page)).toContainText('unsaved changes to Vela')
+  await expect(panel(page)).toContainText('R: restore them')
+  await page.keyboard.press('r')
+  await expect(panel(page)).toBeHidden()
+  await expect.poll(async () => (await serverMap(page, id)).payload.nodes.length, { timeout: 15_000 }).toBe(1)
+  await expect.poll(() => page.locator('#hud').textContent()).toContain('Vela · saved · 1 nodes')
+
+  // Saved, so nothing is offered next time.
+  await page.reload()
+  await page.waitForTimeout(1500)
+  await expect(panel(page)).toBeHidden()
+})
+
+test('a save that landed on the way out leaves nothing to offer', async ({ page }) => {
+  page.on('dialog', (dialog) => dialog.accept())
+  await signUp(page)
+  const id = await newMap(page, 'Pyxis')
+  // Autosave is refused while the tab is open; the keepalive save sent as it
+  // goes gets through (the route can't catch a request from a page that's gone).
+  const offline = (route) => (route.request().method() === 'PUT' ? route.abort() : route.continue())
+  await page.route('**/api/maps/*', offline)
+  await t(page, 'doubleClick()')
+  await settle(page)
+  await t(page, 'look(300, 0)')
+  await settle(page)
+  await expect.poll(() => hud(page), { timeout: 15_000 }).toContain('offline')
+  await page.goto('/account.html')
+  await page.unroute('**/api/maps/*', offline)
+  await expect.poll(async () => (await serverMap(page, id)).revision).toBe(2)
+
+  await page.goto(`/?map=${id}`)
+  await page.waitForTimeout(1500)
+  await expect(panel(page)).toBeHidden()
+  await expect.poll(() => page.locator('#hud').textContent()).toContain('Pyxis · saved · 1 nodes')
+})
+
+test('edits kept here after the map moved on can only become a copy', async ({ page, context }) => {
+  page.on('dialog', (dialog) => dialog.accept())
+  const username = await signUp(page)
+  const id = await newMap(page, 'Cetus')
+  await editOfflineAndLeave(page, context, username)
+
+  // Meanwhile another device saves the map.
+  const moved = await page.request.put(`/api/maps/${id}`, {
+    headers: { 'X-Atlas': '1', 'If-Match': '1' },
+    data: { payload: { schema: 1, nodes: [], edges: [], note: 'elsewhere' } },
+  })
+  expect(moved.ok()).toBe(true)
+
+  await page.goto(`/?map=${id}`)
+  await page.waitForTimeout(1500)
+  await expect(panel(page)).toContainText('changed on the server since')
+  await page.keyboard.press('c')
+  await expect(panel(page)).toBeHidden()
+  await expect.poll(() => page.locator('#hud').textContent()).toContain('Cetus (unsaved copy)')
+  const list = (await (await page.request.get('/api/maps')).json()).maps
+  const copy = list.find((map) => map.name === 'Cetus (unsaved copy)')
+  expect(copy.node_count).toBe(1)
+  // The map itself keeps the other device's version.
+  expect((await serverMap(page, id)).payload.note).toBe('elsewhere')
+
+  await page.goto('/account.html')
+  await page.getByRole('button', { name: 'Sign out' }).click()
+  await expect(page.locator('#sign-in-form')).toBeVisible()
+  const left = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const req = indexedDB.open('atlasmap', 1)
+        req.onsuccess = () => {
+          const get = req.result.transaction('unsaved-maps').objectStore('unsaved-maps').count()
+          get.onsuccess = () => resolve(get.result)
+        }
+      }),
+  )
+  expect(left, 'sign-out clears what this browser kept').toBe(0)
+})
+
+test('the list: rename, duplicate, delete', async ({ page }) => {
+  await signUp(page)
+  await page.locator('#new-map-name').fill('Draco')
+  await page.getByRole('button', { name: 'New map' }).click()
+  await expect(page).toHaveURL(/\?map=/)
+  await page.goto('/account.html')
+
+  const row = page.locator('.map').first()
+  await row.getByRole('button', { name: 'Rename' }).click()
+  await row.locator('input').fill('Draco <b>major</b>')
+  await row.locator('input').press('Enter')
+  // Set as text, never as markup.
+  await expect(page.locator('.map .name')).toHaveText('Draco <b>major</b>')
+
+  await page.locator('.map').first().getByRole('button', { name: 'Duplicate' }).click()
+  await expect(page.locator('.map')).toHaveCount(2)
+  await expect(page.locator('.map .name').filter({ hasText: '(copy)' })).toHaveCount(1)
+
+  const copy = page.locator('.map').filter({ hasText: '(copy)' })
+  await copy.getByRole('button', { name: 'Delete' }).click()
+  await copy.getByRole('button', { name: 'Delete' }).click()
+  await expect(page.locator('.map')).toHaveCount(1)
+
+  await page.getByRole('button', { name: 'Sign out' }).click()
+  await expect(page.locator('#sign-in-form')).toBeVisible()
+})
+
+test('history: restore an earlier version from the list, then undo the restore', async ({ page }) => {
+  await signUp(page)
+  const id = await newMap(page, 'Cygnus')
+  await t(page, 'doubleClick()')
+  await settle(page)
+  // The first save keeps the empty revision 1 in history.
+  await page.keyboard.press('ControlOrMeta+s')
+  await expect.poll(async () => (await serverMap(page, id)).revision).toBe(2)
+  await page.goto('/account.html')
+
+  const row = page.locator('.map').first()
+  await expect(row.locator('.meta')).toContainText('1 star')
+  await row.getByRole('button', { name: 'History' }).click()
+  const versions = row.locator('.version')
+  await expect(versions).toHaveCount(1)
+  await expect(versions.first()).toContainText('0 stars')
+
+  await versions.first().getByRole('button', { name: 'Restore' }).click()
+  await expect(versions.first()).toContainText('Make this the current version?')
+  await versions.first().getByRole('button', { name: 'Restore' }).click()
+  // The list and its history come back, with what the restore replaced on top.
+  const again = page.locator('.map').first()
+  await expect(again.locator('.history .done')).toContainText('Restored the version from')
+  await expect(again.locator('.meta').first()).toContainText('0 stars')
+  const after = again.locator('.version')
+  await expect(after).toHaveCount(2)
+  await expect(after.first()).toContainText('1 star · ')
+  await expect(after.first()).toContainText('kept before a restore')
+  const restored = await serverMap(page, id)
+  expect([restored.revision, restored.payload.nodes.length]).toEqual([3, 0])
+
+  // Undo it the same way.
+  await after.first().getByRole('button', { name: 'Restore' }).click()
+  await after.first().getByRole('button', { name: 'Restore' }).click()
+  await expect(page.locator('.map').first().locator('.history .done')).toBeVisible()
+  const undone = await serverMap(page, id)
+  expect([undone.revision, undone.payload.nodes.length]).toEqual([4, 1])
+
+  // Opening it shows the restored star, saved.
+  await page.locator('.map .name').first().click()
+  await page.waitForTimeout(1500)
+  await expect.poll(() => page.locator('#hud').textContent()).toContain('Cygnus · saved · 1 nodes')
+
+  // History closes again from the list.
+  await page.goto('/account.html')
+  const closing = page.locator('.map').first()
+  await closing.getByRole('button', { name: 'History' }).click()
+  await expect(closing.locator('.version')).toHaveCount(3)
+  await closing.getByRole('button', { name: 'History' }).click()
+  await expect(closing.locator('.history')).toHaveCount(0)
+})
+
+test('signed out, a map link goes to sign-in; a missing map says so', async ({ page, browser }) => {
+  const username = await signUp(page)
+  const id = await newMap(page, 'Secret')
+
+  const stranger = await browser.newContext()
+  const strangerPage = await stranger.newPage()
+  await strangerPage.goto(`/?map=${id}`)
+  await expect(strangerPage).toHaveURL(/account\.html$/)
+  await expect(strangerPage.locator('#sign-in-form')).toBeVisible()
+  await stranger.close()
+
+  await page.goto('/?map=AAAAAAAAAAAAAAAA')
+  await expect(page).toHaveURL(/account\.html$/)
+  await expect(page.locator('#notice')).toContainText("doesn't exist")
+  await expect(page.locator('#who-name')).toHaveText(username)
+})
+
+test('sign in with the wrong password, then the right one', async ({ page, browser }) => {
+  const username = await signUp(page)
+  const fresh = await (await browser.newContext()).newPage()
+  await fresh.goto('/account.html')
+  await fresh.locator('#sign-in-username').fill(username)
+  await fresh.locator('#sign-in-password').fill('not it at all')
+  await fresh.getByRole('button', { name: 'Sign in' }).click()
+  await expect(fresh.locator('#sign-in-error')).toHaveText('Wrong username or password.')
+  await signIn(fresh, username)
+})
+
+test('?local is the classic app, even with accounts on', async ({ page }) => {
+  await page.goto('/?local')
+  await page.waitForTimeout(1500)
+  expect(page.url()).toMatch(/\?local$/)
+  await installGestures(page)
+  expect(await hud(page)).toContain('map.atlasmap')
+  const menu = await pickMenu(page, 0, -60)
+  expect(menu.labels[0]).toBe('New')
+})
+
+test('signed out, / is the homepage: Get started opens the app, Sign in the shell', async ({ page }) => {
+  const errors = collectConsoleErrors(page)
+  await page.goto('/')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('A mind map you fly through.')
+  await expect(page.locator('#get-started')).toHaveAttribute('href', '/?local')
+  // The key caps in the copy and the list come from the server's keymap.
+  await expect(page.locator('#keys li').first()).toBeVisible()
+  await expect(page.locator('#way-account')).toBeVisible()
+  await page.getByRole('link', { name: 'Sign in' }).click()
+  await expect(page).toHaveURL(/account\.html$/)
+  await expect(page.locator('#sign-in-form')).toBeVisible()
+  await page.locator('#home-link').click()
+  await expect(page).toHaveURL(/home\.html$/)
+  await page.locator('#get-started').click()
+  await expect(page).toHaveURL(/\?local$/)
+  expect(errors).toEqual([])
+})
+
+test('signed in, / goes straight to My maps; the homepage says My maps', async ({ page }) => {
+  const username = await signUp(page)
+  await page.goto('/')
+  await expect(page).toHaveURL(/account\.html$/)
+  await expect(page.locator('#who-name')).toHaveText(username)
+  await page.goto('/home.html')
+  await expect(page.locator('#sign-in')).toHaveText('My maps')
+  await expect(page.locator('#sign-up')).toBeHidden()
+})
+
+test('over plain HTTP, the shell warns once before the sign-in form', async ({ page }) => {
+  // Loopback is always secure, so play a LAN address: the server's own answer, marked not secure.
+  await page.route('**/api/auth/me', async (route) => {
+    const response = await route.fetch()
+    await route.fulfill({ response, json: { ...(await response.json()), secure: false } })
+  })
+  await page.goto('/account.html')
+  await expect(page.getByRole('heading', { name: "This connection isn't encrypted" })).toBeVisible()
+  await expect(page.locator('#sign-in-form')).toBeHidden()
+  await expect(page.locator('#insecure-local')).toHaveAttribute('href', '/?local')
+  await page.getByRole('button', { name: 'Sign in anyway' }).click()
+  await expect(page.locator('#sign-in-form')).toBeVisible()
+  // Once per tab: a reload goes straight to the form.
+  await page.reload()
+  await expect(page.locator('#sign-in-form')).toBeVisible()
+  await expect(page.locator('#insecure')).toBeHidden()
+})
+
+// --- Milestone 5: your own settings and keys, Help -----------------------------
+
+const nav = (page, name) => page.locator(`#pages a[data-page="${name}"]`).click()
+const settingsRow = (page, path) => page.locator(`#settings-view [data-path="${path}"]`)
+const myConfig = async (page) => (await page.request.get('/api/config')).json()
+
+test('settings: your own feel and keys reach Help and your maps, and reset to default', async ({ page }) => {
+  const errors = collectConsoleErrors(page)
+  await signUp(page)
+  await nav(page, 'settings')
+  await expect(page).toHaveURL(/#settings$/)
+  await expect(page).toHaveTitle('Settings — AtlasMap')
+
+  const sensitivity = settingsRow(page, 'flight.mouse_sensitivity')
+  await expect(sensitivity.getByRole('button', { name: 'Reset to default' })).toHaveCount(0)
+  await expect(page.locator('#settings-reset-all')).toBeDisabled()
+  await expect(page.locator('.savebar'), 'nothing to save yet').toBeHidden()
+  // A change undone by hand leaves nothing to save: the bar goes again.
+  await page.locator('#mine-flight-invert_y').click()
+  await expect(page.locator('.savebar')).toBeVisible()
+  await page.locator('#mine-flight-invert_y').click()
+  await expect(page.locator('.savebar')).toBeHidden()
+  await sensitivity.locator('input[type="number"]').fill('2')
+  await expect(sensitivity.getByRole('button', { name: 'Reset to default' })).toBeVisible()
+  await sensitivity.locator('input[type="number"]').fill('1')
+  await expect(page.locator('.savebar')).toBeHidden()
+  await expect(sensitivity.getByRole('button', { name: 'Reset to default' })).toHaveCount(0)
+  await sensitivity.locator('input[type="number"]').fill('2.5')
+
+  // Heat on J instead of H.
+  const heat = settingsRow(page, 'keybinds.heat')
+  await heat.getByRole('button', { name: /^Add a key for/ }).click()
+  await expect(heat.locator('.cap.listening')).toHaveText('Press a key')
+  await page.keyboard.press('j')
+  await heat.getByRole('button', { name: /^Remove H from/ }).click()
+  await expect(heat.locator('.cap:not(.empty)')).toHaveText(['J'])
+  await expect(page.locator('.savebar .state')).toHaveText('You have unsaved changes.')
+  await page.locator('#settings-save').click()
+  await expect(page.locator('.savebar .state')).toHaveText(/^Saved/)
+  await expect(heat.getByRole('button', { name: 'Reset to default' })).toHaveAttribute('title', 'Default: H')
+
+  // A key another action has while flying is refused, on its row.
+  const balance = settingsRow(page, 'keybinds.balance')
+  // Clicking a bound key replaces it.
+  await balance.getByRole('button', { name: /^Balance the layout.*: B\. Change it/ }).click()
+  await page.keyboard.press('j')
+  await expect(balance.locator('.cap:not(.empty)')).toHaveText(['J'])
+  await page.locator('#settings-save').click()
+  await expect(balance.locator('.error')).toContainText('J clashes with connection heat')
+  await page.getByRole('button', { name: 'Discard' }).click()
+  await expect(balance.locator('.cap:not(.empty)')).toHaveText(['B'])
+
+  const config = await myConfig(page)
+  expect(config.account).toBe(true)
+  expect(config.flight.mouse_sensitivity).toBe(2.5)
+  expect(config.keybinds.heat).toEqual(['J'])
+
+  // Still there after a reload, and Help shows the key you have.
+  await page.reload()
+  await expect(settingsRow(page, 'flight.mouse_sensitivity').locator('input[type="number"]')).toHaveValue(
+    '2.5',
+  )
+  await nav(page, 'help')
+  await expect(page).toHaveTitle('Help — AtlasMap')
+  await expect(page.locator('#help-view [data-action="heat"] kbd')).toHaveText(['J'])
+  await expect(page.locator('#help-view [data-action="search"] kbd')).toHaveText(['/', 'Ctrl/⌘+F'])
+
+  // A map's own key list says J too.
+  await nav(page, 'maps')
+  await newMap(page, 'Keys')
+  await expect(page.locator('#overlay .keys li', { hasText: 'connection heat' }).locator('kbd')).toHaveText(
+    'J',
+  )
+
+  // Back to the default: the override is gone, not just set to H.
+  const overrides = async () => (await (await page.request.get('/api/account/settings')).json()).overrides
+  await page.goto('/account.html#settings')
+  await settingsRow(page, 'keybinds.heat').getByRole('button', { name: 'Reset to default' }).click()
+  await page.locator('#settings-save').click()
+  await expect(page.locator('.savebar .state')).toHaveText(/^Saved/)
+  expect(await overrides()).toEqual({ flight: { mouse_sensitivity: 2.5 } })
+  expect((await myConfig(page)).keybinds.heat).toEqual(['H'])
+
+  // Reset all: nothing of yours left.
+  await page.locator('#settings-reset-all').click()
+  await expect(settingsRow(page, 'flight.mouse_sensitivity').locator('input[type="number"]')).toHaveValue('1')
+  await page.locator('#settings-save').click()
+  await expect(page.locator('.savebar .state')).toHaveText(/^Saved/)
+  expect(await overrides()).toEqual({})
+  await expect(page.locator('#settings-reset-all')).toBeDisabled()
+  // The one refused save above, which Chrome logs.
+  expect(errors).toEqual([expect.stringContaining('status of 400')])
+})
+
+async function holdV(page, dx, dy) {
+  await page.keyboard.down('v')
+  await settle(page)
+  await t(page, `look(${dx}, ${dy})`)
+  await settle(page)
+  return t(page, 'armed()')
+}
+
+test('signed in, a look picked with V is kept in the account and follows you', async ({ page, browser }) => {
+  const errors = collectConsoleErrors(page)
+  const username = await signUp(page)
+  const id = await newMap(page, 'Looks')
+  expect(await page.evaluate(() => document.documentElement.dataset.look)).toBe('deep-space')
+  expect(await holdV(page, 60, 0)).toBe('Deep Sea')
+  await page.keyboard.up('v')
+  await settle(page, 500)
+  expect(await page.evaluate(() => document.documentElement.dataset.look)).toBe('deep-sea')
+  await expect
+    .poll(async () => (await (await page.request.get('/api/account/settings')).json()).overrides)
+    .toEqual({ visuals: { look: 'deep-sea' } })
+  // Kept in the account, not in this browser.
+  expect(await page.evaluate(() => localStorage.getItem('atlasmap.look'))).toBeNull()
+
+  await page.goto('/account.html#settings')
+  await expect(page.locator('#mine-visuals-look')).toHaveValue('deep-sea')
+
+  // Another browser, signed in as the same person, opens in Deep Sea.
+  const other = await (await browser.newContext()).newPage()
+  await signIn(other, username)
+  await other.goto(`/?map=${id}`)
+  await expect.poll(() => other.evaluate(() => document.documentElement.dataset.look)).toBe('deep-sea')
+  expect(errors).toEqual([])
+})

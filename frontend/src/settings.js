@@ -26,7 +26,11 @@ function valid(spec, value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= spec.min && value <= spec.max
 }
 
-/** Takes whatever arrived and keeps only what the schema allows. */
+/**
+ * Takes whatever arrived and keeps only what the schema allows, plus
+ * `account`: true when the server layered a signed-in user's own settings in
+ * (server/account.py), so a look picked with V is kept in the account.
+ */
 export function mergeSettings(raw) {
   const out = defaultSettings()
   if (!raw || typeof raw !== 'object') return out
@@ -34,6 +38,7 @@ export function mergeSettings(raw) {
     const value = raw[spec.section]?.[spec.key]
     if (valid(spec, value)) out[spec.section][spec.key] = value
   }
+  if (raw.account === true) out.account = true
   const binds = raw.keybinds
   if (binds && typeof binds === 'object') {
     for (const id of Object.keys(out.keybinds)) {

@@ -19,7 +19,7 @@ test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, 
   const appErrors = []
   page.on('pageerror', (e) => appErrors.push(String(e)))
 
-  await page.goto('/')
+  await page.goto('/?local') // plain / is the homepage
   // Chrome refuses pointer lock to a document that is not frontmost, and
   // throws WrongDocumentError doing it — nothing to do with the app.
   await page.bringToFront()

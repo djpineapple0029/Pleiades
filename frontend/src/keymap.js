@@ -136,6 +136,35 @@ export function chordCaps(chord) {
   return [...caps, chord.key]
 }
 
+/**
+ * A keydown as chord text in the config's syntax, for capturing a new key
+ * (the account shell's Settings page): a string, `null` while only modifiers
+ * are down, or `undefined` for a key the config can't name. Letters and
+ * digits by position, like matching. ⌘ is always Mod; Ctrl is Mod off a Mac
+ * and Ctrl proper on one. Shift alone is only a chord for a flight key.
+ * The /admin page has its own copy (`chordFrom`): it has no build step.
+ */
+export function chordFromEvent(event, { movement = false, mac = false } = {}) {
+  const { key, code } = event
+  if (key === 'Shift') return movement ? 'Shift' : null
+  if (['Control', 'Meta', 'Alt', 'AltGraph', 'CapsLock', 'OS'].includes(key)) return null
+  let name
+  if (/^Key[A-Z]$/.test(code)) name = code.slice(3)
+  else if (/^Digit\d$/.test(code)) name = code.slice(5)
+  else if (code === 'Space') name = 'Space'
+  else if (NAMED.includes(key) && key !== 'Shift') name = key
+  else if (CHARS.has(key)) name = key
+  else return undefined
+
+  const mods = []
+  if (event.metaKey || (event.ctrlKey && !mac)) mods.push('Mod')
+  if (event.ctrlKey && mac) mods.push('Ctrl')
+  if (event.altKey) mods.push('Alt')
+  // A symbol already says whether Shift was down (`?` is Shift+/).
+  if (event.shiftKey && !CHARS.has(name)) mods.push('Shift')
+  return [...mods, name].join('+')
+}
+
 export function defaultKeybinds() {
   return Object.fromEntries(schema.keybinds.map((action) => [action.id, [...action.default]]))
 }

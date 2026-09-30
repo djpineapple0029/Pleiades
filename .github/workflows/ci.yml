@@ -77,9 +77,13 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@v10.2.0 # no floating major tags after v7
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+      # Its own Flask with accounts on (playwright.accounts.config.js).
+      - run: npm run test:e2e:accounts
+        if: ${{ !cancelled() }}
       - uses: actions/upload-artifact@v7
         if: failure()
         with:

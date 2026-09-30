@@ -13,7 +13,7 @@ test('save through the password panel, then open the same file back in', async (
   const pageErrors = []
   page.on('pageerror', (e) => pageErrors.push(String(e)))
 
-  await page.goto('/')
+  await page.goto('/?local') // plain / is the homepage
   await page.bringToFront()
   await page.waitForTimeout(2500) // skybox bakes once at startup
   await page.click('#viewport')

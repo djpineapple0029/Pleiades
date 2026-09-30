@@ -97,6 +97,7 @@ camera.position.set(0, 0, 260)
 const graph = createGraph()
 const view = createGraphView(graph, scene, renderer)
 view.setHeat(settings.visuals.connection_heat, { instant: true })
+view.setBrightness(settings.visuals.node_brightness)
 const rivers = createDustRivers(graph, scene, { radiusOf: view.radiusOf })
 const overview = createOverview({ camera, canvas, graph, view, controls: flight.controls })
 // The look (`looks.js`): this browser's own choice if it made one in the app

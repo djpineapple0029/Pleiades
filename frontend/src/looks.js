@@ -21,7 +21,9 @@
  *   bloom passes, no sky, no dust, nothing animated.
  *
  * The choice is remembered in this browser; the config's `visuals.look` is
- * where a browser with no choice yet starts.
+ * where a browser with no choice yet starts. Signed in, the choice is kept in
+ * the account instead (it is then that user's `visuals.look`), so it follows
+ * them to other devices and matches their Settings page.
  */
 
 const SPACE = {
@@ -204,6 +206,8 @@ const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => res
  * strength, which a look scales. `fade` is an element that CSS fades to
  * black while it has the `on` class; without one, switches are instant.
  * `onChange(look)` runs right after a look lands, still under the fade.
+ * `store(id)` keeps a pick for next time; by default in this browser, and in
+ * the account instead for a signed-in user (main.js).
  */
 export function createLooks({
   renderer,
@@ -216,6 +220,7 @@ export function createLooks({
   fade = null,
   bloomStrength = 0.3,
   onChange = () => {},
+  store = storeLook,
 }) {
   let current = null
   let switching = null // the running switch's promise
@@ -265,7 +270,7 @@ export function createLooks({
    */
   async function set(id, { instant = false, remember = true } = {}) {
     const look = lookById(id)
-    if (remember) storeLook(look.id)
+    if (remember) store(look.id)
     if (instant || !fade) {
       applyNow(look)
       return
