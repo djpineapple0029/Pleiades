@@ -4,8 +4,11 @@
 // panel), edits made offline survive in this browser and are offered back,
 // earlier versions can be restored, signed-out goes to sign-in. Plus the
 // homepage in front of it all, and the warning before signing in over plain
-// HTTP. Runs against a Flask of its own (playwright.accounts.config.js).
+// HTTP. Milestone 6: /admin's Accounts tab (reset a password, disable,
+// delete) and the new password a reset account must choose. Runs against a
+// Flask of its own (playwright.accounts.config.js).
 import { test, expect } from '@playwright/test'
+import { ADMIN_PASSWORD, API_ORIGIN } from '../../../playwright.accounts.config.js'
 import { collectConsoleErrors, installGestures, pickMenu, settle, t } from '../helpers/gestures.js'
 
 const PASSWORD = 'e2e password 1'
@@ -179,10 +182,10 @@ test('load theirs keeps the edits in this tab in history and opens the saved map
   ])
 })
 
-async function signIn(page, username) {
+async function signIn(page, username, password = PASSWORD) {
   await page.goto('/account.html')
   await page.locator('#sign-in-username').fill(username)
-  await page.locator('#sign-in-password').fill(PASSWORD)
+  await page.locator('#sign-in-password').fill(password)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.locator('#who-name')).toHaveText(username)
 }
@@ -626,4 +629,107 @@ test('signed in, a look picked with V is kept in the account and follows you', a
   await other.goto(`/?map=${id}`)
   await expect.poll(() => other.evaluate(() => document.documentElement.dataset.look)).toBe('deep-sea')
   expect(errors).toEqual([])
+})
+
+// --- Milestone 6: /admin → Accounts -------------------------------------------
+
+// /admin isn't proxied by Vite; it's the Flask itself, on loopback.
+async function openAdmin(browser) {
+  const admin = await (await browser.newContext()).newPage()
+  await admin.goto(`${API_ORIGIN}/admin`)
+  await admin.locator('#sign-in-password').fill(ADMIN_PASSWORD)
+  await admin.getByRole('button', { name: 'Sign in' }).click()
+  await admin.getByRole('tab', { name: 'Accounts' }).click()
+  return admin
+}
+const userRow = (admin, username) => admin.locator(`#users tr[data-user="${username}"]`)
+
+test('admin resets a password: signed out, a new one chosen, the maps are all still there', async ({
+  page,
+  browser,
+}) => {
+  const username = await signUp(page)
+  const id = await newMap(page, 'Kept through a reset')
+  await page.goto('/account.html')
+
+  const admin = await openAdmin(browser)
+  // The accounts settings moved here from Settings, above the users.
+  await expect(admin.locator('#accounts-settings')).toContainText('Open sign-up')
+  const row = userRow(admin, username)
+  await expect(row).toContainText('Active')
+  await expect(row.locator('td').nth(3)).toHaveText('1')
+  await row.getByRole('button', { name: 'Reset password' }).click()
+  await admin.locator('.row-panel').getByRole('button', { name: 'Reset password' }).click()
+  const temp = (await admin.locator('.row-panel code.temp').textContent()).trim()
+  expect(temp).toMatch(/^[a-z2-9]{4}(-[a-z2-9]{4}){3,}$/)
+  await expect(row).toContainText('Reset, not yet changed')
+  await expect(row).toContainText('signed out')
+
+  // The open tab lost its session at once.
+  await page.reload()
+  await expect(page.locator('#sign-in-form')).toBeVisible()
+  await page.locator('#sign-in-username').fill(username)
+  await page.locator('#sign-in-password').fill(temp)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible()
+  await expect(page.locator('#pages')).toBeHidden()
+  await expect(page.locator('#sign-out')).toBeVisible()
+
+  // Nothing else answers until it's done: a map link comes back here.
+  await page.goto(`/?map=${id}`)
+  await expect(page).toHaveURL(/account\.html$/)
+  await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible()
+
+  await page.locator('#must-change-password').fill(temp)
+  await page.locator('#must-change-confirm').fill(temp)
+  await page.getByRole('button', { name: 'Save password' }).click()
+  await expect(page.locator('#must-change-error')).toContainText('other than the temporary one')
+  await page.locator('#must-change-password').fill('my own again 1')
+  await page.locator('#must-change-confirm').fill('my own again 1')
+  await page.getByRole('button', { name: 'Save password' }).click()
+  await expect(page.locator('#notice')).toHaveText('Password changed.')
+  await expect(page.locator('#maps .map .name')).toHaveText(['Kept through a reset'])
+
+  await admin.getByRole('button', { name: 'Done' }).click()
+  await admin.getByRole('tab', { name: 'Status' }).click()
+  await admin.getByRole('tab', { name: 'Accounts' }).click()
+  await expect(row).toContainText('Active')
+  await expect(row).toContainText('signed in on 1 device')
+
+  await signIn(await (await browser.newContext()).newPage(), username, 'my own again 1')
+})
+
+test('admin disables, enables and deletes an account', async ({ page, browser }) => {
+  const username = await signUp(page)
+  await newMap(page, 'Going away')
+  await page.goto('/account.html')
+
+  const admin = await openAdmin(browser)
+  const row = userRow(admin, username)
+  await row.getByRole('button', { name: 'Disable' }).click()
+  await expect(row).toContainText('Disabled')
+  await expect(admin.locator('#toast')).toContainText('disabled and signed out')
+  await page.reload()
+  await expect(page.locator('#sign-in-form')).toBeVisible()
+  await page.locator('#sign-in-username').fill(username)
+  await page.locator('#sign-in-password').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.locator('#sign-in-error')).toHaveText('Wrong username or password.')
+
+  await row.getByRole('button', { name: 'Enable' }).click()
+  await expect(row).toContainText('Active')
+  await signIn(page, username)
+
+  await row.getByRole('button', { name: 'Delete' }).click()
+  const confirm = admin.locator('.row-panel')
+  await expect(confirm).toContainText('1 map and their history')
+  const yes = confirm.getByRole('button', { name: 'Delete for good' })
+  await expect(yes).toBeDisabled()
+  await confirm.getByRole('textbox').fill('not the name')
+  await expect(yes).toBeDisabled()
+  await confirm.getByRole('textbox').fill(username)
+  await yes.click()
+  await expect(row).toHaveCount(0)
+  await page.reload()
+  await expect(page.locator('#sign-in-form')).toBeVisible()
 })

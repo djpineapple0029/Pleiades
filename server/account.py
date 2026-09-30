@@ -1,4 +1,5 @@
-"""A signed-in user's own account: for now, their settings (USERS.md decision 17).
+"""A signed-in user's own account: their settings (USERS.md decision 17) and
+their password.
 
 What a user may set is what `settings_schema.json` marks `user: true`: the
 client settings and the keybinds. They store only what they changed; the
@@ -6,8 +7,9 @@ admin's values (/admin) stay the defaults underneath, so an admin change still
 reaches every setting a user hasn't touched. `/api/config` serves the layered
 result to a signed-in browser (server/api.py).
 
-Milestone 7's self-service routes (password, username, sessions, delete,
-export) belong here too.
+A password reset by the admin (/admin → Accounts) leaves the account able to
+do one thing: choose a new password here. Milestone 7's other self-service
+routes (username, sessions, delete, export) belong here too.
 """
 
 from __future__ import annotations
@@ -18,7 +20,27 @@ from collections.abc import Callable
 
 from flask import Blueprint, Response, jsonify, request
 
-from .accounts import current_user, database, fail, finish, gate, signed_in, store
+from .accounts import (
+    COOKIE,
+    busy,
+    check_or_none,
+    client_ip,
+    current_user,
+    database,
+    even_after_reset,
+    fail,
+    finish,
+    gate,
+    guard,
+    hash_or_none,
+    json_body,
+    locked_out,
+    new_password_problem,
+    record_wrong_password,
+    signed_in,
+    store,
+    token_hash,
+)
 from .config import apply_overrides, validate_overrides
 
 account = Blueprint("account", __name__, url_prefix="/api/account")
@@ -123,3 +145,55 @@ def change_settings() -> Response | tuple[Response, int]:
     if not isinstance(body, dict):
         return fail("Expected a JSON object body.", 400)
     return save(user_id(), lambda current: merge_patch(current, body))
+
+
+@account.post("/password")
+@signed_in
+@even_after_reset
+def change_password() -> Response | tuple[Response, int]:
+    """`{current, new}`. After an admin reset, `current` isn't asked for: the
+    reset ended every session, so this one was opened with the temporary
+    password moments ago. Every other session of the account ends here too."""
+    user = current_user()
+    assert user is not None  # noqa: S101 -- @signed_in ran first
+    body = json_body()
+    current, new = body.get("current"), body.get("new")
+    refused = new_password_problem(new)
+    if refused:
+        return fail(refused, 400)
+    assert isinstance(new, str)  # noqa: S101 -- new_password_problem checked it
+    ip_key, user_key = f"ip:{client_ip()}", f"user:{user['username']}"
+    with database().connect() as conn:
+        (stored,) = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user["id"],)).fetchone()
+
+    if user["must_change_password"]:
+        # The temporary password was handed over in the clear; it can't stay.
+        same = check_or_none(new, stored)
+        if same is None:
+            return busy()
+        if same:
+            return fail("Choose a password other than the temporary one.", 400)
+    else:
+        blocked = locked_out(ip_key, user_key)
+        if blocked:
+            return blocked
+        if not isinstance(current, str):
+            return fail("Wrong current password.", 401)
+        matches = check_or_none(current, stored)
+        if matches is None:
+            return busy()
+        if not matches:
+            record_wrong_password(ip_key, user_key)
+            return fail("Wrong current password.", 401)
+        guard().succeed(user_key)
+
+    password_hash = hash_or_none(new)
+    if password_hash is None:
+        return busy()
+    keep = token_hash(request.cookies.get(COOKIE, ""))
+    with database().transaction() as conn:
+        conn.execute(
+            "UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?", (password_hash, user["id"])
+        )
+        conn.execute("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?", (user["id"], keep))
+    return jsonify(user={"username": user["username"], "must_change_password": False})

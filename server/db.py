@@ -120,6 +120,26 @@ class Database:
                 conn.close()
             self._ready = True
 
+    def status(self) -> dict:
+        """Size and counts for /admin. A file that doesn't exist yet stays that way."""
+        if not self.path.is_file():
+            return {"exists": False, "path": str(self.path), "bytes": 0, "users": 0, "maps": 0, "snapshots": 0}
+        # WAL mode: recent writes sit in the -wal file until a checkpoint.
+        wal = self.path.with_name(self.path.name + "-wal")
+        size = sum(p.stat().st_size for p in (self.path, wal) if p.is_file())
+        with self.connect() as conn:
+            users, maps, snapshots = conn.execute(
+                "SELECT (SELECT COUNT(*) FROM users), (SELECT COUNT(*) FROM maps), (SELECT COUNT(*) FROM snapshots)"
+            ).fetchone()
+        return {
+            "exists": True,
+            "path": str(self.path),
+            "bytes": size,
+            "users": users,
+            "maps": maps,
+            "snapshots": snapshots,
+        }
+
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
         """A connection in autocommit mode; each statement is its own transaction."""

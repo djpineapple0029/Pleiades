@@ -42,6 +42,7 @@
           <button type="button" role="tab" data-tab="status" aria-selected="true">Status</button>
           <button type="button" role="tab" data-tab="keys">Keybinds</button>
           <button type="button" role="tab" data-tab="settings">Settings</button>
+          <button type="button" role="tab" data-tab="accounts">Accounts</button>
           <button type="button" role="tab" data-tab="password">Password</button>
         </nav>
 
@@ -82,6 +83,30 @@
 
         <section data-view="settings" class="view" hidden>
           <div id="settings"></div>
+        </section>
+
+        <section data-view="accounts" class="view" hidden>
+          <div id="accounts-settings"></div>
+          <div class="card">
+            <h2>Users <span id="user-count" class="count"></span></h2>
+            <p id="users-off" class="note first" hidden>
+              Accounts are switched off, so nobody can sign in. The accounts below are kept as they are.
+            </p>
+            <p class="error" id="users-error" role="alert"></p>
+            <div class="scroll">
+              <table class="users" id="users-table" hidden>
+                <thead>
+                  <tr><th>Username</th><th>Created</th><th>Last seen</th><th class="num">Maps</th><th class="num">Storage</th><th>Status</th><th><span class="sr">Actions</span></th></tr>
+                </thead>
+                <tbody id="users"></tbody>
+              </table>
+            </div>
+            <p id="users-empty" class="note" hidden>No accounts yet.</p>
+            <p class="note">
+              A reset password is shown once. The person signs in with it and must choose a new one
+              before they see their maps. Resetting, disabling and deleting sign the account out everywhere.
+            </p>
+          </div>
         </section>
 
         <section data-view="password" class="view" hidden>

@@ -241,6 +241,21 @@ describe('serverMap autosave', () => {
     expect(calls).toHaveLength(2)
   })
 
+  it('a password the admin reset retries too, once a new one is chosen elsewhere', async () => {
+    const { map, calls, advance, edit, answer } = setup()
+    edit()
+    advance(DEBOUNCE_MS)
+    await answer({
+      ok: false,
+      status: 403,
+      data: { must_change_password: true },
+      error: 'Choose a new password first.',
+    })
+    expect(map.statusText).toContain('choose a new password')
+    advance(RETRY_MIN_MS)
+    expect(calls).toHaveLength(2)
+  })
+
   it('a refusal waits for the next edit rather than retrying the same thing', async () => {
     const { map, calls, advance, edit, answer } = setup()
     edit()

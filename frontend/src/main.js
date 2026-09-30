@@ -70,7 +70,9 @@ const [settings, opened, keptLocally] = await Promise.all([
 ])
 if (opened && !opened.ok) {
   // Signed out: the shell signs in. Gone (or accounts off): the shell says so.
-  if (opened.status === 401 || opened.status === 404) {
+  // A password the admin reset: the shell asks for a new one first.
+  const mustChange = opened.status === 403 && opened.data?.must_change_password
+  if (opened.status === 401 || opened.status === 404 || mustChange) {
     location.replace(accountUrl(opened.status === 404 ? 'missing' : ''))
     await halt()
   }

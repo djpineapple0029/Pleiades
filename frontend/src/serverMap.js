@@ -118,6 +118,10 @@ export function createServerMap({
     } else if (status === 401) {
       problem = { kind: 'signed-out', text: 'signed out, not saved (sign in again in another tab)' }
       backoff()
+    } else if (status === 403 && result.data?.must_change_password) {
+      // Reset by the admin, then signed in again elsewhere with the temporary password.
+      problem = { kind: 'signed-out', text: 'not saved (choose a new password in another tab)' }
+      backoff()
     } else if (status === 0 || status >= 500) {
       problem = { kind: 'offline', text: 'offline, not saved (retrying)' }
       backoff()

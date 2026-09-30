@@ -15,6 +15,7 @@ from flask import Flask, Response, redirect, request, send_from_directory
 from .account import account
 from .accounts import account_shell_url, accounts
 from .admin import Guard, admin, client_ip
+from .admin_users import admin_users
 from .api import api
 from .config import ConfigStore
 from .db import FILENAME, Database
@@ -51,6 +52,7 @@ def create_app(config_path: Path | str | None = None) -> Flask:
 
     app.register_blueprint(api)
     app.register_blueprint(admin)
+    app.register_blueprint(admin_users)
     app.register_blueprint(accounts)
     app.register_blueprint(maps)
     app.register_blueprint(account)

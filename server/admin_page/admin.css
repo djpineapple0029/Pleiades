@@ -147,7 +147,7 @@ button.quiet:hover { border-color: var(--ink-dim); }
 .plain li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
 .plain .muted { color: var(--ink-dim); }
 
-.scroll { overflow-x: auto; }
+.scroll { overflow-x: auto; position: relative; }
 .recent { width: 100%; border-collapse: collapse; }
 .recent th { text-align: left; color: var(--ink-dim); font-weight: normal; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
 .recent td { padding: 3px 8px 3px 0; white-space: nowrap; }
@@ -240,3 +240,38 @@ button.quiet:hover { border-color: var(--ink-dim); }
   border-radius: 6px;
   background: var(--field);
 }
+
+/* Accounts → Users */
+h2 .count { color: var(--ink-dim); letter-spacing: 0; }
+.note.first { margin: 0 0 12px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.users { width: 100%; border-collapse: collapse; }
+.users th { text-align: left; color: var(--ink-dim); font-weight: normal; padding: 4px 12px 6px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.users td { padding: 8px 12px 8px 0; border-top: 1px solid #1a1f2b; vertical-align: top; white-space: nowrap; }
+.users tbody tr:first-child td { border-top: none; }
+.users .num { text-align: right; }
+.users .name { color: var(--ink); font-weight: 600; }
+.users td small { display: block; color: var(--ink-dim); }
+.users td.bad { color: var(--bad); }
+.users td.warn { color: var(--amber); }
+.users tr.disabled .name { color: var(--ink-dim); text-decoration: line-through; }
+.users .actions { display: flex; flex-wrap: wrap; gap: 6px; padding-right: 0; white-space: normal; min-width: 260px; }
+.users tr.row-panel td { border-top: none; padding-top: 0; white-space: normal; }
+button.small { padding: 3px 9px; font-size: 12px; }
+button.danger { border-color: #8a3a34; background: #3a1715; color: #ffd0cb; }
+button.danger:hover { background: #532220; }
+button.quiet.danger { background: transparent; color: var(--bad); border-color: var(--line); }
+button.quiet.danger:hover { border-color: var(--bad); }
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--field);
+}
+.confirm p { flex-basis: 100%; margin: 0; }
+.confirm .typed { margin: 0; flex: 1 1 200px; }
+.confirm .temp { color: var(--amber); font-size: 15px; padding: 2px 8px; user-select: all; }

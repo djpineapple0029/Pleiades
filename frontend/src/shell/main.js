@@ -18,7 +18,16 @@ import { createSettingsPage } from './settingsPage.js'
 
 const $ = (id) => document.getElementById(id)
 const backups = createBackupStore()
-const views = ['loading', 'off', 'insecure', 'signed-out', 'signed-in', 'settings-view', 'help-view']
+const views = [
+  'loading',
+  'off',
+  'insecure',
+  'signed-out',
+  'must-change',
+  'signed-in',
+  'settings-view',
+  'help-view',
+]
 // Signed in, the hash picks the page; anything else is My maps.
 const PAGES = {
   maps: { view: 'signed-in', title: 'My maps' },
@@ -34,7 +43,8 @@ const NOTICES = {
 function show(view) {
   for (const id of views) $(id).hidden = id !== view
   signedInNow = Object.values(PAGES).some((page) => page.view === view)
-  $('who').hidden = !signedInNow
+  // Someone whose password was reset can still sign out instead.
+  $('who').hidden = !signedInNow && view !== 'must-change'
   $('pages').hidden = !signedInNow
   // Signed out: a draft belongs to whoever was signed in, not the next person.
   if (!signedInNow) settingsPage.forget()
@@ -159,10 +169,51 @@ $('sign-out').addEventListener('click', async () => {
   start()
 })
 
+// --- Password reset by the admin ------------------------------------------------
+
+function showMustChange(me) {
+  document.title = 'Choose a new password — Pleiades'
+  $('who-name').textContent = me.user.username
+  $('must-change-username').value = me.user.username
+  $('must-change-min').textContent = me.min_password_length
+    ? `At least ${me.min_password_length} characters`
+    : ''
+  show('must-change')
+  $('must-change-password').focus()
+}
+
+$('must-change-form').addEventListener('submit', async (event) => {
+  event.preventDefault()
+  const form = event.currentTarget
+  setError('must-change-error', '')
+  const password = $('must-change-password').value
+  if (!password) return setError('must-change-error', 'Enter a new password.')
+  if (password !== $('must-change-confirm').value) {
+    $('must-change-confirm').value = ''
+    $('must-change-confirm').focus()
+    return setError('must-change-error', 'The passwords do not match.')
+  }
+  const result = await busy(form, () =>
+    request('api/account/password', { method: 'POST', body: { new: password } }),
+  )
+  if (!result.ok) return signedOutBy(result) || setError('must-change-error', result.error)
+  $('must-change-password').value = ''
+  $('must-change-confirm').value = ''
+  notice('Password changed.')
+  start()
+})
+
 // --- Signed in ----------------------------------------------------------------
 
-/** A 401 anywhere means the session is gone: back to the sign-in form. */
+/**
+ * A 401 anywhere means the session is gone: back to the sign-in form. A 403
+ * saying the password must change (an admin reset it meanwhile) goes to that.
+ */
 function signedOutBy(result) {
+  if (result.status === 403 && result.data?.must_change_password) {
+    start()
+    return true
+  }
   if (result.status !== 401) return false
   notice('You were signed out. Sign in again.')
   start()
@@ -487,7 +538,8 @@ async function start() {
     show('off')
     return
   }
-  if (me.user) await showSignedIn(me)
+  if (me.user?.must_change_password) showMustChange(me)
+  else if (me.user) await showSignedIn(me)
   else showSignedOut(me)
 }
 
