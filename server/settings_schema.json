@@ -22,6 +22,7 @@
 
     { "id": "rename", "group": "Edit", "label": "Rename the targeted star or link", "default": ["Enter"], "contexts": ["flight"], "scope": ["app"], "user": true },
     { "id": "edit_notes", "group": "Edit", "label": "Edit the targeted star's notes", "default": ["Mod+Enter"], "contexts": ["flight"], "scope": ["app"], "user": true },
+    { "id": "connect", "group": "Edit", "label": "Connect two stars: press on one, then on the other", "default": ["C"], "contexts": ["flight"], "scope": ["app"], "user": true },
     { "id": "balance", "group": "Edit", "label": "Balance the layout (again to stop)", "default": ["B"], "contexts": ["flight", "overview"], "scope": ["app"], "user": true },
     { "id": "tree_shape", "group": "Edit", "label": "Hold, move the mouse onto a layout shape, let go: Cone, Flat, Off (balances with it)", "default": ["T"], "contexts": ["flight", "overview"], "scope": ["app"], "user": true },
     { "id": "undo", "group": "Edit", "label": "Undo", "default": ["Mod+Z"], "contexts": ["flight", "free", "overview"], "printed": true, "scope": ["app"], "user": true },

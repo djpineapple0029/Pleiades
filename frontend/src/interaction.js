@@ -236,7 +236,9 @@ export function createInteraction({
     if (mode === 'searching') return '↑↓ to choose · Enter to fly there · Esc to close'
     if (mode === 'connecting') {
       // Instruction first, so it survives an ellipsis on a narrow window.
-      return `click a star to link it · right-click cancels · from ${nodeName(graph.getNode(sourceId))}`
+      const key = keymap.label('connect')
+      const how = key ? `click or ${key} on a star to link it` : 'click a star to link it'
+      return `${how} · right-click cancels · from ${nodeName(graph.getNode(sourceId))}`
     }
     if (mode === 'moving')
       return `click to place · right-click cancels · moving ${nodeName(graph.getNode(moveId))}`
@@ -522,6 +524,18 @@ export function createInteraction({
     sourceId = null
     view.setSource(null)
     view.setPending(null)
+  }
+
+  /** The connect key: on a star it starts a link, on a second star it makes
+   *  it. Pressed anywhere else mid-link, it cancels, like the path key. */
+  function connectKey() {
+    const id = hover?.kind === 'node' ? hover.id : null
+    if (mode === 'idle') {
+      if (id) startConnect(id)
+      return
+    }
+    if (id && id !== sourceId) confirmConnect()
+    else cancelConnect()
   }
 
   function confirmConnect() {
@@ -1436,6 +1450,10 @@ export function createInteraction({
     }
 
     if (is('path') && !event.repeat && controls.isLocked && mode === 'idle') pathKey()
+
+    if (is('connect') && !event.repeat && controls.isLocked && (mode === 'idle' || mode === 'connecting')) {
+      connectKey()
+    }
 
     // Hold to open the look ring or the layout-shape ring, move the mouse
     // onto one, let go.
