@@ -79,7 +79,18 @@ export function createViewerInteraction({
     return edge.label ? `edge ${edge.label} · ${ends}` : `edge ${ends}`
   }
 
-  function stateLine() {
+  /** What the HUD shows — the same as the app's: how to leave the overview
+   *  or a focus, and nothing otherwise. */
+  function hudLine() {
+    if (overview.isActive) {
+      const back = keymap.label('overview')
+      return back ? `${back} to fly` : ''
+    }
+    return focusTarget && describe(focusTarget) ? 'focused · click empty space to clear' : ''
+  }
+
+  /** The full readout behind the HUD (`data-trace`, see `status.js`). */
+  function traceLine() {
     const counts = `${graph.nodes.size} nodes · ${graph.edges.size} edges`
     // The overview hides the overlay, so the HUD is the only thing left
     // saying how to get out of it.
@@ -94,7 +105,7 @@ export function createViewerInteraction({
   }
 
   function updateHud() {
-    status.setState(stateLine())
+    status.setState(hudLine(), traceLine())
     status.tick()
   }
 

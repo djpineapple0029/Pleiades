@@ -31,7 +31,7 @@ test('save through the password panel, then open the same file back in', async (
     await page.keyboard.up('KeyD')
     await page.waitForTimeout(100)
   }
-  expect.soft(/3 nodes/.test(await page.textContent('#hud')), 'three nodes to save').toBe(true)
+  expect.soft(/3 nodes/.test(await page.getAttribute('#hud', 'data-trace')), 'three nodes to save').toBe(true)
 
   // ---- save
   const waitSave = page.waitForEvent('download', { timeout: 10000 })
@@ -63,7 +63,10 @@ test('save through the password panel, then open the same file back in', async (
 
   await page.waitForTimeout(600)
   expect
-    .soft(/downloaded regress\.plm/.test(await page.textContent('#hud')), 'HUD reports the save')
+    .soft(
+      /downloaded regress\.plm/.test(await page.getAttribute('#hud', 'data-trace')),
+      'HUD reports the save',
+    )
     .toBe(true)
 
   // ---- open it straight back
@@ -82,7 +85,7 @@ test('save through the password panel, then open the same file back in', async (
     await pw[0].press('Enter')
     await page.waitForTimeout(1500)
 
-    const hud = await page.textContent('#hud')
+    const hud = await page.getAttribute('#hud', 'data-trace')
     expect.soft(/opened regress\.plm/.test(hud), 'HUD reports the open').toBe(true)
     expect.soft(/3 nodes/.test(hud), 'the three nodes came back').toBe(true)
   }

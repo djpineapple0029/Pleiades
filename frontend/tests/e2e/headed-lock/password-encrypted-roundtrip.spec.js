@@ -110,7 +110,7 @@ test('encrypted save/reopen: shadow-hosted password field, wrong/right password'
       'correct password opens the file',
     )
     .toBe(true)
-  const hud = await page2.evaluate(() => document.getElementById('hud')?.textContent)
+  const hud = await page2.evaluate(() => document.getElementById('hud')?.dataset.trace)
   expect.soft(/\b1 nodes\b/.test(hud ?? ''), 'the graph loaded (1 nodes)').toBe(true)
 
   expect.soft(pageErrors, 'no page errors on the saving tab').toEqual([])

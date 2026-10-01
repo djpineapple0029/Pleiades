@@ -70,7 +70,7 @@ test('editor focus trap, and a no-password save/reopen round trip', async ({ pag
   await page.waitForTimeout(300)
   await page.mouse.dblclick(640, 400)
   await page.waitForTimeout(200)
-  const nodesBefore = await page.evaluate(() => document.getElementById('hud')?.textContent)
+  const nodesBefore = await page.evaluate(() => document.getElementById('hud')?.dataset.trace)
   expect.soft(/^node n1/.test(nodesBefore ?? ''), 'a node was spawned').toBe(true)
 
   await ctrlS(page)
@@ -108,7 +108,7 @@ test('editor focus trap, and a no-password save/reopen round trip', async ({ pag
     )
     .toBe(true)
 
-  const hudAfterOpen = await page2.evaluate(() => document.getElementById('hud')?.textContent)
+  const hudAfterOpen = await page2.evaluate(() => document.getElementById('hud')?.dataset.trace)
   expect.soft(/\b1 nodes\b/.test(hudAfterOpen ?? ''), 'the reopened map has the node back').toBe(true)
 
   expect.soft(pageErrors, 'no page errors on the saving tab').toEqual([])

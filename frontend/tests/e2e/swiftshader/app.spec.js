@@ -253,12 +253,12 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   expect
     .soft(
       await page.evaluate(async () => {
-        const before = document.getElementById('hud').textContent
+        const before = document.getElementById('hud').dataset.trace
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', key: 'b', bubbles: true }))
         await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
         return (
-          document.getElementById('hud').textContent !== before &&
-          document.getElementById('hud').textContent.includes('balancing')
+          document.getElementById('hud').dataset.trace !== before &&
+          document.getElementById('hud').dataset.trace.includes('balancing')
         )
       }),
       'B still balances from the overview',
