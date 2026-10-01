@@ -52,7 +52,6 @@ async function showAccount() {
   $('sign-in').href = accountUrl()
   $('sign-up').href = accountUrl('sign-up')
   $('account').hidden = false
-  $('way-account').hidden = false
 }
 
 showAccount()

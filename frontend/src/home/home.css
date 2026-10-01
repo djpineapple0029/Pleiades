@@ -427,30 +427,6 @@ p {
   fill: #e2ecff;
 }
 
-/* --- Where maps live ---------------------------------------------------------- */
-
-.ways {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
-  gap: 32px 48px;
-}
-
-.way {
-  padding-top: 20px;
-  border-top: 1px solid var(--rule);
-  color: rgba(223, 229, 245, 0.88);
-}
-
-.way h3 {
-  color: var(--starlight);
-}
-
-.share {
-  max-width: 44rem;
-  margin-top: 40px;
-  color: var(--dust);
-}
-
 /* --- Keys --------------------------------------------------------------------- */
 
 .keys-section > p {
