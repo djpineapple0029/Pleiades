@@ -5,8 +5,10 @@
 // earlier versions can be restored, signed-out goes to sign-in. Plus the
 // homepage in front of it all, and the warning before signing in over plain
 // HTTP. Milestone 6: /admin's Accounts tab (reset a password, disable,
-// delete) and the new password a reset account must choose. Runs against a
-// Flask of its own (playwright.accounts.config.js).
+// delete) and the new password a reset account must choose. Milestone 7:
+// upload and download map files, the zip of everything, and the Account
+// page. Runs against a Flask of its own (playwright.accounts.config.js).
+import { readFileSync } from 'node:fs'
 import { test, expect } from '@playwright/test'
 import { ADMIN_PASSWORD, API_ORIGIN } from '../../../playwright.accounts.config.js'
 import { collectConsoleErrors, installGestures, pickMenu, settle, t } from '../helpers/gestures.js'
@@ -732,4 +734,129 @@ test('admin disables, enables and deletes an account', async ({ page, browser })
   await expect(row).toHaveCount(0)
   await page.reload()
   await expect(page.locator('#sign-in-form')).toBeVisible()
+})
+
+// --- Milestone 7: files in and out, and the Account page ---------------------------
+
+const FIXTURES = new URL('../../fixtures/', import.meta.url)
+const fixture = (name) => new URL(`${name}.atlasmap`, FIXTURES).pathname
+const fixtureJson = (name) => JSON.parse(readFileSync(new URL(`${name}.json`, FIXTURES), 'utf8'))
+
+test('upload map files into the list, download one back, and download everything', async ({ page }) => {
+  const errors = collectConsoleErrors(page)
+  await signUp(page)
+
+  // No password: straight in, named after the file.
+  await page.locator('#upload-input').setInputFiles(fixture('v2-no-password'))
+  await expect(page.locator('#list-status')).toContainText('as “v2-no-password”')
+  await expect(page.locator('#upload-form')).toBeHidden()
+
+  // A password: asked for, a wrong one said beside it, then the right one.
+  await page.locator('#upload-input').setInputFiles(fixture('v2-encrypted'))
+  await expect(page.locator('#upload-what')).toHaveText('v2-encrypted.atlasmap has a password.')
+  await page.locator('#upload-password').fill('not it')
+  await page.locator('#upload-form').getByRole('button', { name: 'Upload' }).click()
+  await expect(page.locator('#upload-error')).toContainText('Wrong password')
+  await expect(page.locator('#who-name')).toBeVisible()
+  await page.locator('#upload-password').fill('correct horse ✦ battery')
+  await page.locator('#upload-form').getByRole('button', { name: 'Upload' }).click()
+  await expect(page.locator('.map')).toHaveCount(2)
+  const row = page.locator('.map').filter({ hasText: 'v2-encrypted' })
+  const id = await row.getAttribute('data-id')
+  expect((await serverMap(page, id)).payload).toEqual(fixtureJson('v2-encrypted'))
+
+  // Not a map at all.
+  await page.locator('#upload-input').setInputFiles({
+    name: 'notes.plm',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('just some text'),
+  })
+  await expect(page.locator('#list-error')).toContainText("isn't a Pleiades map file")
+
+  // Back out as a file with no password: readable as is.
+  await row.getByRole('button', { name: 'Download' }).click()
+  const [file] = await Promise.all([
+    page.waitForEvent('download'),
+    row.getByRole('button', { name: 'Download v2-encrypted.plm' }).click(),
+  ])
+  expect(file.suggestedFilename()).toBe('v2-encrypted.plm')
+  const bytes = readFileSync(await file.path())
+  expect([...bytes.subarray(0, 6)]).toEqual([0x41, 0x54, 0x4c, 0x4d, 2, 0])
+  expect(JSON.parse(bytes.subarray(6).toString('utf8'))).toEqual(fixtureJson('v2-encrypted'))
+  await expect(row.locator('.download')).toHaveCount(0)
+
+  // With a password, it's encrypted (mode 1), and opens in the app with it.
+  await row.getByRole('button', { name: 'Download' }).click()
+  await row.getByPlaceholder('Password (optional)').fill('pw for the file')
+  const [locked] = await Promise.all([
+    page.waitForEvent('download'),
+    row.getByRole('button', { name: 'Download v2-encrypted.plm' }).click(),
+  ])
+  expect([...readFileSync(await locked.path()).subarray(0, 6)]).toEqual([0x41, 0x54, 0x4c, 0x4d, 2, 1])
+
+  // Everything, from Account.
+  await page.getByRole('link', { name: 'Account' }).click()
+  await expect(page.locator('#account-usage')).toContainText('2 maps')
+  const [zip] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Download all my data' }).click(),
+  ])
+  expect(zip.suggestedFilename()).toMatch(/^pleiades-e2e\w+-\d{4}-\d\d-\d\d\.zip$/)
+  expect(
+    readFileSync(await zip.path())
+      .subarray(0, 2)
+      .toString(),
+  ).toBe('PK')
+  expect(errors).toEqual([])
+})
+
+test('account: sign out elsewhere, change username and password, delete it all', async ({
+  page,
+  browser,
+}) => {
+  const username = await signUp(page)
+  const elsewhere = await (await browser.newContext()).newPage()
+  await signIn(elsewhere, username)
+
+  await page.getByRole('link', { name: 'Account' }).click()
+  await expect(page).toHaveTitle('Account — Pleiades')
+  await expect(page.locator('#sessions-text')).toHaveText(
+    "You're also signed in on 1 other browser or device.",
+  )
+  await page.getByRole('button', { name: 'Sign out everywhere else' }).click()
+  await expect(page.locator('#sessions-text')).toContainText('Signed out 1 other session')
+  await expect(page.getByRole('button', { name: 'Sign out everywhere else' })).toBeDisabled()
+  await elsewhere.reload()
+  await expect(elsewhere.locator('#sign-in-form')).toBeVisible()
+
+  // A wrong password is said beside the form; nobody is signed out.
+  const renamed = `${username}x`
+  await page.locator('#username-new').fill(renamed)
+  await page.locator('#username-password').fill('not it at all')
+  await page.getByRole('button', { name: 'Change username' }).click()
+  await expect(page.locator('#username-error')).toHaveText('Wrong current password.')
+  await expect(page.locator('#who-name')).toHaveText(username)
+  await page.locator('#username-password').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Change username' }).click()
+  await expect(page.locator('#username-done')).toContainText(`You sign in as ${renamed} now.`)
+  await expect(page.locator('#who-name')).toHaveText(renamed)
+
+  const NEW_PASSWORD = 'e2e password 2'
+  await page.locator('#password-current').fill(PASSWORD)
+  await page.locator('#password-new').fill(NEW_PASSWORD)
+  await page.locator('#password-confirm').fill(NEW_PASSWORD)
+  await page.getByRole('button', { name: 'Change password' }).click()
+  await expect(page.locator('#password-done')).toHaveText('Password changed.')
+  await signIn(elsewhere, renamed, NEW_PASSWORD)
+
+  await page.locator('#delete-password').fill(NEW_PASSWORD)
+  await page.getByRole('button', { name: 'Delete my account' }).click()
+  await expect(page.locator('#sign-in-form')).toBeVisible()
+  await expect(page.locator('#notice')).toHaveText('Your account and its maps were deleted.')
+  await elsewhere.reload()
+  await expect(elsewhere.locator('#sign-in-form')).toBeVisible()
+  await elsewhere.locator('#sign-in-username').fill(renamed)
+  await elsewhere.locator('#sign-in-password').fill(NEW_PASSWORD)
+  await elsewhere.getByRole('button', { name: 'Sign in' }).click()
+  await expect(elsewhere.locator('#sign-in-error')).toHaveText('Wrong username or password.')
 })

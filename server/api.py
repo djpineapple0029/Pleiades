@@ -13,17 +13,9 @@ from flask import Blueprint, Response, current_app, jsonify, request, send_file
 from .account import effective_config
 from .accounts import session_user
 from .atlasfile import FormatError, PasswordError, decode_any, encode_v2
+from .filenames import download_name
 
 api = Blueprint("api", __name__, url_prefix="/api")
-
-SUFFIX = ".plm"
-# Files were `.atlasmap` before the rename to Pleiades; same bytes, saved again as `.plm`.
-LEGACY_SUFFIX = ".atlasmap"
-DEFAULT_NAME = f"map{SUFFIX}"
-MAX_NAME_LENGTH = 120
-# Reserved on some filesystem or other, plus the separators that would let a
-# name climb out of the download directory.
-UNSAFE_CHARS = set('"\\/:*?<>|')
 
 
 @api.after_request
@@ -55,20 +47,6 @@ def client_config() -> Response:
 
 def fail(message: str, status: int) -> tuple[Response, int]:
     return jsonify(error=message), status
-
-
-def download_name(raw: object) -> str:
-    """A filename safe to put in a Content-Disposition header, `.plm`-suffixed (never `.atlasmap`)."""
-    if not isinstance(raw, str):
-        return DEFAULT_NAME
-    name = raw.replace("\\", "/").rsplit("/", 1)[-1]
-    name = "".join(ch for ch in name if ch.isprintable() and ch not in UNSAFE_CHARS)
-    # Leading dots would hide the file; trailing dots and spaces are dropped by
-    # some filesystems anyway. Strip after truncating too, or the cut can leave one.
-    name = name.strip(" .")[:MAX_NAME_LENGTH].strip(" .")
-    if not name:
-        return DEFAULT_NAME
-    return name.removesuffix(LEGACY_SUFFIX).removesuffix(SUFFIX) + SUFFIX
 
 
 @api.post("/save")

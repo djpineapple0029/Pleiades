@@ -13,11 +13,13 @@ const BUDGETS = [
   { label: 'app JS', match: /^index-.*\.js$/, dir: 'assets', max: 1000 * KB },
   { label: 'app CSS', match: /^index-.*\.css$/, dir: 'assets', max: 16 * KB },
   // The account shell must stay small: no three, no scene code.
-  { label: 'account.html', match: /^account\.html$/, dir: '', max: 8 * KB },
+  // Milestone 7's Account page is static markup in it: 11.1 kB then.
+  { label: 'account.html', match: /^account\.html$/, dir: '', max: 14 * KB },
   // Settings and Help (2026-09-30) brought in the schema, keymap and looks,
   // and set those pages in Jost (its @font-face rules are most of the CSS):
-  // JS 20.3 kB, CSS 10 kB then.
-  { label: 'account JS', match: /^account-.*\.js$/, dir: 'assets', max: 28 * KB },
+  // JS 20.3 kB, CSS 10 kB then. Upload, download and the Account page
+  // (milestone 7, 2026-09-30): JS 31.5 kB.
+  { label: 'account JS', match: /^account-.*\.js$/, dir: 'assets', max: 38 * KB },
   { label: 'account CSS', match: /^account-.*\.css$/, dir: 'assets', max: 14 * KB },
   // three, split out of the app on 2026-09-30 so the homepage's hero shares it
   // (530 kB then; the app JS above dropped by the same amount).

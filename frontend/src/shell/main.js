@@ -1,6 +1,7 @@
 /**
  * The account shell (USERS.md, "Frontend"): sign in or sign up, then the list
- * of your maps, your Settings and Help (`#settings`, `#help`). Plain DOM, no
+ * of your maps, your Settings, Help and Account (`#settings`, `#help`,
+ * `#account`). Plain DOM, no
  * WebGL: it loads fast and works where the scene can't. Opening a map hands
  * over to the app at `?map=<id>`.
  *
@@ -10,10 +11,13 @@ import '@fontsource/jost/400.css'
 import '@fontsource/jost/500.css'
 import './shell.css'
 import { BASE, appUrl, homeUrl, request } from '../api.js'
+import { triggerDownload } from '../files.js'
 import { createBackupStore } from '../localBackup.js'
 import { fetchSettings } from '../settings.js'
+import { createAccountPage } from './accountPage.js'
 import { dateTime, mapSummary, relativeTime, versionSummary } from './format.js'
 import { renderHelp } from './helpPage.js'
+import { ACCEPT, fileName, mapFileBlob, nameFromFile, probe, readMapFile, readsHere } from './mapFiles.js'
 import { createSettingsPage } from './settingsPage.js'
 
 const $ = (id) => document.getElementById(id)
@@ -27,12 +31,14 @@ const views = [
   'signed-in',
   'settings-view',
   'help-view',
+  'account-view',
 ]
 // Signed in, the hash picks the page; anything else is My maps.
 const PAGES = {
   maps: { view: 'signed-in', title: 'My maps' },
   settings: { view: 'settings-view', title: 'Settings' },
   help: { view: 'help-view', title: 'Help' },
+  account: { view: 'account-view', title: 'Account' },
 }
 let signedInNow = false
 
@@ -47,7 +53,11 @@ function show(view) {
   $('who').hidden = !signedInNow && view !== 'must-change'
   $('pages').hidden = !signedInNow
   // Signed out: a draft belongs to whoever was signed in, not the next person.
-  if (!signedInNow) settingsPage.forget()
+  if (!signedInNow) {
+    settingsPage.forget()
+    accountPage.forget()
+    cancelUpload()
+  }
 }
 
 function notice(text) {
@@ -214,7 +224,8 @@ function signedOutBy(result) {
     start()
     return true
   }
-  if (result.status !== 401) return false
+  // A password typed to confirm something was wrong; the session is fine.
+  if (result.status !== 401 || result.data?.wrong_password) return false
   notice('You were signed out. Sign in again.')
   start()
   return true
@@ -222,6 +233,7 @@ function signedOutBy(result) {
 
 async function showSignedIn(me) {
   $('who-name').textContent = me.user.username
+  accountPage.setMinPasswordLength(me.min_password_length)
   await route()
 }
 
@@ -240,9 +252,15 @@ async function route() {
     else link.removeAttribute('aria-current')
   }
   if (name !== 'settings') settingsPage.close()
+  // Passwords typed on Account don't wait around on another page.
+  if (name !== 'account') accountPage.forget()
+  if (name !== 'maps') cancelUpload()
   show(page.view)
-  if (name === 'maps') await refreshList()
-  else if (name === 'settings') await settingsPage.open()
+  if (name === 'maps') {
+    listStatus('')
+    await refreshList()
+  } else if (name === 'settings') await settingsPage.open()
+  else if (name === 'account') await accountPage.open()
   else await showHelp()
 }
 
@@ -255,6 +273,23 @@ async function showHelp() {
 }
 
 const settingsPage = createSettingsPage({ root: $('settings-view'), request, onSignedOut: signedOutBy })
+
+const accountPage = createAccountPage({
+  request,
+  onSignedOut: signedOutBy,
+  onUsername: (name) => {
+    $('who-name').textContent = name
+  },
+  onDeleted: async () => {
+    // Nothing of the account stays behind in this browser either.
+    await backups.clear()
+    notice('Your account and its maps were deleted.')
+    // Not `location.hash = ''`: its hashchange would route a page that's
+    // still signed in, find the session gone and say "you were signed out".
+    history.replaceState(null, '', location.pathname + location.search)
+    start()
+  },
+})
 
 window.addEventListener('hashchange', () => {
   if (signedInNow) route()
@@ -317,6 +352,7 @@ function mapRow(map, now) {
   actions.className = 'actions'
   actions.append(
     button('History', () => toggleHistory(row, map)),
+    button('Download', () => toggleDownload(row, map)),
     button('Rename', () => startRename(row, map)),
     button('Duplicate', () => duplicate(map)),
     button('Delete', () => confirmDelete(row, map)),
@@ -437,6 +473,59 @@ function confirmRestore(row, map, snapshot, actions, cancel) {
   yes.focus()
 }
 
+// --- Download a map as a file -----------------------------------------------------
+
+/** Opens or closes the "download as a file" form under a map's row. */
+function toggleDownload(row, map) {
+  const open = row.querySelector('.download')
+  if (open) {
+    open.remove()
+    return
+  }
+  const form = document.createElement('form')
+  form.className = 'download inline-form'
+  form.noValidate = true
+  const password = document.createElement('input')
+  password.type = 'password'
+  password.autocomplete = 'new-password'
+  password.placeholder = 'Password (optional)'
+  password.setAttribute('aria-label', 'Password for the file (optional)')
+  const save = document.createElement('button')
+  save.type = 'submit'
+  save.className = 'small'
+  save.textContent = `Download ${fileName(map.name)}`
+  const note = document.createElement('p')
+  note.className = 'note'
+  note.textContent = 'With no password, anyone who has the file can open it.'
+  const fields = document.createElement('div')
+  fields.className = 'inline-form'
+  fields.append(
+    password,
+    save,
+    button('Cancel', () => form.remove()),
+  )
+  form.append(fields, note)
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    rowError(row, '')
+    await busy(form, () => download(row, map, password.value))
+    if (!row.querySelector('.error').textContent) form.remove()
+  })
+  password.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') form.remove()
+  })
+  row.querySelector('.error').before(form)
+  password.focus()
+}
+
+async function download(row, map, password) {
+  const result = await request(`api/maps/${encodeURIComponent(map.id)}`)
+  if (!result.ok) return signedOutBy(result) || rowError(row, `Could not download it: ${result.error}`)
+  const file = await mapFileBlob(result.data.payload, password, { base: BASE })
+  if (!file.ok) return rowError(row, `Could not download it: ${file.error}`)
+  triggerDownload(file.blob, fileName(result.data.name))
+}
+
 function rowError(row, text) {
   row.querySelector('.error').textContent = text
 }
@@ -522,6 +611,100 @@ $('new-map-form').addEventListener('submit', async (event) => {
   }
   location.assign(appUrl(result.data.id))
 })
+
+// --- Upload a file into the list ----------------------------------------------------
+
+// The file being uploaded while its password is asked for.
+let pending = null
+
+function listStatus(text) {
+  $('list-status').textContent = text
+  $('list-status').hidden = !text
+}
+
+function cancelUpload() {
+  pending = null
+  $('upload-form').hidden = true
+  $('upload-password').value = ''
+  setError('upload-error', '')
+}
+
+$('upload-input').accept = ACCEPT
+$('upload-button').addEventListener('click', () => {
+  $('upload-input').value = ''
+  $('upload-input').click()
+})
+
+$('upload-input').addEventListener('change', async () => {
+  const file = $('upload-input').files?.[0]
+  if (!file) return
+  cancelUpload()
+  listStatus('')
+  setError('list-error', '')
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  const probed = probe(bytes)
+  if (!probed) return setError('list-error', `${file.name} isn't a Pleiades map file (.plm or .atlasmap).`)
+  pending = { file, bytes, probed }
+  if (!probed.needsPassword) return busy($('new-map-form'), () => upload(''))
+  $('upload-what').textContent = `${file.name} has a password.`
+  $('upload-form').hidden = false
+  $('upload-password').focus()
+})
+
+$('upload-form').addEventListener('submit', (event) => {
+  event.preventDefault()
+  if (!pending) return
+  const password = $('upload-password').value
+  if (!password) return setError('upload-error', "Enter the file's password.")
+  return busy(event.currentTarget, () => upload(password))
+})
+
+$('upload-cancel').addEventListener('click', cancelUpload)
+$('upload-password').addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') cancelUpload()
+})
+
+/** Reads the pending file here when possible, else has the server read it; adds it to the list. */
+async function upload(password) {
+  const { file, bytes, probed } = pending
+  setError('upload-error', '')
+  const name = nameFromFile(file.name)
+  let result
+  if (readsHere(probed)) {
+    const read = await readMapFile(bytes, password)
+    if (!read.ok) return uploadFailed(read.wrongPassword, read.error)
+    result = await request('api/maps', {
+      method: 'POST',
+      body: { name: name || undefined, payload: read.payload },
+    })
+  } else {
+    // No WebCrypto on this page (plain HTTP): the server decrypts it, as Open does here.
+    const form = new FormData()
+    form.append('file', file, file.name)
+    form.append('password', password)
+    result = await request('api/maps/import', { method: 'POST', body: form })
+    if (!result.ok && result.data?.wrong_password) {
+      return uploadFailed(true, result.error)
+    }
+  }
+  if (!result.ok) {
+    if (signedOutBy(result)) return
+    return uploadFailed(false, result.error)
+  }
+  cancelUpload()
+  await refreshList()
+  listStatus(`Uploaded ${file.name} as “${result.data.name}”.`)
+}
+
+function uploadFailed(wrongPassword, error) {
+  if (wrongPassword && !$('upload-form').hidden) {
+    $('upload-password').value = ''
+    $('upload-password').focus()
+    return setError('upload-error', error)
+  }
+  cancelUpload()
+  setError('list-error', `Could not upload it: ${error}`)
+}
 
 // --- Start --------------------------------------------------------------------
 
