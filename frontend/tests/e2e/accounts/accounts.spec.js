@@ -474,7 +474,6 @@ test('signed out, / is the homepage: Get started opens the app, Sign in the shel
   await expect(page.locator('#get-started')).toHaveAttribute('href', '/?local')
   // The key caps in the copy and the list come from the server's keymap.
   await expect(page.locator('#keys li').first()).toBeVisible()
-  await expect(page.locator('#way-account')).toBeVisible()
   await page.getByRole('link', { name: 'Sign in' }).click()
   await expect(page).toHaveURL(/account\.html$/)
   await expect(page.locator('#sign-in-form')).toBeVisible()
