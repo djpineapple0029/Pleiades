@@ -1,5 +1,6 @@
 /**
- * The key list on the click-to-fly overlay, drawn from the keymap so it can't
+ * The key list on the click-to-fly overlay (in the app, only on `?`; the
+ * Help page has the whole set), drawn from the keymap so it can't
  * drift from the keys that actually work (V2.md §2.4.4). Mouse rows and Esc
  * aren't rebindable, so they're written in here.
  */
@@ -73,6 +74,32 @@ export function renderKeyList(list, keymap, rows) {
     items.push(li)
   }
   list.replaceChildren(...items)
+}
+
+/**
+ * The line under the overlay's "Click to fly": "or Enter · ? keys · Help".
+ * The full list stays behind `?`; `helpHref` (the account's Help page, which
+ * only a signed-in map can reach) links every key, opened in a new tab so the
+ * map stays open.
+ */
+export function renderPromptHint(hint, keymap, { helpHref = null } = {}) {
+  const parts = []
+  const resume = keymap.caps('resume')
+  if (resume.length) parts.push([document.createTextNode('or '), ...resume.map(kbd)])
+  const help = keymap.caps('help')
+  if (help.length) parts.push([...help.map(kbd), document.createTextNode(' keys')])
+  if (helpHref) {
+    const link = Object.assign(document.createElement('a'), {
+      href: helpHref,
+      target: '_blank',
+      rel: 'noopener',
+      textContent: 'Help',
+    })
+    parts.push([link])
+  }
+  hint.replaceChildren(
+    ...parts.flatMap((nodes, i) => (i ? [document.createTextNode(' · '), ...nodes] : nodes)),
+  )
 }
 
 /** The small "Click or Enter to fly · ? keys" hint. */

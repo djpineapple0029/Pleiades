@@ -10,6 +10,7 @@ const state = (page) =>
     const aside = document.getElementById('notes-sidebar')
     return {
       overlay: !document.getElementById('overlay').hidden,
+      keys: !document.querySelector('#overlay .keys').hidden,
       pill: !document.getElementById('resume-pill').hidden,
       editor: !document.getElementById('editor').hidden,
       sidebar: !aside.hidden,
@@ -48,12 +49,19 @@ test('rename in place, notes sidebar, automatic relock', async ({ page }, testIn
   await settle(page)
   await page.keyboard.type('wasd')
   await settle(page)
-  // --- Esc: discards the text; the browser drops the lock → full key list ---
+  // --- Esc: discards the text; the browser drops the lock → "Click to fly",
+  // with the key list only on `?` ---
   await page.keyboard.press('Escape')
   await t(page, 'escape()')
   await settle(page, 200)
   s = await state(page)
-  expect.soft(s.overlay, 'Esc brings the full key list').toBe(true)
+  expect.soft(s.overlay, 'Esc brings the click-to-fly overlay').toBe(true)
+  expect.soft(s.keys, 'but not the key list').toBe(false)
+  await page.keyboard.press('?')
+  expect.soft((await state(page)).keys, '? shows the key list').toBe(true)
+  await page.keyboard.press('?')
+  s = await state(page)
+  expect.soft(s.overlay && !s.keys, '? again hides it, overlay stays').toBe(true)
   await t(page, 'relock()')
   await settle(page)
   expect
