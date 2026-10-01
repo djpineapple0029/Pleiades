@@ -77,6 +77,7 @@ shows the keys actually in use.
 | left-click a star or link | focus: only its connections stay lit and named, everything else dims; click it again or empty space to clear |
 | `H` | connection heat colours on/off |
 | hold right button | radial menu on the targeted node or edge; move the mouse to pick a wedge, release to run it |
+| `C` on a star, then `C` on another | connect them (`C` anywhere else cancels) |
 | left-click a node while connecting | link it |
 | right-click / `Esc` while connecting | cancel |
 | `B` | balance: re-group the map by connection density and run the force layout until it settles, or stop a run in progress |
