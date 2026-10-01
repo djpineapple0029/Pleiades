@@ -2,10 +2,11 @@
 
     uv run python run.py          # or: .venv/bin/python run.py
 
-Binds the Flask app on every interface so other devices on your network can
-reach it, then draws a TUI with the URLs to connect to and a running tally of
-requests. The screen does not refresh on its own — press Enter to redraw it,
-or type q then Enter (or Ctrl+C) to stop the server and exit.
+Serves the app (uvicorn: Flask plus its WebSockets) on every interface so
+other devices on your network can reach it, then draws a TUI with the URLs to
+connect to and a running tally of requests. The screen does not refresh on
+its own — press Enter to redraw it, or type q then Enter (or Ctrl+C) to stop
+the server and exit.
 
 The admin panel is at /admin on the same port. On the very first run the
 dashboard shows the generated admin password; change it in the panel.
@@ -28,9 +29,9 @@ import time
 import urllib.request
 from datetime import timedelta
 
-from werkzeug.serving import make_server
+import uvicorn
 
-from server import create_app
+from server.asgi import create_asgi
 from server.env import env
 
 HOST = env("HOST", "0.0.0.0")  # noqa: S104 -- LAN serving is the point of run.py
@@ -130,22 +131,28 @@ def render(stats: dict, addrs: dict, first_password: str | None) -> str:
 
 
 def main() -> int:
-    # Werkzeug's per-request log lines would scribble over the dashboard.
+    # Per-request log lines would scribble over the dashboard.
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
-    app = create_app()
+    asgi = create_asgi()
+    app = asgi.state.flask
     stats = app.extensions["pleiades_stats"]
     config = app.extensions["pleiades_config"]
 
-    try:
-        server = make_server(HOST, PORT, app, threaded=True)
-    except OSError as exc:
-        print(f"Could not bind {HOST}:{PORT}: {exc}", file=sys.stderr)
+    # Same client-address behaviour as before: Flask's own trusted_proxies
+    # logic reads X-Forwarded-For; uvicorn must not rewrite it first.
+    server = uvicorn.Server(uvicorn.Config(asgi, host=HOST, port=PORT, log_level="error", proxy_headers=False))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    # uvicorn reports a failed bind by never starting (and its thread ending).
+    deadline = time.monotonic() + 5
+    while not server.started and thread.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if not server.started:
+        server.should_exit = True
+        print(f"Could not bind {HOST}:{PORT}.", file=sys.stderr)
         print("Set PLEIADES_PORT to a free port and try again.", file=sys.stderr)
         return 1
-
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
 
     addrs = {"lan": lan_ip(), "public": public_ip()}
 
@@ -163,7 +170,8 @@ def main() -> int:
     finally:
         out.write("\n")
         out.flush()
-        server.shutdown()
+        server.should_exit = True
+        thread.join(1)
     return 0
 
 
