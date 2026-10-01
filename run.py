@@ -68,7 +68,7 @@ def public_ip() -> str:
         return ""
 
 
-def human_bytes(n: int) -> str:
+def human_bytes(n: float) -> str:
     step = 1024.0
     for unit in ("B", "KB", "MB", "GB"):
         if n < step:
