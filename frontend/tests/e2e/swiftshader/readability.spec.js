@@ -175,6 +175,7 @@ test('click-to-focus, the type ring, a nexus, and splitting a link', async ({ pa
   await t(page, 'click()')
   await settle(page)
   expect.soft(await t(page, 'hud()'), 'n1 — n2 linked').toBe('node n2 · 1 links')
+  expect.soft(await t(page, 'shown()'), 'hovering a star puts nothing on screen').toBe('')
 
   // Click n2: focus. Off it, the HUD says what is focused.
   await t(page, 'click()')
@@ -184,12 +185,16 @@ test('click-to-focus, the type ring, a nexus, and splitting a link', async ({ pa
   expect
     .soft(await t(page, 'hud()'), 'focus shown on the HUD')
     .toBe('focus n2 · 1 connection · click empty space to clear')
+  expect
+    .soft(await t(page, 'shown()'), 'the screen says only how to clear it')
+    .toBe('focused · click empty space to clear')
   // Empty space clears it.
   await t(page, 'click()')
   await settle(page)
   expect
     .soft(await t(page, 'hud()'), 'a click on empty space clears the focus')
     .toBe('map.plm · unsaved · 3 nodes · 1 edges')
+  expect.soft(await t(page, 'shown()'), 'and the screen goes quiet').toBe('')
   await t(page, 'look(0, 80)')
   await settle(page)
 

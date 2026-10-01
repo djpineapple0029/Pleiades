@@ -28,7 +28,7 @@ test('rename keeps the lock; notes Save and Esc take it back with no click', asy
   await page.waitForTimeout(200)
   expect.soft(await locked(page), 'still locked after renaming in place').toBe(true)
   expect
-    .soft(await page.evaluate(() => document.getElementById('hud').textContent), 'renamed')
+    .soft(await page.evaluate(() => document.getElementById('hud').dataset.trace), 'renamed')
     .toContain('Vega')
 
   await page.keyboard.press('ControlOrMeta+Enter')

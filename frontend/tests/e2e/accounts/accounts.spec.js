@@ -99,7 +99,9 @@ test('sign up, make a map, and it saves itself', async ({ page }) => {
   // A reload opens what was saved.
   await page.reload()
   await page.waitForTimeout(1500)
-  await expect.poll(() => page.locator('#hud').textContent()).toContain('Orion · saved · 1 nodes')
+  await expect
+    .poll(() => page.locator('#hud').getAttribute('data-trace'))
+    .toContain('Orion · saved · 1 nodes')
   expect(errors).toEqual([])
 })
 
@@ -159,7 +161,7 @@ test('a second tab never overwrites the first; its edits can become a copy', asy
   await other.waitForTimeout(1500)
   await expect(panel(other)).toBeHidden()
   await expect
-    .poll(() => other.locator('#hud').textContent())
+    .poll(() => other.locator('#hud').getAttribute('data-trace'))
     .toContain('Twins (conflict copy) · saved · 1 nodes')
 })
 
@@ -173,7 +175,9 @@ test('load theirs keeps the edits in this tab in history and opens the saved map
   await other.waitForTimeout(1500)
   // No offer of the dropped edits in this browser: history has them.
   await expect(panel(other)).toBeHidden()
-  await expect.poll(() => other.locator('#hud').textContent()).toContain('Gemini · saved · 1 nodes')
+  await expect
+    .poll(() => other.locator('#hud').getAttribute('data-trace'))
+    .toContain('Gemini · saved · 1 nodes')
   expect(theirs.nodes).toHaveLength(0)
   expect((await serverMap(page, id)).revision).toBe(2)
   const { snapshots } = await (await page.request.get(`/api/maps/${id}/snapshots`)).json()
@@ -227,7 +231,7 @@ test('offline: keeps retrying, keeps the edits in this browser, and offers them 
   await page.keyboard.press('r')
   await expect(panel(page)).toBeHidden()
   await expect.poll(async () => (await serverMap(page, id)).payload.nodes.length, { timeout: 15_000 }).toBe(1)
-  await expect.poll(() => page.locator('#hud').textContent()).toContain('Vela · saved · 1 nodes')
+  await expect.poll(() => page.locator('#hud').getAttribute('data-trace')).toContain('Vela · saved · 1 nodes')
 
   // Saved, so nothing is offered next time.
   await page.reload()
@@ -255,7 +259,9 @@ test('a save that landed on the way out leaves nothing to offer', async ({ page 
   await page.goto(`/?map=${id}`)
   await page.waitForTimeout(1500)
   await expect(panel(page)).toBeHidden()
-  await expect.poll(() => page.locator('#hud').textContent()).toContain('Pyxis · saved · 1 nodes')
+  await expect
+    .poll(() => page.locator('#hud').getAttribute('data-trace'))
+    .toContain('Pyxis · saved · 1 nodes')
 })
 
 test('edits kept before the rename (the atlasmap database) are still offered back', async ({ page }) => {
@@ -319,7 +325,7 @@ test('edits kept here after the map moved on can only become a copy', async ({ p
   await expect(panel(page)).toContainText('changed on the server since')
   await page.keyboard.press('c')
   await expect(panel(page)).toBeHidden()
-  await expect.poll(() => page.locator('#hud').textContent()).toContain('Cetus (unsaved copy)')
+  await expect.poll(() => page.locator('#hud').getAttribute('data-trace')).toContain('Cetus (unsaved copy)')
   const list = (await (await page.request.get('/api/maps')).json()).maps
   const copy = list.find((map) => map.name === 'Cetus (unsaved copy)')
   expect(copy.node_count).toBe(1)
@@ -410,7 +416,9 @@ test('history: restore an earlier version from the list, then undo the restore',
   // Opening it shows the restored star, saved.
   await page.locator('.map .name').first().click()
   await page.waitForTimeout(1500)
-  await expect.poll(() => page.locator('#hud').textContent()).toContain('Cygnus · saved · 1 nodes')
+  await expect
+    .poll(() => page.locator('#hud').getAttribute('data-trace'))
+    .toContain('Cygnus · saved · 1 nodes')
 
   // History closes again from the list.
   await page.goto('/account.html')

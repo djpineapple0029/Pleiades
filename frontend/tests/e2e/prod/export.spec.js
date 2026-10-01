@@ -44,7 +44,7 @@ test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, 
     await page.mouse.move(60, 0)
     await page.waitForTimeout(120)
   }
-  let hud = await page.textContent('#hud')
+  let hud = await page.getAttribute('#hud', 'data-trace')
   expect.soft(/4 nodes/.test(hud), 'four nodes spawned').toBe(true)
 
   // Connect: right-hold, push the wheel to the top wedge, release. Then look
@@ -132,7 +132,7 @@ test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, 
   const title = await p2.title()
   expect.soft(title.length > 0 && title !== 'Pleiades', 'titled after the map').toBe(true)
 
-  let vhud = await p2.textContent('#hud')
+  let vhud = await p2.getAttribute('#hud', 'data-trace')
   expect.soft(/overview/.test(vhud), 'opens in the overview').toBe(true)
   expect.soft(/4 nodes/.test(vhud), 'shows the four nodes').toBe(true)
   await p2.screenshot({ path: testInfo.outputPath('shot_overview.png') })
@@ -161,7 +161,7 @@ test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, 
   await p2.mouse.down()
   await p2.mouse.up()
   await p2.waitForTimeout(300)
-  vhud = await p2.textContent('#hud')
+  vhud = await p2.getAttribute('#hud', 'data-trace')
   expect.soft(/4 nodes/.test(vhud) || !/5 nodes/.test(vhud), 'double-click spawns nothing').toBe(true)
 
   await p2.mouse.down({ button: 'right' })
@@ -169,7 +169,7 @@ test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, 
   await p2.mouse.up({ button: 'right' })
   await p2.waitForTimeout(300)
   expect.soft(await p2.$('#radial-menu'), 'right-click opens no menu').toBeNull()
-  vhud = await p2.textContent('#hud')
+  vhud = await p2.getAttribute('#hud', 'data-trace')
   expect.soft(/5 nodes/.test(vhud), 'still four nodes after the menu gesture').toBe(false)
 
   await p2.keyboard.press('Control+s')

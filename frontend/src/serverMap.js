@@ -295,7 +295,11 @@ export function createServerMap({
     get keepsLocally() {
       return Boolean(backup) && !backupBroken
     },
-    /** The HUD's word for where the map stands. */
+    /** Why edits aren't reaching the server, while that's still true; else null. */
+    get problemText() {
+      return stopped || (problem && isDirty()) ? problem.text : null
+    },
+    /** The HUD trace's word for where the map stands. */
     get statusText() {
       if (stopped) return problem.text
       if (inFlight) return 'saving…'

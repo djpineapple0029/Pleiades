@@ -55,7 +55,7 @@ await page.waitForTimeout(200)
 await page.keyboard.press('Escape')
 await page.waitForTimeout(1500)
 
-console.log('HUD:', await page.textContent('#hud'))
+console.log('HUD:', await page.getAttribute('#hud', 'data-trace'))
 console.log(`page errors WITHOUT Ctrl+E: ${errors.length}`)
 for (const e of errors) console.log('  ', e)
 await browser.close()

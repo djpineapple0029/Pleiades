@@ -45,7 +45,9 @@ export async function installGestures(page, canvasId = 'viewport') {
     const fire = (type, init) =>
       canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init }))
     window.__t = {
-      hud: () => document.getElementById('hud').textContent,
+      // The full readout (status.js's data-trace), and what the HUD actually shows.
+      hud: () => document.getElementById('hud').dataset.trace,
+      shown: () => document.getElementById('hud').textContent,
       locked: () => locked,
       overlay: () => !document.getElementById('overlay').hidden,
       crosshair: () => !document.getElementById('crosshair').hidden,

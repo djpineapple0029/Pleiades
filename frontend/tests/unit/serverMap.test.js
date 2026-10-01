@@ -86,6 +86,7 @@ describe('serverMap autosave', () => {
     const { map, calls, advance, edit, ok } = setup({ revision: 7 })
     edit()
     expect(map.statusText).toBe('unsaved')
+    expect(map.problemText, 'nothing wrong, so nothing for the HUD').toBe(null)
     advance(DEBOUNCE_MS - 1)
     edit() // a new edit restarts the wait
     advance(DEBOUNCE_MS - 1)
@@ -207,6 +208,7 @@ describe('serverMap autosave', () => {
     advance(DEBOUNCE_MS)
     await answer({ ok: false, status: 0, error: 'could not reach the server' })
     expect(map.statusText).toBe('offline, not saved (retrying)')
+    expect(map.problemText).toBe('offline, not saved (retrying)')
     advance(RETRY_MIN_MS - 1)
     expect(calls).toHaveLength(1)
     advance(1)
@@ -218,6 +220,7 @@ describe('serverMap autosave', () => {
     expect(calls).toHaveLength(3)
     await ok(2)
     expect(map.statusText).toBe('saved')
+    expect(map.problemText).toBe(null)
   })
 
   it('backoff is capped', async () => {

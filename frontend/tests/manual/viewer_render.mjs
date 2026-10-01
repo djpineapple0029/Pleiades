@@ -87,7 +87,7 @@ await page.goto(`file://${file}`)
 // Chrome refuses pointer lock to a document that is not frontmost.
 await page.bringToFront()
 await page.waitForTimeout(4000) // skybox bake + the 0.45s fit + label rasters
-console.log('HUD:', await page.textContent('#hud'))
+console.log('HUD:', await page.getAttribute('#hud', 'data-trace'))
 await page.screenshot({ path: `${DIR}/rich_overview.png` })
 
 // Into flight, then fly toward the map so labels and edges come up close.
@@ -106,7 +106,7 @@ await page.waitForTimeout(1700)
 await page.keyboard.up('KeyW')
 await page.waitForTimeout(900)
 await page.screenshot({ path: `${DIR}/rich_flight.png` })
-console.log('HUD in flight:', await page.textContent('#hud'))
+console.log('HUD in flight:', await page.getAttribute('#hud', 'data-trace'))
 
 console.log('page errors:', errs.length, errs.join(' | '))
 console.log('external requests:', external.length, external.slice(0, 3).join(', '))

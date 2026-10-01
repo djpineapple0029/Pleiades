@@ -229,10 +229,52 @@ export function createInteraction({
     return edge.label ? `edge ${edge.label} · ${ends}` : `edge ${ends}`
   }
 
-  /** The persistent part of the HUD: where the crosshair is, or what's
-   *  happening. `status.js` layers transient save/open/export messages over
-   *  whatever this returns, rather than replacing it. */
-  function stateLine() {
+  /** What the HUD shows: how to drive or leave the current mode or focus,
+   *  a server map's save problem, and Balance's progress. Blank otherwise —
+   *  names are on the stars themselves, and counts help nobody fly. */
+  function hudLine() {
+    if (mode === 'searching') return '↑↓ to choose · Enter to fly there · Esc to close'
+    if (mode === 'connecting') {
+      // Instruction first, so it survives an ellipsis on a narrow window.
+      return `click a star to link it · right-click cancels · from ${nodeName(graph.getNode(sourceId))}`
+    }
+    if (mode === 'moving')
+      return `click to place · right-click cancels · moving ${nodeName(graph.getNode(moveId))}`
+    if (mode === 'flying') return ''
+
+    let text = ''
+    if (overview.isActive) {
+      // The overview hides the overlay, so the HUD is the only thing left
+      // saying how to get out of it.
+      const back = keymap.label('overview')
+      text = back ? `${back} to fly` : ''
+    } else if (focusTarget) {
+      text = focusHint()
+    } else if (serverMap?.problemText) {
+      text = serverMap.problemText
+    }
+    if (physics.isRunning) {
+      const count = graph.clusterCount
+      const clusters = count ? ` · ${count} cluster${count === 1 ? '' : 's'}` : ''
+      text = [text, `balancing ${Math.round(physics.progress * 100)}%${clusters}`].filter(Boolean).join(' · ')
+    }
+    return text
+  }
+
+  /** How to leave the focus, and what it's on when that isn't obvious. */
+  function focusHint() {
+    const clear = 'click empty space to clear'
+    if (focusTarget.kind === 'orbit') return `${keymap.label('undo')} goes back · ${clear}`
+    if (focusTarget.kind === 'path') {
+      const names = focusTarget.path.nodes.map((id) => nodeName(graph.getNode(id)))
+      return `${names.join(' → ')} · ${clear}`
+    }
+    return `focused · ${clear}`
+  }
+
+  /** The full readout behind the HUD (`data-trace`, see `status.js`): where
+   *  the crosshair is, or what's happening. */
+  function traceLine() {
     if (mode === 'searching') return 'find a star · ↑↓ choose · Enter fly there · Esc close'
     if (mode === 'flying') {
       const node = hover?.kind === 'node' && graph.getNode(hover.id)
@@ -279,7 +321,7 @@ export function createInteraction({
   }
 
   function updateHud() {
-    status.setState(stateLine())
+    status.setState(hudLine(), traceLine())
     status.tick()
   }
 
@@ -328,7 +370,7 @@ export function createInteraction({
     if (!pathStart || pathStart === id || !graph.getNode(pathStart)) {
       pathStart = id
       view.setSource(id)
-      status.info(
+      status.notice(
         `path from ${nodeName(graph.getNode(id))} · aim at another star and press ${keymap.label('path')}`,
       )
       return
@@ -338,7 +380,7 @@ export function createInteraction({
     view.setSource(null)
     setFocus({ kind: 'path', from, to: id })
     if (!focusTarget)
-      status.info(`no path between ${nodeName(graph.getNode(from))} and ${nodeName(graph.getNode(id))}`)
+      status.notice(`no path between ${nodeName(graph.getNode(from))} and ${nodeName(graph.getNode(id))}`)
   }
 
   function focusLine() {
@@ -609,7 +651,7 @@ export function createInteraction({
     // A server map's Save goes to the server; Save As is still a file.
     if (serverMap && !reprompt) return saveToServer()
     if (busy) {
-      status.info('a file operation is still in progress')
+      status.notice('a file operation is still in progress')
       return { ok: false }
     }
     busy = true
@@ -683,7 +725,7 @@ export function createInteraction({
    */
   async function backToMaps() {
     if (busy) {
-      status.info('a file operation is still in progress')
+      status.notice('a file operation is still in progress')
       return
     }
     busy = true
@@ -737,7 +779,7 @@ export function createInteraction({
    */
   async function resolveServerProblem() {
     if (busy) {
-      status.info('a file operation is still in progress')
+      status.notice('a file operation is still in progress')
       return { ok: false }
     }
     busy = true
@@ -793,7 +835,7 @@ export function createInteraction({
         goToMap(result.id)
         return { ok: true }
       }
-      status.info(`not saved · ${keymap.label('save')} to choose what happens`)
+      status.notice(`not saved · ${keymap.label('save')} to choose what happens`)
       return { ok: false }
     } finally {
       busy = false
@@ -860,11 +902,11 @@ export function createInteraction({
    */
   async function openMap() {
     if (serverMap) {
-      status.info('this map saves to your account; open files in the app without an account')
+      status.notice('this map saves to your account; open files in the app without an account')
       return
     }
     if (busy) {
-      status.info('a file operation is still in progress')
+      status.notice('a file operation is still in progress')
       return
     }
     // Not awaited: the picker needs this keypress's user activation, and the
@@ -958,7 +1000,7 @@ export function createInteraction({
    */
   async function exportMap() {
     if (busy) {
-      status.info('a file operation is still in progress')
+      status.notice('a file operation is still in progress')
       return
     }
     busy = true
@@ -980,7 +1022,7 @@ export function createInteraction({
    */
   function stepHistory(direction) {
     if (loading) {
-      status.info('a file is being opened')
+      status.notice('a file is being opened')
       return
     }
     if (mode === 'connecting') cancelConnect()
@@ -989,7 +1031,8 @@ export function createInteraction({
     // The step may have removed whatever was under the crosshair; the next
     // frame's raycast picks up whatever is there now.
     clearHover()
-    status.info(label ? `${direction}: ${label}` : `nothing to ${direction}`)
+    if (label) status.info(`${direction}: ${label}`)
+    else status.notice(`nothing to ${direction}`)
   }
 
   /**
@@ -1082,7 +1125,7 @@ export function createInteraction({
    */
   async function openSearch() {
     if (graph.nodes.size === 0) {
-      status.info('no stars yet')
+      status.notice('no stars yet')
       return
     }
     const fromOverview = overview.isActive
@@ -1120,7 +1163,7 @@ export function createInteraction({
   function flyBack() {
     const pose = jumps.pop()
     if (!pose) {
-      status.info('nothing to fly back to')
+      status.notice('nothing to fly back to')
       return
     }
     mode = 'flying'
