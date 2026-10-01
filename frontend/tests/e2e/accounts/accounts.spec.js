@@ -578,6 +578,9 @@ test('settings: your own feel and keys reach Help and your maps, and reset to de
   await expect(page.locator('#overlay .keys li', { hasText: 'connection heat' }).locator('kbd')).toHaveText(
     'J',
   )
+  // The overlay itself only points at Help; the list waits behind `?`.
+  await expect(page.locator('#overlay .keys')).toBeHidden()
+  await expect(page.locator('#overlay .prompt-hint a')).toHaveAttribute('href', /account\.html#help$/)
 
   // Back to the default: the override is gone, not just set to H.
   const overrides = async () => (await (await page.request.get('/api/account/settings')).json()).overrides

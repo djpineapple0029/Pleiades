@@ -90,29 +90,73 @@ body {
   justify-content: center;
   gap: 18px;
   pointer-events: none;
+  /* A light dim for the bare "Click to fly"; the key list and notices get
+     the dark one so they stay readable over a bright map. */
+  background: radial-gradient(ellipse at center, rgba(5, 6, 10, 0.2), rgba(5, 6, 10, 0.6));
+}
+
+#overlay:has(> .keys:not([hidden]), > #notice:not([hidden])) {
   background: radial-gradient(ellipse at center, rgba(5, 6, 10, 0.55), rgba(5, 6, 10, 0.9));
 }
 
+/* The app's prompt is a title plus a one-line hint; the viewer's is the
+   title alone, a bare <p class="prompt">. */
 #overlay .prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+
+#overlay .prompt-title,
+#overlay p.prompt {
   margin: 0;
   font-size: 15px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
+#overlay .prompt-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+/* The one thing on the overlay that takes a click; the rest lets it through
+   to the canvas. */
+#overlay .prompt-hint a {
+  color: var(--ink);
+  pointer-events: auto;
+}
+
 #overlay .keys {
   margin: 0;
   padding: 0;
   list-style: none;
-  display: grid;
-  gap: 6px;
+  columns: 2;
+  column-gap: 40px;
+  max-width: min(860px, calc(100vw - 32px));
   color: var(--ink-dim);
+}
+
+@media (max-width: 760px) {
+  #overlay .keys {
+    columns: 1;
+  }
 }
 
 #overlay .keys li {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: 6px;
+  break-inside: avoid;
+}
+
+#overlay .keys kbd {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 #overlay .keys span {

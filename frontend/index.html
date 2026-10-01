@@ -23,9 +23,14 @@
     <p id="resume-pill" hidden></p>
 
     <div id="overlay">
-      <p class="prompt">Click to fly</p>
-      <!-- Filled from the server's keymap at startup (keysHelp.js). -->
-      <ul class="keys"></ul>
+      <div class="prompt">
+        <p class="prompt-title">Click to fly</p>
+        <!-- "or Enter · ? keys · Help", from the keymap (keysHelp.js). -->
+        <p class="prompt-hint"></p>
+      </div>
+      <!-- Filled from the server's keymap at startup (keysHelp.js); only
+           shown on `?`, the full list lives on the Help page. -->
+      <ul class="keys" hidden></ul>
       <p id="notice" hidden></p>
     </div>
 

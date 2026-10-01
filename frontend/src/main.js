@@ -23,7 +23,7 @@ import { createSearchPanel } from './searchPanel.js'
 import { createFlyTo } from './flyTo.js'
 import { fetchSettings } from './settings.js'
 import { createKeymap } from './keymap.js'
-import { APP_ROWS, SERVER_MAP_ROWS, renderKeyList, renderResumePill } from './keysHelp.js'
+import { APP_ROWS, SERVER_MAP_ROWS, renderKeyList, renderPromptHint, renderResumePill } from './keysHelp.js'
 import { setRevealScale, setLabelTarget } from './labels.js'
 import { CONTEXT_LOST, NO_WEBGL, createCrashGuard, errorText } from './crashGuard.js'
 import { watchContextLoss } from './contextLoss.js'
@@ -36,6 +36,7 @@ const STATUS_TICK_MS = 250 // the HUD's own clock once the frame loop has stoppe
 
 const canvas = document.getElementById('viewport')
 const overlay = document.getElementById('overlay')
+const keyList = overlay.querySelector('.keys')
 const crosshair = document.getElementById('crosshair')
 const notice = document.getElementById('notice')
 const resumePill = document.getElementById('resume-pill')
@@ -44,7 +45,7 @@ const speed = document.getElementById('speed')
 const guard = createCrashGuard({
   overlay,
   prompt: overlay.querySelector('.prompt'),
-  keys: overlay.querySelector('.keys'),
+  keys: keyList,
   notice,
   exitPointerLock: () => document.exitPointerLock?.(),
 })
@@ -83,7 +84,10 @@ const keymap = createKeymap(settings.keybinds)
 const { visuals } = settings
 setRevealScale(visuals.label_range)
 setLabelTarget(visuals.label_count)
-renderKeyList(overlay.querySelector('.keys'), keymap, opened ? SERVER_MAP_ROWS : APP_ROWS)
+renderKeyList(keyList, keymap, opened ? SERVER_MAP_ROWS : APP_ROWS)
+renderPromptHint(overlay.querySelector('.prompt-hint'), keymap, {
+  helpHref: opened ? accountUrl('help') : null,
+})
 renderResumePill(resumePill, keymap)
 
 let sceneParts
@@ -275,18 +279,21 @@ flight.controls.addEventListener('lock', () => {
   notice.hidden = true
 })
 
-// The full key list is for an unlock the user caused (Esc, or the browser
-// taking the lock away). One the app caused itself either shows a panel of
-// its own ('panel': nothing else) or a native dialog ('file': a small hint
-// for whenever that's dismissed), and in both the lock comes back by itself.
+// An unlock the user caused (Esc, or the browser taking the lock away) gets
+// the overlay's bare "Click to fly" — the key list waits behind `?`. One the
+// app caused itself either shows a panel of its own ('panel': nothing else)
+// or a native dialog ('file': a small hint for whenever that's dismissed),
+// and in both the lock comes back by itself.
 flight.controls.addEventListener('unlock', () => {
   crosshair.hidden = true
   // Not in the overview: there the mouse is a real cursor and the map is the
   // whole point, so a click-to-fly panel over it would only be in the way.
   if (overview.isActive) return
   const reason = lock.lastUnlockReason
-  if (reason === 'manual') overlay.hidden = false
-  else if (reason === 'file') resumePill.hidden = false
+  if (reason === 'manual') {
+    keyList.hidden = true
+    overlay.hidden = false
+  } else if (reason === 'file') resumePill.hidden = false
 })
 
 function requestLock() {
@@ -301,7 +308,8 @@ function requestLock() {
 canvas.addEventListener('click', requestLock)
 window.addEventListener('keydown', (event) => {
   if (keymap.is(event, 'resume')) requestLock()
-  // `?` swaps the small resume hint for the full key list and back.
+  // `?` shows or hides the full key list; from the small resume hint it
+  // brings up the overlay with the list.
   if (
     keymap.is(event, 'help') &&
     !flight.controls.isLocked &&
@@ -309,9 +317,13 @@ window.addEventListener('keydown', (event) => {
     !overview.isActive &&
     !guard.isBlocking
   ) {
-    const showKeys = overlay.hidden
-    overlay.hidden = !showKeys
-    resumePill.hidden = showKeys
+    if (overlay.hidden) {
+      keyList.hidden = false
+      overlay.hidden = false
+      resumePill.hidden = true
+    } else {
+      keyList.hidden = !keyList.hidden
+    }
   }
 })
 
