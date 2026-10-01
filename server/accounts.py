@@ -218,13 +218,25 @@ def current_user() -> sqlite3.Row | None:
 
 
 def signed_in(view: Callable) -> Callable:
+    """Needs a session. After an admin reset (`must_change_password`), only
+    views marked `even_after_reset` answer until a new password is chosen."""
+
     @wraps(view)
     def wrapper(*args: object, **kwargs: object) -> object:
-        if current_user() is None:
+        user = current_user()
+        if user is None:
             return fail("Signed out. Sign in again.", 401)
+        if user["must_change_password"] and not getattr(view, "even_after_reset", False):
+            return fail("Choose a new password first.", 403, must_change_password=True)
         return view(*args, **kwargs)
 
     return wrapper
+
+
+def even_after_reset(view: Callable) -> Callable:
+    """Put under @signed_in: the view still answers while the password must change."""
+    view.even_after_reset = True  # type: ignore[attr-defined]
+    return view
 
 
 def json_body() -> dict:
@@ -242,6 +254,54 @@ def busy() -> tuple[Response, int]:
     response, status = fail("The server is busy. Try again in a moment.", 503)
     response.headers["Retry-After"] = "1"
     return response, status
+
+
+def new_password_problem(password: object) -> str | None:
+    """Why this can't be a new account password, or None when it can."""
+    shortest = store().get("accounts", "min_password_length")
+    if not isinstance(password, str) or len(password) < shortest:
+        return f"Passwords need at least {shortest} characters."
+    if len(password) > MAX_PASSWORD_LENGTH:
+        return f"Passwords can be at most {MAX_PASSWORD_LENGTH} characters."
+    return None
+
+
+def hash_or_none(password: str) -> str | None:
+    """scrypt within the concurrency cap; None when the cap is full (answer busy())."""
+    if not _checks.acquire(blocking=False):
+        return None
+    try:
+        return hash_password(password)
+    finally:
+        _checks.release()
+
+
+def check_or_none(password: str, stored: str) -> bool | None:
+    """verify_password within the concurrency cap; None when the cap is full."""
+    if not _checks.acquire(blocking=False):
+        return None
+    try:
+        return verify_password(password, stored)
+    finally:
+        _checks.release()
+
+
+def locked_out(*keys: str) -> tuple[Response, int] | None:
+    """A 429 while any of these guard keys is locked out."""
+    wait = max(guard().locked_for(key) for key in keys)
+    if wait <= 0:
+        return None
+    response, status = fail(f"Too many wrong passwords. Try again in {int(wait // 60) + 1} min.", 429)
+    response.headers["Retry-After"] = str(int(wait) + 1)
+    return response, status
+
+
+def record_wrong_password(ip_key: str, user_key: str | None) -> None:
+    attempts, minutes = store().get("admin", "lockout_attempts"), store().get("admin", "lockout_minutes")
+    guard().fail(ip_key, attempts, minutes)
+    if user_key:
+        # Only real usernames get a counter, so made-up ones can't grow the table.
+        guard().fail(user_key, attempts, minutes, count_globally=False)
 
 
 # --- Routes -------------------------------------------------------------------
@@ -272,18 +332,13 @@ def signup() -> Response | tuple[Response, int]:
     if not isinstance(username, str) or not USERNAME_RE.fullmatch(username.strip().lower()):
         return fail("Usernames are 3–32 characters: letters, digits, _ . and -.", 400)
     username = username.strip().lower()
-    shortest = store().get("accounts", "min_password_length")
-    if not isinstance(password, str) or len(password) < shortest:
-        return fail(f"Passwords need at least {shortest} characters.", 400)
-    if len(password) > MAX_PASSWORD_LENGTH:
-        return fail(f"Passwords can be at most {MAX_PASSWORD_LENGTH} characters.", 400)
+    refused = new_password_problem(password)
+    if refused:
+        return fail(refused, 400)
 
-    if not _checks.acquire(blocking=False):
+    password_hash = hash_or_none(password)
+    if password_hash is None:
         return busy()
-    try:
-        password_hash = hash_password(password)
-    finally:
-        _checks.release()
 
     try:
         with database().transaction() as conn:
@@ -308,12 +363,9 @@ def login() -> Response | tuple[Response, int]:
         return fail("Wrong username or password.", 401)
     username = username.strip().lower()
     ip_key, user_key = f"ip:{client_ip()}", f"user:{username}"
-
-    wait = max(guard().locked_for(ip_key), guard().locked_for(user_key))
-    if wait > 0:
-        response, status = fail(f"Too many wrong passwords. Try again in {int(wait // 60) + 1} min.", 429)
-        response.headers["Retry-After"] = str(int(wait) + 1)
-        return response, status
+    refused = locked_out(ip_key, user_key)
+    if refused:
+        return refused
 
     with database().connect() as conn:
         user = conn.execute(
@@ -321,19 +373,12 @@ def login() -> Response | tuple[Response, int]:
             (username,),
         ).fetchone()
 
-    if not _checks.acquire(blocking=False):
+    matches = check_or_none(password, user["password_hash"] if user else dummy_hash())
+    if matches is None:
         return busy()
-    try:
-        matches = verify_password(password, user["password_hash"] if user else dummy_hash())
-    finally:
-        _checks.release()
 
     if not matches or user["disabled"]:
-        attempts, minutes = store().get("admin", "lockout_attempts"), store().get("admin", "lockout_minutes")
-        guard().fail(ip_key, attempts, minutes)
-        if user:
-            # Only real usernames get a counter, so made-up ones can't grow the table.
-            guard().fail(user_key, attempts, minutes, count_globally=False)
+        record_wrong_password(ip_key, user_key if user else None)
         return fail("Wrong username or password.", 401)
     guard().succeed(ip_key)
     guard().succeed(user_key)

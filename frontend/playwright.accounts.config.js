@@ -10,6 +10,9 @@ const SWIFTSHADER_ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable
 const API_PORT = 5190
 const APP_PORT = 5181
 const DIR = 'artifacts/e2e-accounts'
+// /admin on that Flask (accounts.spec.js signs in with it); hashed on first load.
+export const ADMIN_PASSWORD = 'e2e admin password'
+export const API_ORIGIN = `http://127.0.0.1:${API_PORT}`
 
 export default defineConfig({
   testDir: 'tests/e2e/accounts',
@@ -25,9 +28,9 @@ export default defineConfig({
     {
       command:
         `cd .. && rm -rf ${DIR} && mkdir -p ${DIR} && ` +
-        `printf '[accounts]\\nenabled = true\\nsignup_open = true\\n' > ${DIR}/pleiades.toml && ` +
+        `printf '[accounts]\\nenabled = true\\nsignup_open = true\\n[admin]\\npassword = "${ADMIN_PASSWORD}"\\n' > ${DIR}/pleiades.toml && ` +
         `PLEIADES_CONFIG=${DIR}/pleiades.toml PLEIADES_PORT=${API_PORT} uv run python -m server`,
-      url: `http://127.0.0.1:${API_PORT}/api/auth/me`,
+      url: `${API_ORIGIN}/api/auth/me`,
       reuseExistingServer: false,
       timeout: 60_000,
     },

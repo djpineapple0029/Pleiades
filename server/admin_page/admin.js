@@ -143,6 +143,7 @@ async function openPanel() {
   $('sign-out').hidden = false
   renderKeybinds()
   renderSettings()
+  renderAccountsSettings()
   updateSavebar()
   selectTab(tab)
 }
@@ -162,6 +163,7 @@ function selectTab(name) {
   for (const view of document.querySelectorAll('[data-view]')) view.hidden = view.dataset.view !== name
   if (name === 'status') startStatus()
   else stopStatus()
+  if (name === 'accounts') loadUsers()
   updateSavebar()
 }
 
@@ -220,7 +222,7 @@ function bytes(n) {
 const when = (epoch) => (epoch ? new Date(epoch * 1000).toLocaleString() : '—')
 const clock = (epoch) => new Date(epoch * 1000).toLocaleTimeString()
 
-function renderStatus({ requests, build, server }) {
+function renderStatus({ requests, build, server, accounts }) {
   const st = requests.status
   $('stat-tiles').replaceChildren(
     tile('Uptime', duration(requests.uptime), `since ${new Date(requests.started * 1000).toLocaleString()}`),
@@ -228,12 +230,14 @@ function renderStatus({ requests, build, server }) {
     tile('Errors', String((st['4xx'] || 0) + (st['5xx'] || 0)), `${st['4xx'] || 0} 4xx · ${st['5xx'] || 0} 5xx`),
     tile('Data sent', bytes(requests.bytes_sent)),
     tile('Clients', String(requests.unique_clients), 'unique addresses'),
+    accountsTile(accounts),
   )
 
   const facts = [
     ['Bundle', build.bundle || 'no build in server/static'],
     ['Built', when(build.built)],
     ['Config file', server.config_path],
+    ['Accounts database', accounts.database.exists ? `${accounts.database.path} · ${bytes(accounts.database.bytes)}` : 'not created yet'],
     ['Process', `pid ${server.pid} · Python ${server.python}`],
   ]
   $('server-info').replaceChildren(
@@ -268,6 +272,15 @@ function renderStatus({ requests, build, server }) {
 
   showProblems(server.problems)
   $('generated').hidden = !server.password_generated
+}
+
+function accountsTile({ enabled, database }) {
+  if (!enabled && !database.exists) return tile('Accounts', 'off')
+  return tile(
+    'Accounts',
+    enabled ? plural(database.users, 'user') : `off · ${plural(database.users, 'user')}`,
+    `${plural(database.maps, 'map')} · ${bytes(database.bytes)}`,
+  )
 }
 
 function showProblems(problems) {
@@ -435,9 +448,27 @@ document.addEventListener(
 
 // --- Settings -----------------------------------------------------------------
 
+// The accounts section lives on the Accounts tab, above the users it governs.
+const ACCOUNTS_SECTION = 'accounts'
+
+function settingsCard(section) {
+  const card = document.createElement('div')
+  card.className = 'card'
+  card.append(Object.assign(document.createElement('h2'), { textContent: SECTION_TITLES[section] || section }))
+  if (section in SECTION_NOTES) {
+    card.append(Object.assign(document.createElement('p'), { className: 'note', textContent: SECTION_NOTES[section] }))
+  }
+  for (const spec of schema.settings.filter((s) => s.section === section)) card.append(settingRow(spec))
+  return card
+}
+
+function renderAccountsSettings() {
+  $('accounts-settings').replaceChildren(settingsCard(ACCOUNTS_SECTION))
+}
+
 function renderSettings() {
   const root = $('settings')
-  const sections = [...new Set(schema.settings.map((s) => s.section))]
+  const sections = [...new Set(schema.settings.map((s) => s.section))].filter((s) => s !== ACCOUNTS_SECTION)
   const tools = document.createElement('p')
   tools.append(
     resetButton('Reset flight & visuals to defaults', () => {
@@ -447,17 +478,7 @@ function renderSettings() {
       changed()
     }),
   )
-  const cards = sections.map((section) => {
-    const card = document.createElement('div')
-    card.className = 'card'
-    card.append(Object.assign(document.createElement('h2'), { textContent: SECTION_TITLES[section] || section }))
-    if (section in SECTION_NOTES) {
-      card.append(Object.assign(document.createElement('p'), { className: 'note', textContent: SECTION_NOTES[section] }))
-    }
-    for (const spec of schema.settings.filter((s) => s.section === section)) card.append(settingRow(spec))
-    return card
-  })
-  root.replaceChildren(tools, ...cards)
+  root.replaceChildren(tools, ...sections.map(settingsCard))
 }
 
 function settingRow(spec) {
@@ -543,6 +564,7 @@ function changed({ rerender = true } = {}) {
   if (rerender) {
     renderKeybinds()
     renderSettings()
+    renderAccountsSettings()
   }
   updateSavebar()
 }
@@ -588,6 +610,217 @@ window.addEventListener('beforeunload', (event) => {
   event.preventDefault()
   event.returnValue = ''
 })
+
+// --- Users (server/admin_users.py) ---------------------------------------------
+
+let users = []
+// What's open under a row, by user id: {kind: 'reset' | 'delete' | 'password', …}.
+const userPanels = new Map()
+const rowErrors = new Map()
+
+async function loadUsers() {
+  const { ok, data } = await api('users')
+  if (!ok) {
+    $('users-error').textContent = data.error || 'Could not load the accounts.'
+    return
+  }
+  $('users-error').textContent = ''
+  users = data.users
+  const ids = new Set(users.map((u) => u.id))
+  for (const id of [...userPanels.keys()]) if (!ids.has(id)) userPanels.delete(id)
+  $('users-off').hidden = data.enabled
+  renderUsers()
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+const day = (epoch) => (epoch ? new Date(epoch * 1000).toLocaleDateString() : '—')
+
+function renderUsers() {
+  $('user-count').textContent = users.length ? `(${users.length})` : ''
+  $('users-table').hidden = !users.length
+  $('users-empty').hidden = users.length > 0
+  $('users').replaceChildren(...users.flatMap(userRows))
+}
+
+function cell(text, className = '', title = '') {
+  return Object.assign(document.createElement('td'), { textContent: text, className, title })
+}
+
+function smallButton(label, onClick, className = 'quiet small') {
+  const button = resetButton(label, onClick)
+  button.className = className
+  return button
+}
+
+function userRows(user) {
+  const row = document.createElement('tr')
+  row.dataset.user = user.username
+  if (user.disabled) row.className = 'disabled'
+  const status = user.disabled ? 'Disabled' : user.must_change_password ? 'Reset, not yet changed' : 'Active'
+  const statusCell = cell(status, user.disabled ? 'bad' : user.must_change_password ? 'warn' : '')
+  statusCell.append(
+    Object.assign(document.createElement('small'), {
+      textContent: user.sessions ? `signed in on ${plural(user.sessions, 'device')}` : 'signed out',
+    }),
+  )
+  const storage = user.map_bytes + user.history_bytes
+  const actions = document.createElement('td')
+  actions.className = 'actions'
+  actions.append(
+    smallButton('Reset password', () => openUserPanel(user, { kind: 'reset' })),
+    smallButton(user.disabled ? 'Enable' : 'Disable', () => setDisabled(user, !user.disabled)),
+    smallButton('Sign out everywhere', () => signOutEverywhere(user)),
+    smallButton('Delete', () => openUserPanel(user, { kind: 'delete' }), 'quiet small danger'),
+  )
+  actions.querySelectorAll('button')[2].disabled = !user.sessions
+  row.append(
+    cell(user.username, 'name'),
+    cell(day(user.created_at), '', when(user.created_at)),
+    cell(day(user.last_seen_at), '', user.last_seen_at ? when(user.last_seen_at) : 'never signed in'),
+    cell(String(user.map_count), 'num'),
+    cell(bytes(storage), 'num', `maps ${bytes(user.map_bytes)} · history ${bytes(user.history_bytes)}`),
+    statusCell,
+    actions,
+  )
+  const rows = [row]
+  const panel = userPanels.get(user.id)
+  const error = rowErrors.get(user.id)
+  if (panel || error) {
+    const extra = document.createElement('tr')
+    extra.className = 'row-panel'
+    const td = document.createElement('td')
+    td.colSpan = 7
+    if (panel) td.append(panelFor(user, panel))
+    if (error) td.append(Object.assign(document.createElement('p'), { className: 'error', textContent: error }))
+    extra.append(td)
+    rows.push(extra)
+  }
+  return rows
+}
+
+function openUserPanel(user, panel) {
+  rowErrors.delete(user.id)
+  const current = userPanels.get(user.id)
+  // The same button again closes it; a temporary password stays until Done.
+  if (current?.kind === panel.kind) userPanels.delete(user.id)
+  else if (current?.kind !== 'password') userPanels.set(user.id, panel)
+  renderUsers()
+  $('users').querySelector('.row-panel input, .row-panel button.danger, .row-panel button:not(.quiet)')?.focus()
+}
+
+function closeUserPanel(user) {
+  userPanels.delete(user.id)
+  renderUsers()
+}
+
+function panelFor(user, panel) {
+  const box = document.createElement('div')
+  box.className = 'confirm'
+  const text = (t) => Object.assign(document.createElement('p'), { textContent: t })
+  if (panel.kind === 'reset') {
+    box.append(
+      text(
+        `Reset ${user.username}'s password? They're signed out everywhere and have to choose a new ` +
+          'password when they next sign in. Their maps are kept.',
+      ),
+      smallButton('Reset password', (event) => resetPassword(user, event.currentTarget), 'small danger'),
+      smallButton('Cancel', () => closeUserPanel(user)),
+    )
+  } else if (panel.kind === 'delete') {
+    const what = user.map_count ? `, ${plural(user.map_count, 'map')} and their history` : ''
+    const label = document.createElement('label')
+    label.className = 'typed'
+    const input = Object.assign(document.createElement('input'), {
+      type: 'text',
+      autocomplete: 'off',
+      spellcheck: false,
+      value: panel.typed || '',
+    })
+    input.setAttribute('autocapitalize', 'none')
+    label.append(`Type ${user.username} to confirm`, input)
+    const yes = smallButton('Delete for good', () => deleteUser(user, input.value, yes), 'small danger')
+    const matches = () => input.value.trim().toLowerCase() === user.username
+    yes.disabled = !matches()
+    input.addEventListener('input', () => {
+      panel.typed = input.value
+      yes.disabled = !matches()
+    })
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && matches()) deleteUser(user, input.value, yes)
+      if (event.key === 'Escape') closeUserPanel(user)
+    })
+    box.append(
+      text(`Delete the account ${user.username}${what}? This can't be undone.`),
+      label,
+      yes,
+      smallButton('Cancel', () => closeUserPanel(user)),
+    )
+  } else if (panel.kind === 'password') {
+    const code = Object.assign(document.createElement('code'), { className: 'temp', textContent: panel.password })
+    const copy = smallButton('Copy', async () => {
+      try {
+        await navigator.clipboard.writeText(panel.password)
+        copy.textContent = 'Copied'
+      } catch {
+        // No clipboard over plain http: select it for Ctrl/⌘+C instead.
+        getSelection().selectAllChildren(code)
+        copy.textContent = 'Selected, press Ctrl/⌘+C'
+      }
+    })
+    const line = document.createElement('p')
+    line.append(`Temporary password for ${user.username}: `, code, ' ', copy)
+    box.append(
+      line,
+      text("Shown once. Give it to them; they'll choose their own when they sign in with it."),
+      smallButton('Done', () => closeUserPanel(user)),
+    )
+  }
+  return box
+}
+
+async function userAction(user, button, path, options) {
+  if (button) button.disabled = true
+  const { ok, data } = await api(`users/${user.id}${path}`, options)
+  if (button) button.disabled = false
+  if (!ok) {
+    rowErrors.set(user.id, data.error || "That didn't work.")
+    renderUsers()
+    return null
+  }
+  rowErrors.delete(user.id)
+  return data
+}
+
+async function resetPassword(user, button) {
+  const data = await userAction(user, button, '/password', { method: 'POST' })
+  if (!data) return
+  userPanels.set(user.id, { kind: 'password', password: data.password })
+  await loadUsers()
+}
+
+async function setDisabled(user, disabled) {
+  if (await userAction(user, null, '', { method: 'PATCH', body: { disabled } })) {
+    toast(disabled ? `${user.username} is disabled and signed out.` : `${user.username} can sign in again.`)
+    await loadUsers()
+  }
+}
+
+async function signOutEverywhere(user) {
+  const data = await userAction(user, null, '/sign-out', { method: 'POST' })
+  if (data) {
+    toast(`${user.username} is signed out on ${plural(data.ended, 'device')}.`)
+    await loadUsers()
+  }
+}
+
+async function deleteUser(user, typed, button) {
+  if (typed.trim().toLowerCase() !== user.username) return
+  if (await userAction(user, button, '', { method: 'DELETE', body: { username: typed } })) {
+    userPanels.delete(user.id)
+    toast(`Deleted ${user.username}.`)
+    await loadUsers()
+  }
+}
 
 // --- Password -----------------------------------------------------------------
 

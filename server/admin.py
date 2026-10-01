@@ -315,4 +315,8 @@ def status() -> Response:
             "problems": config.problems,
             "password_generated": config.initial_password is not None,
         },
+        accounts={
+            "enabled": bool(config.get("accounts", "enabled")),
+            "database": current_app.extensions["pleiades_db"].status(),
+        },
     )

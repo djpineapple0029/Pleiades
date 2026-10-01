@@ -108,6 +108,30 @@
         <p class="aside"><a id="local-link" href="./?local">Use Pleiades without an account</a></p>
       </section>
 
+      <section id="must-change" class="narrow" hidden>
+        <div class="card">
+          <h2>Choose a new password</h2>
+          <p>
+            Your password was reset by whoever runs this server. Choose a new one to get back to your maps;
+            they're all still here.
+          </p>
+          <form id="must-change-form" novalidate>
+            <input id="must-change-username" type="text" autocomplete="username" hidden />
+            <label
+              >New password
+              <input id="must-change-password" type="password" autocomplete="new-password" required />
+              <small id="must-change-min"></small>
+            </label>
+            <label
+              >Confirm new password
+              <input id="must-change-confirm" type="password" autocomplete="new-password" required />
+            </label>
+            <button type="submit">Save password</button>
+            <p class="error" id="must-change-error" role="alert"></p>
+          </form>
+        </div>
+      </section>
+
       <section id="signed-in" hidden>
         <header class="page-head">
           <h1>My maps <span id="map-count"></span></h1>
