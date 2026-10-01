@@ -86,6 +86,18 @@ const MORE_MENU = (serverMap) => [
   { key: 'back', label: 'Back' },
 ]
 
+const hex = (color) => `#${color.toString(16).padStart(6, '0')}`
+const rgb = ([r, g, b]) => `rgb(${Math.round(r * 255)} ${Math.round(g * 255)} ${Math.round(b * 255)})`
+
+// A look as a row of the export panel's dropdown: its sky colour and star
+// colours make the swatch.
+const lookOption = (look) => ({
+  value: look.id,
+  label: look.name,
+  detail: look.blurb,
+  swatch: { ground: hex(look.palette.clear), dots: look.palette.tints.map(rgb) },
+})
+
 // The looks (`looks.js`), clockwise from the top, the current one ticked.
 // Held open by the look key (V) and picked on its release.
 const LOOK_MENU = (current) =>
@@ -1010,7 +1022,8 @@ export function createInteraction({
    * No password is asked for and none is used: the export is a plaintext file
    * meant to be handed to someone, which is why `files.exportHtml` leaves notes
    * out of it. Nothing about the current session changes — this is not a save,
-   * and it does not adopt a filename or credentials.
+   * and it does not adopt a filename or credentials. Asks first which look the
+   * file opens in, starting on the one showing now; Enter takes that.
    */
   async function exportMap() {
     if (busy) {
@@ -1019,8 +1032,23 @@ export function createInteraction({
     }
     busy = true
     try {
+      const values = await prompt(
+        `export ${files.exportFilename}`,
+        [
+          {
+            key: 'look',
+            label: 'Opens in',
+            type: 'select',
+            value: renderSettings.looks.current?.id,
+            options: LOOKS.map(lookOption),
+          },
+        ],
+        null,
+        'Export',
+      )
+      if (!values) return
       status.busy('exporting')
-      const result = await files.exportHtml()
+      const result = await files.exportHtml({ look: values.look })
       if (result.ok) status.success(`exported ${result.filename}`)
       else status.error(`export failed: ${result.error}`)
     } finally {

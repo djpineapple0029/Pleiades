@@ -237,9 +237,10 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
   /**
    * Writes the map as a standalone, view-only `.html`: the viewer bundle with
    * the graph spliced into it. No password, no server, and no editing — the
-   * code that could change a graph is not in that bundle at all.
+   * code that could change a graph is not in that bundle at all. `look` is
+   * the look id it opens in (`looks.js`); without one, the settings' own.
    */
-  async function exportHtml() {
+  async function exportHtml({ look = null } = {}) {
     const base = baseName(filename)
     const name = `${base}.html`
 
@@ -263,10 +264,13 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
     // template's own (a map or file name could contain the text). A template
     // from before this marker lacks it, and the viewer uses defaults.
     let html = template
-    if (settings) {
+    if (settings || look) {
       // The exporter's own settings if they're signed in, but not the fact:
       // the viewer has no account to keep anything in.
-      const { account: _account, ...shared } = settings
+      const { account: _account, ...shared } = settings ?? {}
+      // The look picked for the export, as the one the viewer starts in. It
+      // opens from file://, where nothing of this browser's own choice is.
+      if (look) shared.visuals = { ...shared.visuals, look }
       const copy = JSON.stringify(shared).replaceAll('<', '\\u003c')
       html = html.replace(SETTINGS_MARK, () => copy)
     }
@@ -349,6 +353,10 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
     },
     get filename() {
       return filename
+    },
+    /** What `exportHtml` names its download. */
+    get exportFilename() {
+      return `${baseName(filename)}.html`
     },
   }
 }
