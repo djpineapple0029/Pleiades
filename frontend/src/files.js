@@ -64,7 +64,8 @@ async function errorFrom(response) {
   return `server returned ${response.status}`
 }
 
-function triggerDownload(blob, filename) {
+/** Hands `blob` to the browser as a download called `filename`. */
+export function triggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url

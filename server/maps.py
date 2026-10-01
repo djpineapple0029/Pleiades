@@ -1,5 +1,6 @@
 """A signed-in user's maps: list, create, open, save, rename, duplicate, delete,
-and each map's history (earlier versions, restore; see history.py).
+each map's history (earlier versions, restore; see history.py), and uploading
+a map file into the list.
 
 The server keeps the same JSON payload that goes inside a `.plm` file,
 zlib-compressed and otherwise untouched: unknown fields pass straight through,
@@ -24,6 +25,8 @@ from flask import Blueprint, Response, abort, jsonify, request
 from . import db as dbmod
 from . import history
 from .accounts import current_user, database, fail, finish, gate, json_body, signed_in, store
+from .atlasfile import FormatError, PasswordError, decode_any
+from .filenames import map_name
 
 maps = Blueprint("maps", __name__, url_prefix="/api/maps")
 maps.before_request(gate)
@@ -34,6 +37,8 @@ MAX_NAME_LENGTH = 120
 DEFAULT_NAME = "Untitled map"
 COPY_SUFFIX = " (copy)"
 EMPTY_PAYLOAD = {"format": "atlasmap", "schema": 1, "nodes": [], "edges": []}
+# Pinned to every file ever written (format/schema.js `FORMAT`).
+PAYLOAD_FORMAT = "atlasmap"
 
 
 @maps.errorhandler(413)
@@ -127,6 +132,41 @@ def create_map() -> Response | tuple[Response, int]:
         blob, node_count = pack(payload)
     except ValueError:
         return fail("`payload` holds a number JSON can't represent.", 400)
+    with database().transaction() as conn:
+        map_id = insert_map(conn, user_id(), name, blob, node_count)
+    if map_id is None:
+        return quota_full()
+    return jsonify(id=map_id, name=name, revision=1), 201
+
+
+@maps.post("/import")
+@signed_in
+def import_map() -> Response | tuple[Response, int]:
+    """A `.plm` (or `.atlasmap`) file as a new map: multipart `file`, `password`,
+    optional `name`. The shell reads files itself wherever it can and sends the
+    payload to `POST /api/maps`, like Open does; this is for the rest, an
+    encrypted file on a page with no WebCrypto (plain HTTP on the LAN)."""
+    upload = request.files.get("file")
+    if upload is None:
+        return fail("No file uploaded.", 400)
+    password = request.form.get("password") or ""
+    try:
+        payload = decode_any(upload.read(), password)
+    except PasswordError as exc:
+        # The file's password, not the session: say so, like account.py does.
+        return fail(str(exc), 401, wrong_password=True)
+    except FormatError as exc:
+        return fail(str(exc), 400)
+    if payload.get("format", PAYLOAD_FORMAT) != PAYLOAD_FORMAT:
+        return fail("This is not a Pleiades map.", 400)
+    nodes, edges = payload.get("nodes", []), payload.get("edges", [])
+    if not isinstance(nodes, list) or not isinstance(edges, list):
+        return fail("This file doesn't hold a map.", 400)
+    name = clean_name(request.form.get("name")) or clean_name(map_name(upload.filename)) or DEFAULT_NAME
+    try:
+        blob, node_count = pack(payload)
+    except ValueError:
+        return fail("The file holds a number JSON can't represent.", 400)
     with database().transaction() as conn:
         map_id = insert_map(conn, user_id(), name, blob, node_count)
     if map_id is None:

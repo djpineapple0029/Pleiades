@@ -34,8 +34,9 @@ export function appUrl(mapId = null) {
 
 /**
  * `path` is relative to the app's base (`api/maps`). `body` is sent as is when
- * it's a string (a caller that needs its size has already stringified it),
- * otherwise as JSON. `keepalive` lets the request outlive the page.
+ * it's a string (a caller that needs its size has already stringified it) or
+ * `FormData` (an upload; the browser sets its multipart type), otherwise as
+ * JSON. `keepalive` lets the request outlive the page.
  */
 export async function request(
   path,
@@ -53,7 +54,9 @@ export async function request(
     signal: keepalive ? undefined : controller.signal,
     headers: { 'X-Pleiades': '1', ...headers },
   }
-  if (body !== undefined) {
+  if (typeof FormData !== 'undefined' && body instanceof FormData) {
+    init.body = body
+  } else if (body !== undefined) {
     init.body = typeof body === 'string' ? body : JSON.stringify(body)
     init.headers['Content-Type'] = 'application/json'
   }

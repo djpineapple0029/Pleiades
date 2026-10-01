@@ -13,6 +13,7 @@
         <a href="#maps" data-page="maps">My maps</a>
         <a href="#settings" data-page="settings">Settings</a>
         <a href="#help" data-page="help">Help</a>
+        <a href="#account" data-page="account">Account</a>
       </nav>
       <div class="who" id="who" hidden>
         <span id="who-name"></span>
@@ -144,8 +145,33 @@
               aria-label="New map name"
             />
             <button type="submit">New map</button>
+            <button
+              type="button"
+              id="upload-button"
+              class="quiet"
+              title="Add a .plm or .atlasmap file to your maps"
+            >
+              Upload
+            </button>
           </form>
+          <input id="upload-input" type="file" hidden />
         </header>
+        <form id="upload-form" class="card upload" novalidate hidden>
+          <p id="upload-what"></p>
+          <div class="inline-form">
+            <input
+              id="upload-password"
+              type="password"
+              autocomplete="off"
+              aria-label="The file's password"
+              placeholder="The file's password"
+            />
+            <button type="submit">Upload</button>
+            <button type="button" id="upload-cancel" class="quiet">Cancel</button>
+          </div>
+          <p class="error" id="upload-error" role="alert"></p>
+        </form>
+        <p id="list-status" class="done" role="status" hidden></p>
         <p class="error" id="list-error" role="alert"></p>
         <ul id="maps" class="maps"></ul>
         <p id="empty" class="note" hidden>No maps yet. Give one a name above to start.</p>
@@ -157,6 +183,98 @@
       <section id="settings-view" aria-label="Settings" hidden></section>
 
       <section id="help-view" aria-label="Help" hidden></section>
+
+      <section id="account-view" hidden>
+        <header class="page-head">
+          <div>
+            <h1>Account</h1>
+            <p id="account-since"></p>
+          </div>
+        </header>
+
+        <div class="card">
+          <h2>Your data</h2>
+          <p id="account-usage" class="lede"></p>
+          <p>
+            Download every map as a file with no password, plus the settings and keys you changed, in one zip.
+            Earlier versions from History aren't included.
+          </p>
+          <div class="choices">
+            <button type="button" id="export-button">Download all my data</button>
+          </div>
+          <p class="error" id="export-error" role="alert"></p>
+        </div>
+
+        <form id="username-form" class="card" novalidate>
+          <h2>Username</h2>
+          <label
+            >New username
+            <input
+              id="username-new"
+              type="text"
+              autocomplete="username"
+              autocapitalize="none"
+              spellcheck="false"
+              minlength="3"
+              maxlength="32"
+              required
+            />
+            <small>3–32 characters: letters, digits, _ . and -. You sign in with this.</small>
+          </label>
+          <label
+            >Your password
+            <input id="username-password" type="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit">Change username</button>
+          <p class="error" id="username-error" role="alert"></p>
+          <p class="done" id="username-done" role="status"></p>
+        </form>
+
+        <form id="password-form" class="card" novalidate>
+          <h2>Password</h2>
+          <input id="password-username" type="text" autocomplete="username" hidden />
+          <label
+            >Current password
+            <input id="password-current" type="password" autocomplete="current-password" required />
+          </label>
+          <label
+            >New password
+            <input id="password-new" type="password" autocomplete="new-password" required />
+            <small id="password-min"></small>
+          </label>
+          <label
+            >Confirm new password
+            <input id="password-confirm" type="password" autocomplete="new-password" required />
+          </label>
+          <button type="submit">Change password</button>
+          <p class="error" id="password-error" role="alert"></p>
+          <p class="done" id="password-done" role="status"></p>
+        </form>
+
+        <div class="card">
+          <h2>Other devices</h2>
+          <p id="sessions-text"></p>
+          <div class="choices">
+            <button type="button" id="sessions-button" class="quiet">Sign out everywhere else</button>
+          </div>
+          <p class="error" id="sessions-error" role="alert"></p>
+        </div>
+
+        <form id="delete-form" class="card danger-zone" novalidate>
+          <h2>Delete account</h2>
+          <p>
+            Deletes your account and every map in it, with their history, for good. Nobody can bring them
+            back, not even whoever runs this server. Download your data first if you want a copy.
+          </p>
+          <input id="delete-username" type="text" autocomplete="username" hidden />
+          <label
+            >Your password
+            <input id="delete-password" type="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit" class="danger">Delete my account</button>
+          <p class="error" id="delete-error" role="alert"></p>
+        </form>
+      </section>
     </main>
 
     <script type="module" src="/src/shell/main.js"></script>
