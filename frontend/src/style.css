@@ -405,6 +405,136 @@ kbd {
   background: #1d3f5c;
 }
 
+/* The panel's dropdown (editor.js createSelect): a field-shaped trigger and
+   a list dropped over whatever sits below it in the panel. */
+.editor-select {
+  position: relative;
+}
+
+.editor-select-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #2a3140;
+  border-radius: 3px;
+  background: #11141c;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.editor-select-trigger:hover {
+  border-color: #3a4356;
+}
+
+.editor-select-trigger:focus,
+.editor-select-trigger[aria-expanded='true'] {
+  outline: none;
+  border-color: #6fc7ff;
+}
+
+.editor-select-trigger .editor-select-name {
+  flex: 1;
+}
+
+/* A small chevron drawn from two borders, turned up while the list is open. */
+.editor-select-caret {
+  width: 6px;
+  height: 6px;
+  margin: 0 4px 3px 0;
+  border-right: 1px solid var(--ink-dim);
+  border-bottom: 1px solid var(--ink-dim);
+  transform: rotate(45deg);
+}
+
+.editor-select-trigger[aria-expanded='true'] .editor-select-caret {
+  margin: 3px 4px 0 0;
+  transform: rotate(-135deg);
+}
+
+.editor-select-list {
+  position: absolute;
+  z-index: 1;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  border: 1px solid #2a3140;
+  border-radius: 3px;
+  background: #0c0f17;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65);
+}
+
+.editor-select-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+}
+
+.editor-select-option.active {
+  background: #17202e;
+}
+
+.editor-select-option[aria-selected='true'] {
+  border-left-color: #6fc7ff;
+}
+
+.editor-select-text {
+  display: grid;
+  gap: 1px;
+}
+
+.editor-select-option .editor-select-name {
+  color: var(--ink);
+}
+
+.editor-select-detail {
+  color: var(--ink-dim);
+  font-size: 0.85em;
+}
+
+/* A thumbnail of the look: its sky colour with three of its star colours. */
+.editor-select-swatch {
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 16px;
+  border: 1px solid #2a3140;
+  border-radius: 2px;
+}
+
+.editor-select-swatch i {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+}
+
+.editor-select-swatch i:nth-child(1) {
+  left: 5px;
+  top: 4px;
+}
+
+.editor-select-swatch i:nth-child(2) {
+  left: 15px;
+  top: 9px;
+  width: 4px;
+  height: 4px;
+}
+
+.editor-select-swatch i:nth-child(3) {
+  left: 20px;
+  top: 3px;
+}
+
 /* Unlocks the app caused itself (a file dialog) get this, not the full key
    list; `?` swaps between them. Informational, like #overlay. */
 #resume-pill {

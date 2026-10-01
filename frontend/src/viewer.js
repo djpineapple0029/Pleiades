@@ -18,7 +18,7 @@ import { createScene } from './scene.js'
 import { createFlight } from './flight.js'
 import { createSkybox } from './skybox.js'
 import { createDust } from './dust.js'
-import { createLooks, storedLook } from './looks.js'
+import { createLooks } from './looks.js'
 import { createDustRivers } from './dustRivers.js'
 import { createBloom } from './bloom.js'
 import { createGraph } from './graph.js'
@@ -100,8 +100,9 @@ view.setHeat(settings.visuals.connection_heat, { instant: true })
 view.setBrightness(settings.visuals.node_brightness)
 const rivers = createDustRivers(graph, scene, { radiusOf: view.radiusOf })
 const overview = createOverview({ camera, canvas, graph, view, controls: flight.controls })
-// The look (`looks.js`): this browser's own choice if it made one in the app
-// at this address, else the exporting server's starting look. No picker here.
+// The look (`looks.js`) picked when the map was exported, carried in the
+// spliced settings. No picker here, and this browser's own choice in the app
+// doesn't apply: the file should open the way its author sent it.
 const looks = createLooks({
   renderer,
   skybox,
@@ -111,7 +112,7 @@ const looks = createLooks({
   rivers,
   bloomStrength: settings.visuals.bloom_strength,
 })
-looks.set(storedLook() ?? settings.visuals.look, { instant: true, remember: false })
+looks.set(settings.visuals.look, { instant: true, remember: false })
 
 const interaction = createViewerInteraction({
   camera,

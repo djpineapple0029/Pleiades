@@ -68,8 +68,11 @@ test('Ctrl+E export: builds, downloads, and runs fully offline', async ({ page, 
 
   // Export. The chord is preventDefault-ed, so the browser's own save dialog
   // never sees it; what should arrive is a download from the object URL.
+  // Ctrl+E asks which look the file opens in first; Enter keeps the current one.
   const waitDownload = page.waitForEvent('download', { timeout: 8000 })
   await page.keyboard.press('Control+e')
+  await page.waitForSelector('.editor-select-trigger')
+  await page.keyboard.press('Enter')
   let exported = null
   try {
     const download = await waitDownload

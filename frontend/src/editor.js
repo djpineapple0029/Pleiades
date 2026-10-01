@@ -75,7 +75,9 @@ export function createEditor(container) {
       finish(collect())
       return
     }
-    if (event.key === 'Enter' && event.target.tagName === 'INPUT') {
+    // A dropdown's trigger is a button: Enter on it commits like a field
+    // would, and preventDefault keeps it from also clicking the list open.
+    if (event.key === 'Enter' && (event.target.tagName === 'INPUT' || at !== -1)) {
       event.preventDefault()
       // Enter behaves like "next field, or commit from the last one" — this
       // is the mouse-and-Enter workflow most ordinary web forms use, rather
@@ -85,7 +87,7 @@ export function createEditor(container) {
         finish(collect())
       } else {
         fields[at + 1].focus()
-        fields[at + 1].select()
+        fields[at + 1].select?.()
       }
       return
     }
@@ -99,7 +101,7 @@ export function createEditor(container) {
       const from = at === -1 ? 0 : at
       const next = (from + step + fields.length) % fields.length
       fields[next].focus()
-      fields[next].select()
+      fields[next].select?.()
     }
   }
 
@@ -151,8 +153,160 @@ export function createEditor(container) {
   }
 
   /**
+   * A dropdown of `field.options` (`{ value, label, detail, swatch }`), drawn
+   * here rather than as a native `<select>`, whose popup is the OS's and
+   * looks nothing like the panel. The trigger is a `<button>` whose `value`
+   * is the chosen option's, so `collect` and Tab treat it like any input.
+   * Focus stays on the trigger while the list is open (the list follows via
+   * `aria-activedescendant`), so a click anywhere else blurs it and closes.
+   */
+  function createSelect(field) {
+    const host = document.createElement('div')
+    host.className = 'editor-select'
+
+    const trigger = document.createElement('button')
+    trigger.type = 'button'
+    trigger.className = 'editor-select-trigger'
+    trigger.setAttribute('aria-label', field.label)
+    trigger.setAttribute('aria-haspopup', 'listbox')
+    trigger.setAttribute('aria-expanded', 'false')
+
+    const list = document.createElement('ul')
+    list.className = 'editor-select-list'
+    list.setAttribute('role', 'listbox')
+    list.id = `editor-select-${field.key}`
+    list.hidden = true
+    trigger.setAttribute('aria-controls', list.id)
+
+    const options = field.options
+    let active = 0 // index of the highlighted row while the list is open
+
+    const swatchOf = (option) => {
+      const swatch = document.createElement('span')
+      swatch.className = 'editor-select-swatch'
+      if (option.swatch) {
+        swatch.style.background = option.swatch.ground
+        for (const dot of option.swatch.dots) {
+          const star = document.createElement('i')
+          star.style.background = dot
+          swatch.append(star)
+        }
+      }
+      return swatch
+    }
+
+    const rows = options.map((option, index) => {
+      const row = document.createElement('li')
+      row.className = 'editor-select-option'
+      row.id = `${list.id}-${index}`
+      row.setAttribute('role', 'option')
+      const text = document.createElement('span')
+      text.className = 'editor-select-text'
+      const name = document.createElement('span')
+      name.className = 'editor-select-name'
+      name.textContent = option.label
+      text.append(name)
+      if (option.detail) {
+        const detail = document.createElement('span')
+        detail.className = 'editor-select-detail'
+        detail.textContent = option.detail
+        text.append(detail)
+      }
+      row.append(swatchOf(option), text)
+      // mousedown, not click: the trigger must keep focus, or its blur would
+      // close the list before the click lands.
+      row.addEventListener('mousedown', (event) => event.preventDefault())
+      row.addEventListener('mousemove', () => highlight(index))
+      row.addEventListener('click', () => pick(index))
+      list.append(row)
+      return row
+    })
+
+    function show(index) {
+      const option = options[index]
+      trigger.value = option.value
+      trigger.replaceChildren(swatchOf(option))
+      const name = document.createElement('span')
+      name.className = 'editor-select-name'
+      name.textContent = option.label
+      const caret = document.createElement('span')
+      caret.className = 'editor-select-caret'
+      trigger.append(name, caret)
+      rows.forEach((row, i) => row.setAttribute('aria-selected', String(i === index)))
+    }
+
+    function highlight(index) {
+      active = (index + options.length) % options.length
+      rows.forEach((row, i) => row.classList.toggle('active', i === active))
+      trigger.setAttribute('aria-activedescendant', rows[active].id)
+    }
+
+    const isOpen = () => !list.hidden
+
+    function openList() {
+      list.hidden = false
+      trigger.setAttribute('aria-expanded', 'true')
+      highlight(
+        Math.max(
+          0,
+          options.findIndex((option) => option.value === trigger.value),
+        ),
+      )
+    }
+
+    function closeList() {
+      list.hidden = true
+      trigger.setAttribute('aria-expanded', 'false')
+      trigger.removeAttribute('aria-activedescendant')
+    }
+
+    function pick(index) {
+      show(index)
+      closeList()
+    }
+
+    trigger.addEventListener('click', () => (isOpen() ? closeList() : openList()))
+    trigger.addEventListener('blur', closeList)
+    // Runs before the panel's own handler (it bubbles there next), so the
+    // keys the list owns while open never reach it: Esc closes the list, not
+    // the panel, and Enter picks a row rather than committing.
+    trigger.addEventListener('keydown', (event) => {
+      if (!isOpen()) {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === ' ') {
+          event.preventDefault()
+          openList()
+        }
+        return
+      }
+      if (event.key === 'Tab') {
+        closeList()
+        return
+      }
+      event.stopPropagation()
+      if (event.key === 'Escape') closeList()
+      else if (event.key === 'ArrowDown') highlight(active + 1)
+      else if (event.key === 'ArrowUp') highlight(active - 1)
+      else if (event.key === 'Home') highlight(0)
+      else if (event.key === 'End') highlight(options.length - 1)
+      else if (event.key === 'Enter' || event.key === ' ') pick(active)
+      else return
+      event.preventDefault()
+    })
+
+    show(
+      Math.max(
+        0,
+        options.findIndex((option) => option.value === field.value),
+      ),
+    )
+    host.append(trigger, list)
+    return { host, input: trigger }
+  }
+
+  /**
    * `fields` are `{ key, label, value, type }`; `type: 'password'`
-   * masks the field and keeps its value untrimmed. `note` is shown above the
+   * masks the field and keeps its value untrimmed. `type: 'select'` is a
+   * dropdown of the field's `options` (see `createSelect`). `note` is shown above the
    * fields — a rejected password or a mismatch, on a re-prompt. `commitLabel`
    * names the primary button (default "Save"). Resolves with a `{ key: value
    * }` map on commit, or null if cancelled.
@@ -173,12 +327,21 @@ export function createEditor(container) {
     }
 
     entries = fields.map((field) => {
-      const row = document.createElement('label')
+      // A div for a dropdown: inside a <label>, a click on a list row would
+      // also be forwarded to the trigger and open the list straight back up.
+      const row = document.createElement(field.type === 'select' ? 'div' : 'label')
       row.className = 'editor-row'
 
       const name = document.createElement('span')
       name.textContent = field.label
       row.append(name)
+
+      if (field.type === 'select') {
+        const { host, input } = createSelect(field)
+        row.append(host)
+        panel.append(row)
+        return { field, input }
+      }
 
       if (field.type === 'password') {
         const { host, input } = createPasswordInput()
@@ -226,7 +389,7 @@ export function createEditor(container) {
     container.hidden = false
     const [first] = inputs()
     first.focus()
-    first.select()
+    first.select?.()
 
     return new Promise((settle) => {
       resolve = settle

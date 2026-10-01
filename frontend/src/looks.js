@@ -96,6 +96,7 @@ export const LOOKS = [
   {
     id: 'deep-space',
     name: 'Deep Space',
+    blurb: 'Everything moving: dust, drift, bloom',
     motion: true,
     sky: 'space',
     dust: 'space',
@@ -110,6 +111,7 @@ export const LOOKS = [
   {
     id: 'deep-sea',
     name: 'Deep Sea',
+    blurb: 'The ocean: jellies and marine snow',
     motion: true,
     sky: 'sea',
     dust: 'sea',
@@ -124,6 +126,7 @@ export const LOOKS = [
   {
     id: 'terminal',
     name: 'Terminal',
+    blurb: 'Abstract data in hacker green',
     motion: true,
     sky: 'digital',
     dust: 'lattice',
@@ -141,6 +144,7 @@ export const LOOKS = [
   {
     id: 'minimal',
     name: 'Minimal',
+    blurb: 'Plain orbs, nothing animated, fastest',
     motion: false,
     sky: null,
     dust: null,
@@ -155,6 +159,7 @@ export const LOOKS = [
   {
     id: 'shallow-space',
     name: 'Shallow Space',
+    blurb: 'A planet below, standing still',
     motion: false,
     sky: 'orbit',
     dust: null,
