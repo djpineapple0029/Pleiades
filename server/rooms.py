@@ -92,6 +92,8 @@ class Peer:
     colour: str = ""
     client_ids: set[int] = field(default_factory=set)
     outbox: asyncio.Queue = field(default_factory=asyncio.Queue)
+    # Set once a close is queued: nothing more it sends is acted on.
+    closing: bool = False
 
     @property
     def can_edit(self) -> bool:
@@ -104,6 +106,7 @@ class Peer:
         self.outbox.put_nowait(("bytes", value))
 
     def close(self, code: int, reason: str = "") -> None:
+        self.closing = True
         self.outbox.put_nowait(("close", code, reason))
 
 
@@ -211,7 +214,7 @@ class Room:
     # --- messages ----------------------------------------------------------
 
     async def on_binary(self, peer: Peer, data: bytes) -> None:
-        if not data or self.closed:
+        if not data or self.closed or peer.closing:
             return
         kind = data[0]
         if kind == YMessageType.SYNC and len(data) > 1:

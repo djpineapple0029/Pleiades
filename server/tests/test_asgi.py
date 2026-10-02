@@ -23,10 +23,9 @@ def test_flask_404_is_still_flask():
         assert client.get("/api/nope").status_code == 404
 
 
-def test_websocket_ping_echoes():
-    with make_client() as client, client.websocket_connect("/ws/ping") as ws:
-        ws.send_text("hello")
-        assert ws.receive_text() == "hello"
+def test_live_map_rooms_are_wired_in():
+    with make_client() as client:
+        assert client.app.state.flask.extensions["pleiades_rooms"] is not None
 
 
 def test_flask_app_is_reachable_for_other_modules():
