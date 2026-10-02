@@ -63,6 +63,9 @@ PLAYER_COLOURS = [
 ]
 FAILURES_BEFORE_WARNING = 3
 CHAT_MAX = 500  # characters, after cleaning (MOONSHOT-BUILD.md limits)
+# The emote ring's choices, the same list as frontend/src/room/emotes.js.
+EMOTE_IDS = frozenset({"wave", "yes", "no", "look", "idea", "laugh", "heart", "question"})
+EMOTE_COOLDOWN = 1.0  # seconds between one connection's emotes (decision 16)
 # The only roots a map's doc has (server/ydoc.py). Clients write `nodes` and
 # `edges`; `meta` (camera, envelope, pass-through keys) is the server's alone
 # until a later milestone gives a client something to put there.
@@ -108,6 +111,8 @@ class Peer:
     outbox: asyncio.Queue = field(default_factory=asyncio.Queue)
     # Set once a close is queued: nothing more it sends is acted on.
     closing: bool = False
+    # time.monotonic() of this connection's last emote that went out.
+    last_emote: float | None = None
 
     @property
     def can_edit(self) -> bool:
@@ -329,6 +334,8 @@ class Room:
             peer.send_text({"type": "flushed", "ok": ok and self._last_save_ok})
         elif kind == "chat":
             self._chat(peer, message.get("text"))
+        elif kind == "emote":
+            self._emote(peer, message.get("id"))
 
     def _chat(self, peer: Peer, text: Any) -> None:
         """To everyone, the sender too, so every log is in the room's order.
@@ -348,6 +355,19 @@ class Room:
             "text": cleaned,
             "at": int(time.time() * 1000),
         }
+        for p in self.peers:
+            p.send_text(message)
+
+    def _emote(self, peer: Peer, emote_id: Any) -> None:
+        """One a second per connection; too soon, unknown, or without the chat
+        permission is dropped without a word (an error a second would be spam)."""
+        if not peer.perms.get("chat") or not isinstance(emote_id, str) or emote_id not in EMOTE_IDS:
+            return
+        now = time.monotonic()
+        if peer.last_emote is not None and now - peer.last_emote < EMOTE_COOLDOWN:
+            return
+        peer.last_emote = now
+        message = {"type": "emote", "conn": peer.conn, "colour": peer.colour, "id": emote_id}
         for p in self.peers:
             p.send_text(message)
 

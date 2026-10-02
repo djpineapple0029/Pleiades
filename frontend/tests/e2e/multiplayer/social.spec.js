@@ -3,7 +3,7 @@
 // (playwright.multiplayer.config.js).
 import { test, expect } from '@playwright/test'
 import { createMap, freshName, openMap, shareWith, signUp } from '../helpers/multiplayer.js'
-import { t } from '../helpers/gestures.js'
+import { settle, t } from '../helpers/gestures.js'
 
 /** Esc: the pointer goes, the Esc screen (and its room panel) shows. */
 const escape = async (page) => {
@@ -86,5 +86,61 @@ test.describe('social', () => {
     await alice.waitForTimeout(500)
     await expect(alice.locator('#room-panel .chat-text')).toHaveCount(0)
     await vicky.context().close()
+  })
+
+  /** Hold G, look toward a wedge, let go; what the ring showed and armed. */
+  async function emoteRing(page, dx, dy, shot = null) {
+    await page.keyboard.down('g')
+    await settle(page)
+    const wedges = await t(page, 'wedges()')
+    await t(page, `look(${dx}, ${dy})`)
+    await settle(page)
+    const armed = await t(page, 'armed()')
+    if (shot) await page.screenshot({ path: shot })
+    await page.keyboard.up('g')
+    await settle(page)
+    return { wedges, armed }
+  }
+
+  /** Every emote message `page` receives from now on, in order. */
+  const recordEmotes = (page) =>
+    page.evaluate(() => {
+      const { emotes } = window.__pleiades
+      window.__emotes = []
+      const receive = emotes.receive
+      emotes.receive = (message) => {
+        window.__emotes.push(message.id)
+        receive(message)
+      }
+    })
+  const emotesSeen = (page) => page.evaluate(() => window.__emotes)
+
+  test('hold G, point, let go: Bob sees the emote, Alice sees her own; one a second', async () => {
+    await recordEmotes(bob)
+    // Alice flies ahead and Bob turns a little, so her ship is in his view.
+    await alice.keyboard.down('w')
+    await alice.waitForTimeout(1200)
+    await alice.keyboard.up('w')
+    await alice.evaluate(() => window.__t.look(300, 0))
+    await expect.poll(() => bob.evaluate(() => window.__pleiades.avatars.drawn)).toBe(1)
+    const ringShot = 'artifacts/e2e-multiplayer/emote-ring.png'
+    const { wedges, armed } = await emoteRing(alice, 0, -80, ringShot) // straight up: the first wedge
+    expect(wedges).toEqual(['👋', '👍', '👎', '👀', '💡', '😂', '❤️', '❓'])
+    expect(armed).toBe('👋')
+    await expect.poll(() => emotesSeen(bob)).toEqual(['wave'])
+    await expect(alice.locator('#my-emote')).toHaveText('👋')
+    await bob.screenshot({ path: 'artifacts/e2e-multiplayer/emote-wave.png' })
+    await alice.screenshot({ path: 'artifacts/e2e-multiplayer/emote-mine.png' })
+    // Straight away again: the ring opens, but nothing is sent.
+    await emoteRing(alice, 80, 0)
+    await bob.waitForTimeout(400)
+    expect(await emotesSeen(bob)).toEqual(['wave'])
+    // A second later, it goes.
+    await alice.waitForTimeout(1100)
+    const down = await emoteRing(alice, 0, 80) // straight down: the fifth of eight
+    expect(down.armed).toBe('💡')
+    await expect.poll(() => emotesSeen(bob)).toEqual(['wave', 'idea'])
+    await bob.screenshot({ path: 'artifacts/e2e-multiplayer/emote.png' })
+    expect(await t(alice, 'locked()')).toBe(true)
   })
 })

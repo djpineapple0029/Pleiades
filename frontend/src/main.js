@@ -39,6 +39,7 @@ import { createPosePublisher } from './room/presence.js'
 import { createAvatars } from './room/avatars.js'
 import { createRoster } from './room/roster.js'
 import { createChat, createChatLog } from './room/chat.js'
+import { createEmotes } from './room/emotes.js'
 import { createRoomPanel } from './room/roomPanel.js'
 import { docToPayload } from './format/ydoc.js'
 
@@ -324,6 +325,7 @@ const chat = room
       personName,
     })
   : null
+const emotes = room ? createEmotes({ room, avatars, corner: document.getElementById('my-emote') }) : null
 const roomPanel = room
   ? createRoomPanel(document.getElementById('room-panel'), { onSend: (text) => chat.send(text) })
   : null
@@ -359,6 +361,7 @@ const interaction = createInteraction({
   keymap,
   room,
   chat,
+  emotes,
   leaveToMaps,
 })
 
@@ -400,6 +403,8 @@ function onRoomMessage(message) {
     roomPanel.setCanChat(can(room, 'chat'))
   } else if (message.type === 'chat') {
     chat.receive(message)
+  } else if (message.type === 'emote') {
+    emotes.receive(message)
   } else {
     interaction.roomMessage(message)
   }
@@ -483,6 +488,7 @@ if (import.meta.env.DEV) {
     avatars,
     chat,
     chatLog,
+    emotes,
     commands: interaction.commands,
   }
 }

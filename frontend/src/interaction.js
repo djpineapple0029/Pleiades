@@ -12,6 +12,7 @@ import { LOOKS } from './looks.js'
 import { nodeName } from './ids.js'
 import { personName } from './room/authors.js'
 import { can, denyText } from './room/can.js'
+import { EMOTE_MENU } from './room/emotes.js'
 
 const SPAWN_DISTANCE = 90 // world units ahead of the camera for a new node
 const DOUBLE_CLICK_MS = 320
@@ -112,6 +113,7 @@ const MAP_TARGET = { kind: 'map', ring: 'top' }
 const MAP_TARGET_MORE = { kind: 'map', ring: 'more' }
 const LOOK_TARGET = { kind: 'look' }
 const SHAPE_TARGET = { kind: 'shape' }
+const EMOTE_TARGET = { kind: 'emote' }
 
 // The layout shapes (physics.js `treeShape`), clockwise from the top. Off is
 // the constellation layout, which has no tree.
@@ -180,6 +182,8 @@ export function createInteraction({
   room = null,
   // room/chat.js in a live map: Y opens its line.
   chat = null,
+  // room/emotes.js in a live map: G holds its ring open.
+  emotes = null,
   leaveToMaps = () => {},
 }) {
   const raycaster = new THREE.Raycaster()
@@ -227,7 +231,7 @@ export function createInteraction({
   let moveDistance = 0 // camera-to-node distance captured when the move started
   const lastGhostPoint = new THREE.Vector3()
   let menuTarget = null
-  let heldKey = null // the action ('look' or 'tree_shape') whose held key has a ring open
+  let heldKey = null // the action ('look', 'tree_shape' or 'emote') whose held key has a ring open
   let dwellKey = null // submenu wedge ('more', 'type' or 'back') currently being held
   let dwellSince = 0
   let lastLeftDown = 0
@@ -1309,15 +1313,20 @@ export function createInteraction({
   }
 
   /**
-   * A ring held open by a key (look: V, tree_shape: T) and picked on that
-   * key's release rather than the right button's.
+   * A ring held open by a key (look: V, tree_shape: T, emote: G) and picked
+   * on that key's release rather than the right button's.
    */
+  const KEY_RINGS = {
+    look: { target: LOOK_TARGET, items: () => LOOK_MENU(renderSettings.looks.current) },
+    tree_shape: { target: SHAPE_TARGET, items: () => SHAPE_MENU(physics.treeShape) },
+    emote: { target: EMOTE_TARGET, items: () => EMOTE_MENU },
+  }
   function openKeyMenu(action) {
-    menuTarget = action === 'look' ? LOOK_TARGET : SHAPE_TARGET
+    menuTarget = KEY_RINGS[action].target
     heldKey = action
     mode = 'menu'
     beginModal()
-    menu.open(action === 'look' ? LOOK_MENU(renderSettings.looks.current) : SHAPE_MENU(physics.treeShape))
+    menu.open(KEY_RINGS[action].items())
   }
 
   function closeMenu() {
@@ -1327,6 +1336,11 @@ export function createInteraction({
     endModal()
     heldKey = null
     if (!key || !target) return
+
+    if (target.kind === 'emote') {
+      emotes?.send(key)
+      return
+    }
 
     if (target.kind === 'look') {
       const look = LOOKS.find((item) => item.id === key)
@@ -1538,11 +1552,12 @@ export function createInteraction({
       connectKey()
     }
 
-    // Hold to open the look ring or the layout-shape ring, move the mouse
-    // onto one, let go.
-    for (const action of ['look', 'tree_shape']) {
+    // Hold to open the look ring, the layout-shape ring or (in a live map)
+    // the emote ring, move the mouse onto one, let go.
+    for (const action of emotes ? ['look', 'tree_shape', 'emote'] : ['look', 'tree_shape']) {
       if (is(action) && !event.repeat && (controls.isLocked || overview.isActive) && mode === 'idle') {
         event.preventDefault()
+        if (action === 'emote' && !allowed('chat')) return
         openKeyMenu(action)
         return
       }

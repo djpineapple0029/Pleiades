@@ -3,7 +3,8 @@
  * decision 14). Milestone 1 has one style for every Look: a small cone in
  * the person's colour pointing where they look, with their name over it.
  *
- * What people say in chat floats over them for a few seconds (`say`).
+ * What people say in chat floats over them for a few seconds (`say`), and
+ * their emotes for two (`emote`).
  *
  * Poses come in through `push` (awareness, ~10 Hz) and are drawn smoothly a
  * moment in the past (room/presence.js). The cones are one instanced mesh —
@@ -25,6 +26,8 @@ const LINE_HEIGHT = 36
 const MAX_WIDTH = 480 // canvas pixels
 const SAY_MS = 5000 // how long a chat message floats over its sender
 const SAY_LINES = 3
+const EMOTE_MS = 2000 // how long an emote shows over its sender
+const EMOTE_SCALE = 2.5 // an emote's glyph, against a name's text
 
 /** `text` broken into at most `SAY_LINES` lines that fit `MAX_WIDTH`; the last one ends in … if cut. */
 function wrap(context, text, maxWidth) {
@@ -91,6 +94,12 @@ function sayingSprite(text, colour) {
   return textSprite(wrap(context, text, MAX_WIDTH), colour, { backdrop: true })
 }
 
+function emoteSprite(glyph) {
+  const sprite = textSprite([glyph], '#ffffff')
+  sprite.scale.multiplyScalar(EMOTE_SCALE)
+  return sprite
+}
+
 function disposeSprite(scene, sprite) {
   if (!sprite) return
   scene.remove(sprite)
@@ -124,6 +133,7 @@ export function createAvatars({ scene, size = 2 }) {
       if (wanted.has(clientId)) continue
       disposeSprite(scene, person.sprite)
       disposeSprite(scene, person.saying?.sprite)
+      disposeSprite(scene, person.emoting?.sprite)
       people.delete(clientId)
     }
     for (const [clientId, info] of wanted) {
@@ -143,6 +153,7 @@ export function createAvatars({ scene, size = 2 }) {
         buffer: known?.buffer ?? createPoseBuffer(),
         sprite,
         saying: known?.saying ?? null, // { sprite, until }
+        emoting: known?.emoting ?? null, // { sprite, until }
       })
     }
   }
@@ -167,6 +178,19 @@ export function createAvatars({ scene, size = 2 }) {
     }
   }
 
+  /** An emote's glyph over these avatars for a couple of seconds. */
+  function emote(clientIds, glyph, now = performance.now()) {
+    for (const clientId of clientIds) {
+      const person = people.get(clientId)
+      if (!person) continue
+      disposeSprite(scene, person.emoting?.sprite)
+      const sprite = emoteSprite(glyph)
+      sprite.visible = false
+      scene.add(sprite)
+      person.emoting = { sprite, until: now + EMOTE_MS }
+    }
+  }
+
   const shows = (person) => (person.role === 'viewer' ? visible.viewers : visible.editors)
 
   /** Where someone is drawn now, `{ p, q }`, or null. */
@@ -178,14 +202,17 @@ export function createAvatars({ scene, size = 2 }) {
     let slot = 0
     for (const person of people.values()) {
       if (slot >= MAX_PEOPLE) break
-      if (person.saying && now >= person.saying.until) {
-        disposeSprite(scene, person.saying.sprite)
-        person.saying = null
+      for (const kind of ['saying', 'emoting']) {
+        if (person[kind] && now >= person[kind].until) {
+          disposeSprite(scene, person[kind].sprite)
+          person[kind] = null
+        }
       }
       const pose = shows(person) ? person.buffer.sample(now) : null
       if (!pose) {
         person.sprite.visible = false
         if (person.saying) person.saying.sprite.visible = false
+        if (person.emoting) person.emoting.sprite.visible = false
         continue
       }
       position.fromArray(pose.p)
@@ -196,15 +223,15 @@ export function createAvatars({ scene, size = 2 }) {
       slot++
       person.sprite.position.set(position.x, position.y + NAME_HEIGHT * size, position.z)
       person.sprite.visible = !camera || camera.position.distanceTo(position) < NAME_RANGE
-      if (person.saying) {
-        // Over the name, whatever the distance: a message is worth seeing.
-        const { sprite } = person.saying
-        sprite.position.set(
-          position.x,
-          position.y + NAME_HEIGHT * size + sprite.scale.y / 2 + 1.6,
-          position.z,
-        )
+      // Over the name, whatever the distance: a message or an emote is
+      // worth seeing. Stacked upwards: name, what they said, the emote.
+      let top = position.y + NAME_HEIGHT * size + 1.6
+      for (const kind of ['saying', 'emoting']) {
+        if (!person[kind]) continue
+        const { sprite } = person[kind]
+        sprite.position.set(position.x, top + sprite.scale.y / 2, position.z)
         sprite.visible = true
+        top += sprite.scale.y + 0.6
       }
     }
     for (let i = slot; i < mesh.count; i++) mesh.setMatrixAt(i, matrix.compose(hidden, quaternion, hidden))
@@ -233,6 +260,7 @@ export function createAvatars({ scene, size = 2 }) {
     update,
     sampleOf,
     say,
+    emote,
     setVisible,
     dispose,
     /** How many avatars the last `update` drew. */
