@@ -201,18 +201,18 @@ test.describe('social', () => {
       .poll(() =>
         alice.evaluate(() => {
           const { room } = window.__pleiades
-          const bob = room.roster.find((p) => p.conn !== room.you.conn)
-          return room.awareness.getStates().get(bob?.clientIds[0])?.following ?? null
+          const other = room.roster.find((p) => p.conn !== room.you.conn)
+          return room.awareness.getStates().get(other?.clientIds[0])?.following ?? null
         }),
       )
       .not.toBeNull()
     await alice.evaluate(() => {
       const { room } = window.__pleiades
-      const bob = room.roster.find((p) => p.conn !== room.you.conn)
+      const other = room.roster.find((p) => p.conn !== room.you.conn)
       window.__pleiades.interaction.followPerson(
-        bob.clientIds[0],
-        bob.name,
-        room.awareness.getStates().get(bob.clientIds[0])?.following,
+        other.clientIds[0],
+        other.name,
+        room.awareness.getStates().get(other.clientIds[0])?.following,
       )
     })
     await expect(alice.locator('#hud')).toContainText(/is following you/)
