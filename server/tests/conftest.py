@@ -61,3 +61,12 @@ def signup():
         return response
 
     return run
+
+
+# --- Rooms (async) ------------------------------------------------------------
+
+
+@pytest.fixture
+def anyio_backend():
+    """`@pytest.mark.anyio` tests run on asyncio, the loop uvicorn uses."""
+    return "asyncio"
