@@ -69,4 +69,23 @@ describe('physics.flyTo', () => {
     expect(graph.getNode(a.id).x).toBe(1)
     expect(graph.getNode(a.id).blend).toBeNull() // the abandoned Balance never faded colours
   })
+
+  it('a second remote move mid-flight keeps the first flight going', () => {
+    const { graph, physics, a, b } = setup()
+    physics.flyTo(new Map([[a.id, [5, 0, 0]]]))
+    physics.update()
+    physics.flyTo(new Map([[b.id, [20, 0, 0]]]))
+    land(physics)
+    expect(graph.getNode(a.id).x).toBe(5)
+    expect(graph.getNode(b.id).x).toBe(20)
+  })
+
+  it("says whether the run in flight is this tab's own", () => {
+    const { physics, a } = setup()
+    expect(physics.isLocalRun).toBe(false)
+    physics.start()
+    expect(physics.isLocalRun).toBe(true)
+    physics.flyTo(new Map([[a.id, [1, 1, 1]]]))
+    expect(physics.isLocalRun).toBe(false)
+  })
 })

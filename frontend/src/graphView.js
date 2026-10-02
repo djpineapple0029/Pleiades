@@ -11,6 +11,7 @@ import { createNebulae } from './nebulae.js'
 import { createLabels } from './labels.js'
 import { clusterInk } from './palette.js'
 import { hash32 } from './random.js'
+import { createFlashes } from './room/flash.js'
 
 export const NODE_RADIUS = 5
 
@@ -578,6 +579,9 @@ export function createGraphView(graph, scene, renderer) {
   let nodeMesh = null
   let starAttribute = null
   let tintAttribute = null
+  // Other people's edits glow in their colour for a moment (room/flash.js).
+  const flashes = createFlashes()
+  const flashTint = [0, 0, 0]
   let glowAttribute = null
   allocate(0)
 
@@ -660,15 +664,20 @@ export function createGraphView(graph, scene, renderer) {
     }
   }
 
-  /** The drawn tints into the instance attribute. */
+  /** The drawn tints into the instance attribute, with any author flash over them. */
   function writeTints() {
     const array = tintAttribute.array
+    const now = lastSeconds ?? 0
     for (let slot = 0; slot < slotIds.length; slot++) {
       const drawn = shownTint.get(slotIds[slot])
       if (!drawn) continue
-      array[slot * 3] = drawn[0]
-      array[slot * 3 + 1] = drawn[1]
-      array[slot * 3 + 2] = drawn[2]
+      flashTint[0] = drawn[0]
+      flashTint[1] = drawn[1]
+      flashTint[2] = drawn[2]
+      if (flashes.active) flashes.mix(slotIds[slot], flashTint, now)
+      array[slot * 3] = flashTint[0]
+      array[slot * 3 + 1] = flashTint[1]
+      array[slot * 3 + 2] = flashTint[2]
     }
     tintAttribute.needsUpdate = true
   }
@@ -1130,6 +1139,11 @@ export function createGraphView(graph, scene, renderer) {
       easing = true
     }
     if (easing) easing = easeAppearance(dt)
+    // Every frame while one runs: the flash fades on its own clock, not the ease's.
+    if (flashes.active) {
+      flashes.prune(seconds)
+      writeTints()
+    }
     edges.update(dt)
     // After easing: a label sits below its star's drawn radius.
     if (camera) labels.update(camera, dt)
@@ -1157,6 +1171,10 @@ export function createGraphView(graph, scene, renderer) {
   return {
     sync,
     syncNodes,
+    /** Tints these stars toward `rgb` (0..1 channels) and back over `ms`. */
+    flash(ids, rgb, ms = 1500) {
+      flashes.add(ids, rgb, lastSeconds ?? 0, ms / 1000)
+    },
     syncEdges,
     updateEdgePositions,
     setHover,

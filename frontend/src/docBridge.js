@@ -7,13 +7,18 @@
  * (star/core/nexus) → physics.invalidate. Text changes need none of it.
  *
  * Local positions snap (a move, an undo); remote ones fly, through
- * physics.flyTo, so someone else's Balance or move eases in.
+ * physics.flyTo, so someone else's Balance or move eases in. A remote layout
+ * that cuts short this tab's own Balance also puts back every star that run
+ * had already moved or recoloured, since none of it reached the doc; and a
+ * local move during someone else's flight joins that flight, so the flight
+ * doesn't carry the star back.
  *
  * Edges are reconciled as a whole through keptEdges after every change, so a
  * link whose star was deleted concurrently, or a second link between the same
  * pair, never reaches the graph — on any peer.
  */
 import { LOAD, keptEdges } from './format/ydoc.js'
+import { authorsOf } from './room/authors.js'
 
 const OWNED = new Set([
   'id',
@@ -44,14 +49,15 @@ export function createDocBridge({
     const ynode = yNodes.get(id)
     const current = graph.getNode(id)
     if (!ynode) {
+      const label = current?.label ?? ''
       const removed = current ? graph.removeNode(id) : null
       if (removed) {
         counters.structure = true
-        onRemoved({ kind: 'node', id, local })
+        onRemoved({ kind: 'node', id, local, label })
         // Its links went with it, inside graph.removeNode.
         for (const edge of removed.edges) {
           counters.edgesDropped = true
-          onRemoved({ kind: 'edge', id: edge.id, local })
+          onRemoved({ kind: 'edge', id: edge.id, local, label: edge.label ?? '' })
         }
       }
       return
@@ -89,6 +95,7 @@ export function createDocBridge({
       if (local) {
         graph.setNodePosition(id, plain.x, plain.y, plain.z)
         counters.snapped = true
+        counters.snaps.set(id, [plain.x, plain.y, plain.z])
       } else flights.set(id, [plain.x, plain.y, plain.z])
     }
     const extra = {}
@@ -110,9 +117,10 @@ export function createDocBridge({
         want.to !== have.to ||
         (want.directed === true) !== have.directed
       ) {
+        const label = have.label ?? ''
         graph.removeEdge(id)
         changed = true
-        if (!want) onRemoved({ kind: 'edge', id, local })
+        if (!want) onRemoved({ kind: 'edge', id, local, label })
       } else if ((want.label ?? '') !== have.label) graph.setEdgeLabel(id, want.label ?? '')
     }
     for (const [id, edge] of kept) {
@@ -126,8 +134,16 @@ export function createDocBridge({
   function onTransaction({ nodeIds, edgesTouched }, txn) {
     const local = txn.local
     const flights = new Map()
-    const counters = { structure: false, edgesDropped: false, kind: false, snapped: false, layout: new Map() }
+    const counters = {
+      structure: false,
+      edgesDropped: false,
+      kind: false,
+      snapped: false,
+      snaps: new Map(),
+      layout: new Map(),
+    }
     for (const id of nodeIds) reconcileNode(id, local, flights, counters)
+    if (!local && flights.size && physics.isLocalRun) restoreFromDoc(flights, counters.layout)
     if (counters.layout.size) {
       const positions = new Map()
       const colors = new Map()
@@ -146,9 +162,35 @@ export function createDocBridge({
     if (edgesChanged) view.syncEdges()
     if (counters.snapped) view.updateEdgePositions()
     if (flights.size) physics.flyTo(flights)
+    else if (counters.snaps.size && physics.isRunning && !physics.isLocalRun) physics.flyTo(counters.snaps)
     else if (counters.structure || counters.kind || edgesChanged || counters.snapped) physics.invalidate()
     if (!local)
-      onRemoteChange({ nodeIds, edgeIds: new Set(edgesTouched ? yEdges.keys() : []), origin: txn.origin })
+      onRemoteChange({
+        nodeIds,
+        edgeIds: new Set(edgesTouched ? yEdges.keys() : []),
+        origin: txn.origin,
+        authors: authorsOf(txn),
+      })
+  }
+
+  /**
+   * This tab's Balance is being abandoned for someone else's layout: every
+   * star goes back to the doc's position and colours, which is all that run
+   * never wrote there. Adds to `flights` and `layout` without overriding
+   * what the remote change itself set.
+   */
+  function restoreFromDoc(flights, layout) {
+    for (const [id, ynode] of yNodes.entries()) {
+      const current = graph.getNode(id)
+      if (!current) continue
+      const plain = ynode.toJSON()
+      if (!flights.has(id) && Number.isFinite(plain.x)) flights.set(id, [plain.x, plain.y, plain.z])
+      if (layout.has(id)) continue
+      const colour = Number.isInteger(plain.cluster_color_id) ? plain.cluster_color_id : 0
+      const blend = plain.blend ?? null
+      if (colour !== current.cluster_color_id || !sameBlend(blend, current.blend))
+        layout.set(id, { colour, blend })
+    }
   }
 
   // Both roots' deep events, gathered per transaction and handled once at its

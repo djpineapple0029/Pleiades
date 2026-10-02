@@ -115,14 +115,18 @@ export function createPhysics(graph, view, options = {}) {
 
   /**
    * Flies the stars to positions someone else's edit chose (a remote Balance
-   * or move, through `docBridge.js`). Ids not in `targets` stay put. A local
-   * run in flight is abandoned without settling: theirs won.
+   * or move, through `docBridge.js`). Ids not in `targets` stay put — or, if
+   * another such flight is already under way, carry on to where it was
+   * taking them. A local run in flight is abandoned without settling: theirs
+   * won (docBridge.js puts what that run changed back the way the doc has it).
    */
   function flyTo(targets) {
+    const carried = running && external ? to : null
     running = false
     from = new Map()
     for (const node of graph.nodes.values()) from.set(node.id, [node.x, node.y, node.z])
     to = new Map(from)
+    if (carried) for (const [id, target] of carried) if (from.has(id)) to.set(id, target)
     for (const [id, target] of targets) if (from.has(id)) to.set(id, target)
     frame = 0
     external = true
@@ -221,6 +225,10 @@ export function createPhysics(graph, view, options = {}) {
     flyTo,
     get isRunning() {
       return running
+    },
+    /** True while the run in flight is this tab's own (a Balance or orbit), not someone else's flight. */
+    get isLocalRun() {
+      return running && !external
     },
     get onSettled() {
       return onSettled

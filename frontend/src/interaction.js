@@ -185,6 +185,9 @@ export function createInteraction({
   // Every edit goes through here, which is what makes it undoable. In a room,
   // only while it says we may edit and the connection is up; an edit refused
   // for that says why, once a moment, instead of silently doing nothing.
+  // The star or link a label or notes editor is open on, so a delete by
+  // someone else can close it (closeAbout).
+  let editingAbout = null
   let refusedAt = -Infinity
   function canEdit() {
     if (!room || room.canEdit) return true
@@ -629,7 +632,9 @@ export function createInteraction({
     beginModal()
     hover = target
     view.setHover(target)
+    editingAbout = { kind: target.kind, id: target.id }
     const value = await titleEdit.start(item.label, (text) => view.setLabelDraft(target, text))
+    editingAbout = null
     view.setLabelDraft(null)
     endModal()
     if (value === null) return
@@ -650,12 +655,14 @@ export function createInteraction({
     await lock.release('panel')
     mode = 'editing'
     beginModal()
+    editingAbout = { kind: 'node', id: node.id }
     try {
       const notes = await sidebar.edit(nodeName(node), node.notes)
       endModal()
       const current = graph.getNode(node.id)
       if (notes !== null && current) commands.setNodeText(current.id, current.label, notes)
     } finally {
+      editingAbout = null
       if (mode === 'editing') endModal()
       sidebarKey = null // view mode redraws from scratch
       lock.resume()
@@ -809,6 +816,79 @@ export function createInteraction({
   /** Says, and keeps saying, why this map can't be used any more. */
   function roomEnded(text) {
     roomProblem = text
+  }
+
+  /** A modal panel of keyed choices; the chosen key, or null for Esc. */
+  async function askChoice(title, note, choices) {
+    await lock.release('panel')
+    try {
+      mode = 'editing'
+      beginModal()
+      const choice = await editor.confirm(title, note, choices)
+      endModal()
+      return choice
+    } finally {
+      if (mode === 'editing') endModal()
+      lock.resume()
+    }
+  }
+
+  /** Everyone else in the room who can edit (decision 12: viewers don't count). */
+  function otherEditors() {
+    if (!room) return []
+    const me = room.you?.conn
+    const names = new Set()
+    for (const person of room.roster) {
+      if (person.conn !== me && (person.role === 'editor' || person.role === 'owner')) names.add(person.name)
+    }
+    return [...names]
+  }
+
+  const listNames = (names) =>
+    names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
+
+  /**
+   * Balance (B, the map menu, a shape from T). Stopping a run is instant;
+   * starting one while other editors are in the map asks first, since it
+   * rearranges the map for all of them.
+   */
+  async function balance() {
+    if (physics.isLocalRun) return commands.toggleBalance()
+    const others = otherEditors()
+    if (others.length) {
+      const choice = await askChoice(
+        `${listNames(others)} ${others.length === 1 ? 'is' : 'are'} editing. Rearrange the map for everyone?`,
+        'Balance moves every star, for everyone in this map. Undo takes it back.',
+        [{ key: 'r', label: 'R: rearrange' }],
+      )
+      if (choice !== 'r') return null
+    }
+    return commands.toggleBalance()
+  }
+
+  /**
+   * Someone else deleted this star or link (docBridge.js `onRemoved`):
+   * anything open about it closes (decision 10), and the HUD says what went.
+   */
+  function closeAbout({ kind, id, label }) {
+    if (menuTarget && menuTarget.kind === kind && menuTarget.id === id) {
+      menu.close()
+      menuTarget = null
+      endModal()
+    }
+    if (editingAbout && editingAbout.kind === kind && editingAbout.id === id) {
+      if (titleEdit.isActive) titleEdit.cancel()
+      if (sidebar.isEditing) sidebar.cancel()
+      if (editor.isOpen) editor.cancel()
+    }
+    if (kind === 'node') {
+      if (sourceId === id) cancelConnect()
+      if (moveId === id) cancelMove()
+      if (pathStart === id) pathStart = null
+    }
+    if (hover?.kind === kind && hover.id === id) clearHover()
+    if (focusTarget?.kind === kind && focusTarget.id === id) setFocus(null)
+    if (kind === 'node') status.notice(`${label || 'a star'} was deleted`)
   }
 
   /**
@@ -1182,7 +1262,7 @@ export function createInteraction({
       if (!shape) return
       physics.treeShape = shape.id
       if (physics.isRunning) physics.stop()
-      commands.toggleBalance()
+      balance()
       status.info(`layout: ${shape.name} · hold ${keymap.label('tree_shape')} to change`)
       return
     }
@@ -1195,7 +1275,7 @@ export function createInteraction({
         else if (key === 'open') openMap()
         else if (key === 'save') saveMap({ reprompt: false })
         else if (key === 'export') exportMap()
-        else if (key === 'balance') commands.toggleBalance()
+        else if (key === 'balance') balance()
         return
       }
       if (key === 'back') return openMapMenu('top')
@@ -1400,7 +1480,7 @@ export function createInteraction({
     // don't want. It works in the overview too, which is the natural place to
     // watch a layout settle from.
     if (is('balance') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
-      commands.toggleBalance()
+      balance()
     }
   }
 
@@ -1455,8 +1535,13 @@ export function createInteraction({
     roomState,
     roomMessage,
     roomEnded,
+    closeAbout,
     /** The edit commands (the dev-only test seam in main.js reaches them here). */
     commands,
+    /** Test seam: the radial menu on a star, as a right-click on it would open it. */
+    openMenuFor: (id) => openMenu({ kind: 'node', id }),
+    /** Test seam: what the Balance key does, the warning included. */
+    balance,
     /** True while a panel owns the keyboard, or a file is being decrypted and
      *  swapped in — nothing should steal focus back, or re-lock and edit the
      *  graph that's about to be replaced. */

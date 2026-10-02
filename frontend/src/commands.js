@@ -246,10 +246,13 @@ export function createCommands({ graph, physics, mapDoc, undo, newId = randomId,
 
   /** Balance on/off. Stopping a run settles it; it records nothing new. */
   function toggleBalance() {
-    if (physics.isRunning) {
+    // Balance is a toggle for this tab's own run. Someone else's layout still
+    // flying in lands first, and this one starts from there.
+    if (physics.isRunning && physics.isLocalRun !== false) {
       physics.stop()
       return false
     }
+    if (physics.isRunning) physics.stop()
     return layoutRun('balance', () => physics.start())
   }
 

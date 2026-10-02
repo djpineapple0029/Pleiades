@@ -9,6 +9,7 @@ import { createDocBridge } from '../../src/docBridge.js'
 import { createUndo } from '../../src/undo.js'
 import { createCommands } from '../../src/commands.js'
 import { createFiles } from '../../src/files.js'
+import { createPhysics } from '../../src/physics.js'
 
 function stubView() {
   const calls = { syncNodes: 0, syncEdges: 0, updateEdgePositions: 0, sync: 0 }
@@ -579,5 +580,25 @@ describe('multiplayer-ready commands', () => {
     expect(docNodes).toEqual(graphNodes)
     const docEdges = [...mapDoc.edges.values()].map((e) => e.toJSON()).sort(byId)
     expect(docEdges).toEqual(graph.toPayload().edges.sort(byId))
+  })
+})
+
+describe("Balance while someone else's layout is flying in", () => {
+  it("B lands their flight and starts this tab's own run, rather than just stopping theirs", () => {
+    const graph = createGraph({ newId: sequentialIds() })
+    const view = { syncNodes() {}, syncEdges() {}, updateEdgePositions() {} }
+    const physics = createPhysics(graph, view)
+    const mapDoc = createMapDoc()
+    mapDoc.replace({ nodes: [], edges: [] })
+    createDocBridge({ mapDoc, graph, view, physics })
+    const undo = createUndo({ mapDoc, graph })
+    const commands = createCommands({ graph, view, physics, mapDoc, undo, newId: sequentialIds() })
+    const a = commands.spawn({ x: 0, y: 0, z: 0 })
+    const b = commands.spawn({ x: 30, y: 0, z: 0 })
+    commands.connect(a.id, b.id)
+    physics.flyTo(new Map([[a.id, [5, 0, 0]]]))
+    expect(physics.isLocalRun).toBe(false)
+    expect(commands.toggleBalance()).toBe(true)
+    expect(physics.isLocalRun).toBe(true)
   })
 })

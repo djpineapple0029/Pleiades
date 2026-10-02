@@ -118,7 +118,9 @@ describe('doc → graph', () => {
     other.getMap('nodes').delete('a')
     expect(graph.getNode('a')).toBeNull()
     expect(graph.getEdge('e1')).toBeNull()
-    expect(onRemoved).toHaveBeenCalledWith(expect.objectContaining({ kind: 'node', id: 'a', local: false }))
+    expect(onRemoved).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'node', id: 'a', local: false, label: 'a' }),
+    )
     expect(onRemoved).toHaveBeenCalledWith(expect.objectContaining({ kind: 'edge', id: 'e1', local: false }))
   })
 
@@ -186,6 +188,41 @@ describe('doc → graph', () => {
     other.getMap('nodes').get('a').set('label', 'x')
     expect(onRemoteChange).toHaveBeenCalledTimes(1)
     expect([...onRemoteChange.mock.calls[0][0].nodeIds]).toEqual(['a'])
+    expect([...onRemoteChange.mock.calls[0][0].authors]).toEqual([other.clientID])
+  })
+
+  it("someone else's layout during my own Balance puts every star back to what the doc says", () => {
+    const { mapDoc, graph, physics } = setup()
+    physics.isRunning = true
+    physics.isLocalRun = true
+    // My run, mid-flight: b has moved and been recoloured, none of it in the doc yet.
+    graph.getNode('b').x = 4
+    graph.applyLayout({
+      positions: new Map([['b', [4, 0, 0]]]),
+      colors: new Map([['b', 2]]),
+      blends: new Map([['b', null]]),
+    })
+    const other = peer(mapDoc)
+    other.transact(() => {
+      other.getMap('nodes').get('a').set('x', 7)
+      other.getMap('nodes').get('a').set('cluster_color_id', 1)
+    })
+    const flight = physics.flights.at(-1)
+    expect(flight.get('a')).toEqual([7, 0, 0])
+    expect(flight.get('b')).toEqual([0, 0, 0])
+    expect(graph.getNode('b').cluster_color_id).toBe(0)
+    expect(graph.getNode('a').cluster_color_id).toBe(1)
+  })
+
+  it("my own move during someone else's flight joins the flight instead of being carried back", () => {
+    const { mapDoc, graph, physics } = setup()
+    physics.isRunning = true
+    physics.isLocalRun = false
+    const before = physics.invalidations
+    mapDoc.transact(() => mapDoc.nodes.get('a').set('x', 9))
+    expect(graph.getNode('a').x).toBe(9)
+    expect(physics.flights.at(-1).get('a')).toEqual([9, 0, 0])
+    expect(physics.invalidations).toBe(before)
   })
 
   it('dispose stops listening', () => {

@@ -32,6 +32,7 @@ import { CONTEXT_LOST, NO_WEBGL, createCrashGuard, errorText } from './crashGuar
 import { watchContextLoss } from './contextLoss.js'
 import { accountUrl, request, roomUrl } from './api.js'
 import { createRoomClient } from './room/roomClient.js'
+import { colourFor, hexToRgb } from './room/authors.js'
 import { docToPayload } from './format/ydoc.js'
 
 const MAX_FRAME_DELTA = 0.1 // seconds — clamps the jump after a backgrounded tab
@@ -193,8 +194,24 @@ if (room) {
   files.setFilename(room.map.name)
 }
 // After the first content is in place (a synced room's, or the empty map a
-// local one starts as), so the bridge only ever sees changes to it.
-createDocBridge({ mapDoc, graph, view, physics })
+// local one starts as), so the bridge only ever sees changes to it. What
+// others did reaches `interaction` (below) once it exists.
+let onRemoved = () => {}
+createDocBridge({
+  mapDoc,
+  graph,
+  view,
+  physics,
+  onRemoved: (removal) => onRemoved(removal),
+  // Their edit glows in their colour for a moment (decision 11).
+  onRemoteChange: ({ nodeIds, authors }) => {
+    if (!room || !nodeIds.size) return
+    for (const author of authors) {
+      const colour = colourFor(author, room.roster)
+      if (colour) view.flash(nodeIds, hexToRgb(colour))
+    }
+  },
+})
 // Set once the user has chosen to go back to the list, so leaving doesn't
 // also ask "leave site?" about the save they already decided on.
 let leaving = false
@@ -322,6 +339,10 @@ function onRoomMessage(message) {
   } else {
     interaction.roomMessage(message)
   }
+}
+// Someone else deleted it: whatever is open about it here closes (decision 10).
+onRemoved = (removal) => {
+  if (!removal.local) interaction.closeAbout(removal)
 }
 if (room) {
   onRoomState = (state) => interaction.roomState(state)
