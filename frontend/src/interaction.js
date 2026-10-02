@@ -9,6 +9,7 @@ import { orbitFocus, shortestPath } from './paths.js'
 import { FLY_DURATION } from './flyTo.js'
 import { createKeymap } from './keymap.js'
 import { LOOKS } from './looks.js'
+import { nodeName } from './ids.js'
 
 const SPAWN_DISTANCE = 90 // world units ahead of the camera for a new node
 const DOUBLE_CLICK_MS = 320
@@ -110,7 +111,6 @@ const MAP_TARGET_MORE = { kind: 'map', ring: 'more' }
 const LOOK_TARGET = { kind: 'look' }
 const SHAPE_TARGET = { kind: 'shape' }
 
-const nodeName = (node) => node.label || node.id
 // The layout shapes (physics.js `treeShape`), clockwise from the top. Off is
 // the constellation layout, which has no tree.
 const SHAPES = [

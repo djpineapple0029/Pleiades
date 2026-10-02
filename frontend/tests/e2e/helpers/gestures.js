@@ -88,6 +88,15 @@ export const t = (page, expr) => page.evaluate((e) => new Function('return windo
  * any fixed wait, so wait for frames: after `n`, the app's loop has raycast
  * the crosshair and rewritten the HUD at least once since the last input.
  */
+/**
+ * The name the HUD gives the star under the crosshair (`node k3f9 · …`):
+ * new stars get random ids (src/ids.js), shown as four characters, so a
+ * spec learns each one's name from the HUD instead of assuming `n1`.
+ */
+export async function aimedName(page) {
+  return (await t(page, 'hud()')).match(/^(?:node|nexus) (\S+)/)?.[1] ?? null
+}
+
 export const frames = (page, n = 3) =>
   page.evaluate(
     (n) =>

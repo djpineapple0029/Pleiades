@@ -3,7 +3,7 @@
 // lock is faked (helpers/gestures.js), so "comes back" means the app asked
 // for it; tests/e2e/headed-lock covers a real browser granting it.
 import { test, expect } from '@playwright/test'
-import { collectConsoleErrors, installGestures, t, settle } from '../helpers/gestures.js'
+import { aimedName, collectConsoleErrors, installGestures, t, settle } from '../helpers/gestures.js'
 
 const state = (page) =>
   page.evaluate(() => {
@@ -29,7 +29,7 @@ test('rename in place, notes sidebar, automatic relock', async ({ page }, testIn
 
   await t(page, 'doubleClick()')
   await settle(page)
-  expect.soft((await t(page, 'hud()')).startsWith('node n1'), 'aimed at the new node').toBe(true)
+  expect.soft(await aimedName(page), 'aimed at the new node (named by its short id)').toMatch(/^[0-9a-z]{4}$/)
 
   // --- Enter: rename in place, lock kept throughout ---
   await page.keyboard.press('Enter')

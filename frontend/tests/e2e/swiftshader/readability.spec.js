@@ -4,6 +4,7 @@
 // own input handlers.
 import { test, expect } from '@playwright/test'
 import {
+  aimedName,
   collectConsoleErrors,
   installGestures,
   t,
@@ -21,6 +22,7 @@ test('stretched name range, and heat along a line', async ({ page }) => {
   const r = await page.evaluate(async (threeUrl) => {
     const THREE = await import(threeUrl)
     const { createGraph } = await import('/src/graph.js')
+    const { sequentialIds } = await import('/src/ids.js')
     const { createGraphView } = await import('/src/graphView.js')
     const { setLabelTarget, DEFAULT_LABEL_TARGET, revealRange } = await import('/src/labels.js')
     document.getElementById('viewport').remove()
@@ -46,7 +48,7 @@ test('stretched name range, and heat along a line', async ({ page }) => {
     const out = {}
 
     // --- A small map, every star 700-1100 units off: all named. ---
-    const small = createGraph()
+    const small = createGraph({ newId: sequentialIds() })
     const smallView = createGraphView(small, scene, renderer)
     for (let i = 0; i < 12; i++) {
       // Spread wide enough on screen that declutter keeps every name.
@@ -73,7 +75,7 @@ test('stretched name range, and heat along a line', async ({ page }) => {
     smallView.dispose()
 
     // --- A crowd of 400 named stars: the range gives way to the crowd. ---
-    const crowd = createGraph()
+    const crowd = createGraph({ newId: sequentialIds() })
     const crowdView = createGraphView(crowd, scene, renderer)
     let seed = 7
     const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1
@@ -91,7 +93,7 @@ test('stretched name range, and heat along a line', async ({ page }) => {
     crowdView.dispose()
 
     // --- Heat: a hub with 12 leaves, one link drawn edge-on to read. ---
-    const hubMap = createGraph()
+    const hubMap = createGraph({ newId: sequentialIds() })
     const hubView = createGraphView(hubMap, scene, renderer)
     const hub = hubMap.addNode({ x: -120, y: 0, z: 0 })
     const leaf = hubMap.addNode({ x: 120, y: 0, z: 0 })
@@ -156,13 +158,16 @@ test('click-to-focus, the type ring, a nexus, and splitting a link', async ({ pa
   await page.waitForTimeout(1500)
   await installGestures(page)
 
-  // n1 ahead, n2 to its right, linked; n3 further right, on its own.
+  // n1 ahead, n2 to its right, linked; n3 further right, on its own. Ids
+  // are random, so each name is read back from the HUD.
   await t(page, 'doubleClick()')
   await settle(page)
+  const n1 = await aimedName(page)
   await t(page, 'look(150, 0)')
   await settle(page)
   await t(page, 'doubleClick()')
   await settle(page)
+  const n2 = await aimedName(page)
   await t(page, 'look(150, 0)')
   await settle(page)
   await t(page, 'doubleClick()')
@@ -174,7 +179,7 @@ test('click-to-focus, the type ring, a nexus, and splitting a link', async ({ pa
   await settle(page)
   await t(page, 'click()')
   await settle(page)
-  expect.soft(await t(page, 'hud()'), 'n1 — n2 linked').toBe('node n2 · 1 links')
+  expect.soft(await t(page, 'hud()'), 'n1 — n2 linked').toBe(`node ${n2} · 1 links`)
   expect.soft(await t(page, 'shown()'), 'hovering a star puts nothing on screen').toBe('')
 
   // Click n2: focus. Off it, the HUD says what is focused.
@@ -184,7 +189,7 @@ test('click-to-focus, the type ring, a nexus, and splitting a link', async ({ pa
   await settle(page)
   expect
     .soft(await t(page, 'hud()'), 'focus shown on the HUD')
-    .toBe('focus n2 · 1 connection · click empty space to clear')
+    .toBe(`focus ${n2} · 1 connection · click empty space to clear`)
   expect
     .soft(await t(page, 'shown()'), 'the screen says only how to clear it')
     .toBe('focused · click empty space to clear')
@@ -215,15 +220,19 @@ test('click-to-focus, the type ring, a nexus, and splitting a link', async ({ pa
   expect.soft(await t(page, 'armed()'), 'down arms Nexus').toBe('Nexus')
   await t(page, 'rightUp()')
   await settle(page, 400) // it shrinks to half; the crosshair is on its centre
-  expect.soft(await t(page, 'hud()'), 'n2 is a nexus joining one star').toMatch(/^nexus n2 · joins 1/)
+  expect
+    .soft(await t(page, 'hud()'), 'n2 is a nexus joining one star')
+    .toMatch(new RegExp(`^nexus ${n2} · joins 1`))
   await page.keyboard.press('Control+z')
   await settle(page, 400)
-  expect.soft(await t(page, 'hud()'), 'undo makes it a star again').toMatch(/^node n2 · 1 links/)
+  expect
+    .soft(await t(page, 'hud()'), 'undo makes it a star again')
+    .toMatch(new RegExp(`^node ${n2} · 1 links`))
 
   // Halfway back to n1 the crosshair is on the link: split it.
   await t(page, 'look(-75, 0)')
   await settle(page)
-  expect.soft(await t(page, 'hud()'), 'aimed at the link').toMatch(/^edge n1 — n2/)
+  expect.soft(await t(page, 'hud()'), 'aimed at the link').toMatch(new RegExp(`^edge ${n1} — ${n2}`))
   const linkMenu = await pickMenu(page, 60, 0)
   expect
     .soft(JSON.stringify(linkMenu.labels), 'link menu: edit up, split right, delete down, focus left')
@@ -232,7 +241,7 @@ test('click-to-focus, the type ring, a nexus, and splitting a link', async ({ pa
   await settle(page, 400)
   expect
     .soft(await t(page, 'hud()'), 'a nexus at the midpoint, joining both stars')
-    .toMatch(/^nexus n4 · joins 2/)
+    .toMatch(/^nexus [0-9a-z]{4} · joins 2/)
   await t(page, 'look(0, -80)')
   await settle(page)
   expect

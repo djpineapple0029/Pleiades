@@ -6,12 +6,13 @@
 // graph is mutated between assertions.
 import { describe, it, expect } from 'vitest'
 import { createGraph } from '../../src/graph.js'
+import { sequentialIds } from '../../src/ids.js'
 import { clusterInk, CLUSTER_INKS, LATE_IDS, PALETTE_SIZE, hueOf } from '../../src/palette.js'
 import { computeClusters } from '../../src/clustering.js'
 
 /** Two dense blobs of `n` joined by a single edge. */
 function twoBlobs(n = 8) {
-  const g = createGraph()
+  const g = createGraph({ newId: sequentialIds() })
   const blobs = [[], []]
   for (const blob of blobs) for (let i = 0; i < n; i++) blob.push(g.addNode({ x: 0, y: 0, z: 0 }).id)
   for (const blob of blobs) for (const a of blob) for (const b of blob) if (a < b) g.addEdge(a, b)
@@ -75,7 +76,7 @@ describe('clustering', () => {
   // between its first 9 and its last 5 leaves two cliques and nothing joining
   // them, which is a genuine split of one community rather than two that were
   // already apart.
-  const gs = createGraph()
+  const gs = createGraph({ newId: sequentialIds() })
   const ring = []
   for (let i = 0; i < 14; i++) ring.push(gs.addNode({ x: 0, y: 0, z: 0 }).id)
   for (const a of ring) for (const b of ring) if (a < b) gs.addEdge(a, b)
@@ -109,22 +110,22 @@ describe('clustering', () => {
   it("the merged cluster keeps the larger piece's colour", () => expect(mergedKeepsLargerColour).toBe(true))
 
   // --- nothing to cluster ----------------------------------------------------
-  const loose = createGraph()
+  const loose = createGraph({ newId: sequentialIds() })
   const singles = []
   for (let i = 0; i < 5; i++) singles.push(loose.addNode({ x: 0, y: 0, z: 0 }).id)
   const none = loose.recluster()
   const unconnectedNoClusters = none.clusters === 0 && colorsOf(loose, singles).every((c) => c === 0)
   it('unconnected nodes are no clusters at all', () => expect(unconnectedNoClusters).toBe(true))
-  const empty = createGraph()
+  const empty = createGraph({ newId: sequentialIds() })
   it('an empty graph is fine', () => expect(empty.recluster().clusters).toBe(0))
-  const pair = createGraph()
+  const pair = createGraph({ newId: sequentialIds() })
   const p1 = pair.addNode({ x: 0, y: 0, z: 0 }).id,
     p2 = pair.addNode({ x: 0, y: 0, z: 0 }).id
   pair.addEdge(p1, p2)
   const pairIsCluster = pair.recluster().clusters === 1 && pair.getNode(p1).cluster_color_id > 0
   it('a connected pair is a cluster', () => expect(pairIsCluster).toBe(true))
   // A lone node alongside a real cluster stays uncoloured.
-  const mixed = createGraph()
+  const mixed = createGraph({ newId: sequentialIds() })
   const lone = mixed.addNode({ x: 0, y: 0, z: 0 }).id
   const clique = []
   for (let i = 0; i < 5; i++) clique.push(mixed.addNode({ x: 0, y: 0, z: 0 }).id)
@@ -138,7 +139,7 @@ describe('clustering', () => {
   const payload = g.toPayload()
   const payloadHasClusterColorId = payload.nodes.every((n) => Number.isInteger(n.cluster_color_id))
   it('cluster_color_id is in the payload', () => expect(payloadHasClusterColorId).toBe(true))
-  const g3 = createGraph()
+  const g3 = createGraph({ newId: sequentialIds() })
   g3.load(payload)
   const reopenedKeepsColours = colorsOf(g3, blobs[0])[0] === a0[0] && colorsOf(g3, blobs[1])[0] === b0[0]
   const loadRecoversClusterCount = g3.clusterCount === 2
@@ -232,7 +233,7 @@ describe('clustering', () => {
     expect(overflowIds.size).toBe(PALETTE_SIZE + 2))
 
   // --- cost ------------------------------------------------------------------
-  const big = createGraph()
+  const big = createGraph({ newId: sequentialIds() })
   const ids = []
   for (let i = 0; i < 3000; i++) ids.push(big.addNode({ x: 0, y: 0, z: 0 }).id)
   // 60 loose communities of 50, lightly cross-linked.

@@ -3,6 +3,7 @@
 // whole undo path runs in plain Node.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createGraph } from '../../src/graph.js'
+import { sequentialIds } from '../../src/ids.js'
 import { createHistory } from '../../src/history.js'
 import { createCommands } from '../../src/commands.js'
 import { createFiles } from '../../src/files.js'
@@ -53,7 +54,7 @@ function stubPhysics(graph) {
 }
 
 function setup() {
-  const graph = createGraph()
+  const graph = createGraph({ newId: sequentialIds() })
   const view = stubView()
   const physics = stubPhysics(graph)
   const history = createHistory()

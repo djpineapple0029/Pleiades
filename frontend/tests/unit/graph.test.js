@@ -4,9 +4,10 @@
 // captured at the point the original `check()` sat, same as sizing.test.js.
 import { describe, it, expect } from 'vitest'
 import { createGraph, PayloadError } from '../../src/graph.js'
+import { sequentialIds } from '../../src/ids.js'
 
 describe('graph payload round trip', () => {
-  const g = createGraph()
+  const g = createGraph({ newId: sequentialIds() })
   const a = g.addNode({ x: 1.5, y: -2.25, z: 0 })
   const b = g.addNode({ x: -40.125, y: 7, z: 3.5, label: 'two', notes: 'ünïcode ✦\nline two' })
   const c = g.addNode({ x: 10, y: 10, z: 10 })
@@ -17,7 +18,7 @@ describe('graph payload round trip', () => {
   b.links.push('https://example.invalid')
 
   const payload = JSON.parse(JSON.stringify(g.toPayload()))
-  const g2 = createGraph()
+  const g2 = createGraph({ newId: sequentialIds() })
   g2.load(payload)
 
   it('same payload after reload', () => expect(JSON.stringify(g2.toPayload())).toBe(JSON.stringify(payload)))
@@ -31,7 +32,7 @@ describe('graph payload round trip', () => {
 })
 
 describe('toPayload is a copy, not a view', () => {
-  const g = createGraph()
+  const g = createGraph({ newId: sequentialIds() })
   const a = g.addNode({ x: 1.5, y: -2.25, z: 0 })
   const snapshot = g.toPayload()
   g.getNode(a.id).x = 999
@@ -43,42 +44,49 @@ describe('toPayload is a copy, not a view', () => {
   it('payload links are detached', () => expect(linksDetached).toBe(true))
 })
 
-describe('ids continue above a loaded file', () => {
-  const fresh = createGraph()
-  fresh.load({
-    nodes: [
-      { id: 'n7', x: 0, y: 0, z: 0 },
-      { id: 'n2', x: 0, y: 0, z: 0 },
-    ],
-    edges: [],
+// Ids are random now (ids.js, context/MOONSHOT.md), so there is no counter to
+// carry on above a loaded file; these replace the old "ids continue above a
+// loaded file" checks.
+describe('ids', () => {
+  it('a default graph mints random ids', () => {
+    const graph = createGraph()
+    expect(graph.addNode({ x: 0, y: 0, z: 0 }).id).toMatch(/^n-[0-9a-z]{10}$/)
   })
-  const minted = fresh.addNode({ x: 0, y: 0, z: 0 })
-  it('new node id clears the highest loaded', () => expect(minted.id).toBe('n8'))
 
-  fresh.load({
-    nodes: [
-      { id: 'n1', x: 0, y: 0, z: 0 },
-      { id: 'n2', x: 0, y: 0, z: 0 },
-    ],
-    edges: [{ id: 'e5', from: 'n1', to: 'n2' }],
+  it('an explicit id is used, and a taken one refused', () => {
+    const graph = createGraph()
+    expect(graph.addNode({ id: 'n-abc', x: 0, y: 0, z: 0 }).id).toBe('n-abc')
+    expect(graph.addNode({ id: 'n-abc', x: 0, y: 0, z: 0 })).toBeNull()
+    const b = graph.addNode({ x: 1, y: 0, z: 0 })
+    expect(graph.addEdge('n-abc', b.id, { id: 'e-x' }).id).toBe('e-x')
+    const c = graph.addNode({ x: 2, y: 0, z: 0 })
+    expect(graph.addEdge(b.id, c.id, { id: 'e-x' })).toBeNull()
   })
-  const newEdgeIdClearsHighest = fresh.addEdge('n1', 'n2') === null || true
-  it('new edge id clears the highest loaded', () => expect(newEdgeIdClearsHighest).toBe(true))
 
-  const g3 = createGraph()
-  g3.load({
-    nodes: [
-      { id: 'n1', x: 0, y: 0, z: 0 },
-      { id: 'n2', x: 0, y: 0, z: 0 },
-      { id: 'n3', x: 0, y: 0, z: 0 },
-    ],
-    edges: [{ id: 'e4', from: 'n1', to: 'n2' }],
+  it('old n25-style ids in a file still load and stay as they are', () => {
+    const graph = createGraph()
+    graph.load({ nodes: [{ id: 'n25', x: 0, y: 0, z: 0 }], edges: [] })
+    expect(graph.getNode('n25')).not.toBeNull()
+    expect(graph.addNode({ x: 0, y: 0, z: 0 }).id).not.toBe('n25')
   })
-  it('edge seq continues', () => expect(g3.addEdge('n1', 'n3').id).toBe('e5'))
+
+  it('a minted id never repeats one a loaded file holds', () => {
+    const graph = createGraph({ newId: sequentialIds() })
+    graph.load({
+      nodes: [
+        { id: 'n1', x: 0, y: 0, z: 0 },
+        { id: 'n2', x: 0, y: 0, z: 0 },
+        { id: 'n3', x: 0, y: 0, z: 0 },
+      ],
+      edges: [{ id: 'e1', from: 'n1', to: 'n2' }],
+    })
+    expect(graph.addNode({ x: 0, y: 0, z: 0 }).id).toBe('n4')
+    expect(graph.addEdge('n1', 'n3').id).toBe('e2')
+  })
 })
 
 describe('non-generated ids do not collide', () => {
-  const odd = createGraph()
+  const odd = createGraph({ newId: sequentialIds() })
   odd.load({
     nodes: [
       { id: 'root', x: 0, y: 0, z: 0 },
@@ -95,7 +103,7 @@ describe('non-generated ids do not collide', () => {
 })
 
 describe('load replaces rather than merges', () => {
-  const g4 = createGraph()
+  const g4 = createGraph({ newId: sequentialIds() })
   g4.addNode({ x: 0, y: 0, z: 0 })
   const nodesRef = g4.nodes,
     edgesRef = g4.edges
@@ -106,7 +114,7 @@ describe('load replaces rather than merges', () => {
 })
 
 describe('degenerate edges are dropped, not carried in', () => {
-  const g5 = createGraph()
+  const g5 = createGraph({ newId: sequentialIds() })
   g5.load({
     nodes: [
       { id: 'n1', x: 0, y: 0, z: 0 },
@@ -125,7 +133,7 @@ describe('degenerate edges are dropped, not carried in', () => {
 })
 
 describe('defaults fill in for a thin payload', () => {
-  const g6 = createGraph()
+  const g6 = createGraph({ newId: sequentialIds() })
   g6.load({ nodes: [{ id: 'n1', x: 0, y: 2, z: 3 }], edges: [] })
   const thin = g6.getNode('n1')
 
@@ -145,7 +153,7 @@ describe('defaults fill in for a thin payload', () => {
 })
 
 describe('rejections leave the previous graph untouched', () => {
-  const g7 = createGraph()
+  const g7 = createGraph({ newId: sequentialIds() })
   g7.load({ nodes: [{ id: 'keep', x: 5, y: 5, z: 5 }], edges: [] })
   const bad = [
     ['null payload', null],
@@ -200,7 +208,7 @@ describe('rejections leave the previous graph untouched', () => {
 
 describe('graph restore primitives (undo, V2.md §2.4.10)', () => {
   it('removeNode hands back copies that restoreNode puts back under the same ids', () => {
-    const g = createGraph()
+    const g = createGraph({ newId: sequentialIds() })
     const a = g.addNode({ x: 1, y: 2, z: 3, label: 'hub', notes: 'n' })
     const b = g.addNode({ x: 4, y: 5, z: 6 })
     const e = g.addEdge(a.id, b.id)
@@ -229,7 +237,7 @@ describe('graph restore primitives (undo, V2.md §2.4.10)', () => {
   })
 
   it('restore refuses a taken id and an edge with a missing end', () => {
-    const g = createGraph()
+    const g = createGraph({ newId: sequentialIds() })
     const a = g.addNode({ x: 0, y: 0, z: 0 })
     const b = g.addNode({ x: 0, y: 0, z: 0 })
     const e = g.addEdge(a.id, b.id)
@@ -241,13 +249,13 @@ describe('graph restore primitives (undo, V2.md §2.4.10)', () => {
   })
 
   it('removeNode/removeEdge return null for an unknown id', () => {
-    const g = createGraph()
+    const g = createGraph({ newId: sequentialIds() })
     expect(g.removeNode('n99')).toBe(null)
     expect(g.removeEdge('e99')).toBe(null)
   })
 
   it('setNodePosition is saved data but not an appearance change', () => {
-    const g = createGraph()
+    const g = createGraph({ newId: sequentialIds() })
     const a = g.addNode({ x: 0, y: 0, z: 0 })
     const revision = g.revision
     const token = g.contentRevision
@@ -258,7 +266,7 @@ describe('graph restore primitives (undo, V2.md §2.4.10)', () => {
   })
 
   it('applyLayout bumps revision only when a colour moves', () => {
-    const g = createGraph()
+    const g = createGraph({ newId: sequentialIds() })
     const a = g.addNode({ x: 0, y: 0, z: 0 })
     const snap = g.layoutSnapshot()
     g.getNode(a.id).x = 50
@@ -275,7 +283,7 @@ describe('graph restore primitives (undo, V2.md §2.4.10)', () => {
   })
 
   it('content tokens are never handed out twice, even after one is put back', () => {
-    const g = createGraph()
+    const g = createGraph({ newId: sequentialIds() })
     const t0 = g.contentRevision
     g.addNode({ x: 0, y: 0, z: 0 })
     const t1 = g.contentRevision
@@ -287,7 +295,7 @@ describe('graph restore primitives (undo, V2.md §2.4.10)', () => {
 })
 
 describe('blend (the faded cluster colour a Balance leaves)', () => {
-  const g = createGraph()
+  const g = createGraph({ newId: sequentialIds() })
   const a = g.addNode({ x: 0, y: 0, z: 0 })
   const b = g.addNode({ x: 5, y: 0, z: 0 })
   g.addEdge(a.id, b.id)
@@ -297,7 +305,7 @@ describe('blend (the faded cluster colour a Balance leaves)', () => {
   a.cluster_color_id = 1
   a.blend = [0.1, 0.5, 0.9]
   const payload = JSON.parse(JSON.stringify(g.toPayload()))
-  const g2 = createGraph()
+  const g2 = createGraph({ newId: sequentialIds() })
   g2.load(payload)
   it('survives a save and reopen', () => expect(g2.getNode(a.id).blend).toEqual([0.1, 0.5, 0.9]))
   it('an unblended node reopens with none', () => expect(g2.getNode(b.id).blend).toBeNull())
@@ -316,19 +324,19 @@ describe('blend (the faded cluster colour a Balance leaves)', () => {
     [NaN, 0.2, 0.3],
   ]
   const readsAsNone = bad.map((blend) => {
-    const h = createGraph()
+    const h = createGraph({ newId: sequentialIds() })
     h.load({ nodes: [{ id: 'n1', x: 0, y: 0, z: 0, cluster_color_id: 2, blend }], edges: [] })
     return h.getNode('n1').blend
   })
   it('a missing or damaged blend loads as none', () =>
     expect(readsAsNone.every((v) => v === null)).toBe(true))
-  const kept = createGraph()
+  const kept = createGraph({ newId: sequentialIds() })
   kept.load({ nodes: [{ id: 'n1', x: 0, y: 0, z: 0, cluster_color_id: 2 }], edges: [] })
   it('loading never computes a blend, even for a clustered node', () =>
     expect(kept.getNode('n1').blend).toBeNull())
 
   // reblend writes it; recluster, the start of the next Balance, drops it.
-  const c = createGraph()
+  const c = createGraph({ newId: sequentialIds() })
   const ids = []
   for (let i = 0; i < 6; i++) ids.push(c.addNode({ x: i * 10, y: 0, z: 0 }).id)
   for (const [p, q] of [
@@ -358,7 +366,7 @@ describe('blend (the faded cluster colour a Balance leaves)', () => {
 })
 
 describe('nexus flag', () => {
-  const g = createGraph()
+  const g = createGraph({ newId: sequentialIds() })
   const a = g.addNode({ x: 0, y: 0, z: 0 })
   g.setCore(a.id, true)
   const rev = g.revision
@@ -369,29 +377,29 @@ describe('nexus flag', () => {
     expect(g.revision).toBeGreaterThan(rev)
   })
   it('marking core clears nexus', () => {
-    const h = createGraph()
+    const h = createGraph({ newId: sequentialIds() })
     const n = h.addNode({ x: 0, y: 0, z: 0 })
     h.setNexus(n.id, true)
     h.setCore(n.id, true)
     expect([h.getNode(n.id).is_core, h.getNode(n.id).is_nexus]).toEqual([true, false])
   })
   it('round-trips through a payload', () => {
-    const h = createGraph()
+    const h = createGraph({ newId: sequentialIds() })
     h.load(g.toPayload())
     expect(h.getNode(a.id).is_nexus).toBe(true)
   })
   it('a file with both flags loads as a nexus', () => {
-    const h = createGraph()
+    const h = createGraph({ newId: sequentialIds() })
     h.load({ nodes: [{ id: 'n1', x: 0, y: 0, z: 0, is_core: true, is_nexus: true }], edges: [] })
     expect([h.getNode('n1').is_core, h.getNode('n1').is_nexus]).toEqual([false, true])
   })
   it('a non-boolean is_nexus reads as false', () => {
-    const h = createGraph()
+    const h = createGraph({ newId: sequentialIds() })
     h.load({ nodes: [{ id: 'n1', x: 0, y: 0, z: 0, is_nexus: 'yes' }], edges: [] })
     expect(h.getNode('n1').is_nexus).toBe(false)
   })
   it('addEdge can make a directed link', () => {
-    const h = createGraph()
+    const h = createGraph({ newId: sequentialIds() })
     const [p, q] = [h.addNode({ x: 0, y: 0, z: 0 }), h.addNode({ x: 1, y: 0, z: 0 })]
     expect(h.addEdge(p.id, q.id, { directed: true }).directed).toBe(true)
   })

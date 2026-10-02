@@ -31,6 +31,7 @@ import { computeClusters } from './clustering.js'
 import { computeBlend } from './colorBlend.js'
 import { computeHeat, reach, focusOf as walkFocus } from './heat.js'
 import { migrate, PayloadError } from './format/schema.js'
+import { randomId } from './ids.js'
 
 /** Thrown by `load` when a decrypted payload is not a graph. */
 export { PayloadError }
@@ -79,17 +80,6 @@ function readString(value) {
   return typeof value === 'string' ? value : ''
 }
 
-/** Highest `n`/`e` suffix in use, so fresh ids carry on above a loaded file. */
-function highestSuffix(ids, prefix) {
-  let highest = 0
-  const pattern = new RegExp(`^${prefix}(\\d+)$`)
-  for (const id of ids) {
-    const match = pattern.exec(id)
-    if (match) highest = Math.max(highest, Number(match[1]))
-  }
-  return highest
-}
-
 // A stored blend is three sRGB channels on 0..1. Anything else — missing, as in
 // every file written before blends existed, or damaged — reads as none, and the
 // node falls back to its flat cluster colour until the next Balance.
@@ -99,13 +89,16 @@ function readBlend(value) {
   return [value[0], value[1], value[2]]
 }
 
-export function createGraph() {
+/**
+ * `newId(prefix, taken)` mints ids for new nodes ('n') and edges ('e'):
+ * random by default (`ids.js`), so two people adding at once never collide;
+ * tests that name ids pass `sequentialIds()`.
+ */
+export function createGraph({ newId = randomId } = {}) {
   const nodes = new Map()
   const edges = new Map()
   // Incident edge ids per node id, so delete and degree lookups don't scan.
   const incident = new Map()
-  let nodeSeq = 0
-  let edgeSeq = 0
   // Bumped by every change that can move a node's size: structure, a load, a
   // core flag. Consumers compare it to the value they last saw.
   let revision = 0
@@ -135,18 +128,10 @@ export function createGraph() {
     contentRevision = ++contentSeq
   }
 
-  // A loaded file can hold ids this counter would otherwise hand out again —
-  // ids it did not generate at all, if the file was edited by something else.
-  // Skipping over anything taken is cheaper than trusting the counter.
-  function mintId(prefix, taken, next) {
-    let id
-    do id = `${prefix}${next()}`
-    while (taken.has(id))
-    return id
-  }
-
-  function addNode({ x, y, z, label = '', notes = '' }) {
-    const id = mintId('n', nodes, () => ++nodeSeq)
+  /** The new node, or null if an explicit `id` is taken. */
+  function addNode({ id: wanted, x, y, z, label = '', notes = '' }) {
+    if (wanted !== undefined && nodes.has(wanted)) return null
+    const id = wanted ?? newId('n', nodes)
     const node = {
       id,
       label,
@@ -167,18 +152,19 @@ export function createGraph() {
   }
 
   /**
-   * Returns the new edge, or null if it is a self-loop or already exists.
-   * `directed` runs it from→to.
+   * Returns the new edge, or null if it is a self-loop, already exists, or
+   * an explicit `id` is taken. `directed` runs it from→to.
    */
-  function addEdge(fromId, toId, { directed = false } = {}) {
+  function addEdge(fromId, toId, { id: wanted, directed = false } = {}) {
     if (fromId === toId) return null
+    if (wanted !== undefined && edges.has(wanted)) return null
     if (!nodes.has(fromId) || !nodes.has(toId)) return null
     for (const edgeId of incident.get(fromId)) {
       const existing = edges.get(edgeId)
       if (existing.from === toId || existing.to === toId) return null
     }
 
-    const id = mintId('e', edges, () => ++edgeSeq)
+    const id = wanted ?? newId('e', edges)
     const edge = { id, from: fromId, to: toId, directed: directed === true, label: '' }
     edges.set(id, edge)
     incident.get(fromId).add(id)
@@ -220,9 +206,6 @@ export function createGraph() {
    * its edges. The id matters beyond bookkeeping: star pulse and tint are
    * hashed from it, so a restored node looks exactly as it did. Returns false,
    * changing nothing, if the id is taken.
-   *
-   * No sequence counter moves: they only ever count up, so the id was handed
-   * out already and a fresh mint can never collide with it again.
    */
   function restoreNode({ node, edges: nodeEdges = [] }) {
     if (nodes.has(node.id)) return false
@@ -535,8 +518,7 @@ export function createGraph() {
     for (const [id, node] of nextNodes) nodes.set(id, node)
     for (const [id, edge] of nextEdges) edges.set(id, edge)
     for (const [id, set] of nextIncident) incident.set(id, set)
-    nodeSeq = highestSuffix(nodes.keys(), 'n')
-    edgeSeq = highestSuffix(edges.keys(), 'e')
+    newId.reset?.() // sequentialIds (tests) restart like the old counter; random ids have nothing to reset
     // The file's colours are authoritative — a reopened map keeps the clusters
     // it was saved with, and is not re-partitioned until the next Balance. An
     // older file with no colours in it simply reads as unclustered.

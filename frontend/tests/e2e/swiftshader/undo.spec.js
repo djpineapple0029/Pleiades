@@ -2,7 +2,7 @@
 // keyboard chords — no module internals. Positions are checked the way a
 // user would: whether the node is back under the crosshair.
 import { test, expect } from '@playwright/test'
-import { collectConsoleErrors, installGestures, t, settle, pickMenu } from '../helpers/gestures.js'
+import { aimedName, collectConsoleErrors, installGestures, t, settle, pickMenu } from '../helpers/gestures.js'
 
 // Delete is the fifth of five wedges, 288° clockwise from straight up.
 const DELETE = [-57, -19]
@@ -13,9 +13,11 @@ test('undo and redo through the keyboard', async ({ page }) => {
   await page.waitForTimeout(1500)
   await installGestures(page)
 
-  // n1 straight ahead, n2 to its right, linked.
+  // n1 straight ahead, n2 to its right, linked. Ids are random, so n1's
+  // name is read back from the HUD.
   await t(page, 'doubleClick()')
   await settle(page)
+  const n1 = await aimedName(page)
   await t(page, 'look(150, 0)')
   await settle(page)
   await t(page, 'doubleClick()')
@@ -29,7 +31,7 @@ test('undo and redo through the keyboard', async ({ page }) => {
   await settle(page)
   await t(page, 'look(-150, 0)')
   await settle(page)
-  expect(await t(page, 'hud()')).toBe('node n1 · 1 links')
+  expect(await t(page, 'hud()')).toBe(`node ${n1} · 1 links`)
 
   // Delete n1: it and its link go.
   const del = await pickMenu(page, ...DELETE)
@@ -40,18 +42,20 @@ test('undo and redo through the keyboard', async ({ page }) => {
   // Undo: same id, same place, link back.
   await page.keyboard.press('Control+z')
   await settle(page)
-  expect(await t(page, 'hud()')).toBe('node n1 · 1 links · undo: delete node n1 (1 link)')
+  expect(await t(page, 'hud()')).toBe(`node ${n1} · 1 links · undo: delete node ${n1} (1 link)`)
 
   // Redo deletes it again; a second redo has nothing left.
   await page.keyboard.press('Control+Shift+z')
   await settle(page)
-  expect(await t(page, 'hud()')).toBe('map.plm · unsaved · 1 nodes · 0 edges · redo: delete node n1 (1 link)')
+  expect(await t(page, 'hud()')).toBe(
+    `map.plm · unsaved · 1 nodes · 0 edges · redo: delete node ${n1} (1 link)`,
+  )
   await page.keyboard.press('Control+y')
   await settle(page)
   expect(await t(page, 'hud()')).toContain('nothing to redo')
   await page.keyboard.press('Control+z')
   await settle(page)
-  expect(await t(page, 'hud()')).toMatch(/^node n1 · 1 links/)
+  expect(await t(page, 'hud()')).toMatch(new RegExp(`^node ${n1} · 1 links`))
 
   // Balance moves n1 out from under the crosshair; undo puts it back.
   await page.keyboard.press('b')
@@ -63,10 +67,10 @@ test('undo and redo through the keyboard', async ({ page }) => {
   while (Date.now() < deadline && (await t(page, 'hud()')).includes('balancing'))
     await page.waitForTimeout(250)
   await settle(page)
-  expect(await t(page, 'hud()'), 'balance moved n1 away').not.toMatch(/^node n1/)
+  expect(await t(page, 'hud()'), 'balance moved n1 away').not.toMatch(new RegExp(`^node ${n1}`))
   await page.keyboard.press('Control+z')
   await settle(page)
-  expect(await t(page, 'hud()')).toBe('node n1 · 1 links · undo: balance')
+  expect(await t(page, 'hud()')).toBe(`node ${n1} · 1 links · undo: balance`)
 
   // Undo all the way back to an empty map — the fresh, never-saved state
   // counts as clean again.

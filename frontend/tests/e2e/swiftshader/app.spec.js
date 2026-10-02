@@ -7,7 +7,7 @@
 // faked (see helpers/gestures.js) — chrome-headless-shell cannot take a
 // real one.
 import { test, expect } from '@playwright/test'
-import { collectConsoleErrors, installGestures, t, settle, pickMenu } from '../helpers/gestures.js'
+import { aimedName, collectConsoleErrors, installGestures, t, settle, pickMenu } from '../helpers/gestures.js'
 
 /**
  * Down on the node menu arms Type…, which swaps to the type ring on release;
@@ -38,23 +38,28 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
     )
     .toBe(true)
 
-  // Three nodes, each 0.3 rad to the right of the last.
+  // Three nodes, each 0.3 rad to the right of the last. Ids are random, so
+  // each one's HUD name (its short id) is read back as it appears.
   await t(page, 'doubleClick()')
   await settle(page)
+  const n1 = await aimedName(page)
   await t(page, 'look(150, 0)')
   await settle(page)
   await t(page, 'doubleClick()')
   await settle(page)
+  const n2 = await aimedName(page)
   await t(page, 'look(150, 0)')
   await settle(page)
   await t(page, 'doubleClick()')
   await settle(page)
-  expect.soft((await t(page, 'hud()')).startsWith('node n3'), 'three nodes spawned').toBe(true)
+  const n3 = await aimedName(page)
+  expect.soft(n1, 'an unnamed star reads as its short id').toMatch(/^[0-9a-z]{4}$/)
+  expect.soft(new Set([n1, n2, n3]).size, 'three nodes spawned').toBe(3)
 
   // n1 -> n2 -> n3 via the menu's top wedge.
   await t(page, 'look(-300, 0)')
   await settle(page)
-  expect.soft((await t(page, 'hud()')).startsWith('node n1'), 'aimed at n1').toBe(true)
+  expect.soft((await t(page, 'hud()')).startsWith(`node ${n1}`), 'aimed at n1').toBe(true)
   const connectMenu = await pickMenu(page, 0, -60)
   // Five wedges: Connect/Edit/Move/Type…/Delete, evenly spaced at 72 degrees
   // apart starting from straight up. Type… took Mark core's place when the
@@ -73,12 +78,12 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   await settle(page)
   await t(page, 'click()')
   await settle(page)
-  expect.soft((await t(page, 'hud()')).startsWith('node n3 · 1 links'), 'chain linked').toBe(true)
+  expect.soft((await t(page, 'hud()')).startsWith(`node ${n3} · 1 links`), 'chain linked').toBe(true)
 
   // Aim at n1, then a little above it: off a plain node, onto a core one.
   await t(page, 'look(-300, 0)')
   await settle(page)
-  expect.soft(await t(page, 'hud()'), 'back on n1, not core').toBe('node n1 · 1 links')
+  expect.soft(await t(page, 'hud()'), 'back on n1, not core').toBe(`node ${n1} · 1 links`)
   const UP = -50 // 0.10 rad: ~9 units at 90, outside a plain 5, inside a core 11.25
   await t(page, `look(0, ${UP})`)
   await settle(page)
@@ -101,14 +106,14 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
       'menu closed after release',
     )
     .toBe(true)
-  expect.soft(await t(page, 'hud()'), 'HUD marks n1 core').toBe('node n1 · 1 links · core')
+  expect.soft(await t(page, 'hud()'), 'HUD marks n1 core').toBe(`node ${n1} · 1 links · core`)
   await settle(page, 700) // easing
   await page.screenshot({ path: testInfo.outputPath('app_after.png') })
   await t(page, `look(0, ${UP})`)
   await settle(page)
   expect
     .soft(await t(page, 'hud()'), 'same offset now lands on the grown core')
-    .toBe('node n1 · 1 links · core')
+    .toBe(`node ${n1} · 1 links · core`)
   await t(page, `look(0, ${-UP})`)
   await settle(page)
 
@@ -119,7 +124,7 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
       'a core is ticked Core, and Star turns it back',
     )
     .toBe(true)
-  expect.soft(await t(page, 'hud()'), 'HUD drops core').toBe('node n1 · 1 links')
+  expect.soft(await t(page, 'hud()'), 'HUD drops core').toBe(`node ${n1} · 1 links`)
   await settle(page, 700)
   await t(page, `look(0, ${UP})`)
   await settle(page)
@@ -191,7 +196,7 @@ test('the whole app, driven through its own input handlers', async ({ page }, te
   // The switch says so on the HUD for a few seconds, after the target.
   expect
     .soft(await t(page, 'hud()'), 'back on n1 after switching to a still look')
-    .toMatch(/^node n1 · 1 links( · look: Shallow Space · hold V to change)?$/)
+    .toMatch(new RegExp(`^node ${n1} · 1 links( · look: Shallow Space · hold V to change)?$`))
 
   // Measured, not assumed zero: the warm-tinted neighbour's rays reach into
   // this band and pass the amber test too, so the name is what gets added.

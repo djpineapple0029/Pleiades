@@ -6,6 +6,7 @@
 // because it is mutated between assertions.
 import { describe, it, expect } from 'vitest'
 import { createGraph } from '../../src/graph.js'
+import { sequentialIds } from '../../src/ids.js'
 import { CORE_SIZE, NEXUS_SIZE } from '../../src/sizing.js'
 import { ALWAYS_ON_SIZE } from '../../src/labels.js'
 
@@ -15,7 +16,7 @@ describe('sizing', () => {
     expect(CORE_SIZE).toBeGreaterThanOrEqual(ALWAYS_ON_SIZE))
 
   // A chain n0 - n1 - ... - n9, plus a hub with 20 spokes hanging off n9.
-  const g = createGraph()
+  const g = createGraph({ newId: sequentialIds() })
   const chain = []
   for (let i = 0; i < 10; i++) chain.push(g.addNode({ x: i, y: 0, z: 0 }).id)
   for (let i = 1; i < 10; i++) g.addEdge(chain[i - 1], chain[i])
@@ -58,7 +59,7 @@ describe('sizing', () => {
   const payload = g.toPayload()
   const payloadCarriesIsCoreNotSize =
     payload.nodes.find((n) => n.id === chain[0]).is_core === true && !('size' in payload.nodes[0])
-  const g2 = createGraph()
+  const g2 = createGraph({ newId: sequentialIds() })
   const rev2 = g2.revision
   g2.load(payload)
   it('payload carries is_core, not size', () => expect(payloadCarriesIsCoreNotSize).toBe(true))
@@ -69,7 +70,7 @@ describe('sizing', () => {
 
 describe('nexus sizing', () => {
   it('a nexus is half a star', () => expect(NEXUS_SIZE).toBe(0.5))
-  const g = createGraph()
+  const g = createGraph({ newId: sequentialIds() })
   const n = g.addNode({ x: 0, y: 0, z: 0 })
   const before = g.sizeOf(n.id)
   g.setNexus(n.id, true)

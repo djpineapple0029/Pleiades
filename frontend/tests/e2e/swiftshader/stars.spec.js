@@ -17,6 +17,7 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
   const out = await page.evaluate(async (threeUrl) => {
     const THREE = await import(threeUrl)
     const { createGraph } = await import('/src/graph.js')
+    const { sequentialIds } = await import('/src/ids.js')
     const { createGraphView, NODE_RADIUS } = await import('/src/graphView.js')
     const { createPhysics } = await import('/src/physics.js')
     const { createFiles } = await import('/src/files.js')
@@ -36,7 +37,7 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
     const target = new THREE.WebGLRenderTarget(W, H)
     const raycaster = new THREE.Raycaster()
 
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const view = createGraphView(graph, scene, renderer)
     const physics = createPhysics(graph, view)
     const files = createFiles({ graph, view, camera, physics })
@@ -346,7 +347,7 @@ test('star nodes: draw calls, pulses, picking, growth, halos', async ({ page }) 
     r.pickedAfterSettle = pickedAfterSettle
 
     // --- A file load lands on the instanced view ---------------------------
-    const other = createGraph()
+    const other = createGraph({ newId: sequentialIds() })
     const a = other.addNode({ x: -60, y: 0, z: 0, label: 'left' })
     const b = other.addNode({ x: 60, y: 0, z: 0, label: 'right' })
     other.addEdge(a.id, b.id)

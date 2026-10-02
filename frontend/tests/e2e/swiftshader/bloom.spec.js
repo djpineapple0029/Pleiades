@@ -16,6 +16,7 @@ test('bloom pipeline and sky: layers, composite, roundness, orientation', async 
   const r = await page.evaluate(async (threeUrl) => {
     const THREE = await import(threeUrl)
     const { createGraph } = await import('/src/graph.js')
+    const { sequentialIds } = await import('/src/ids.js')
     const { createGraphView, NODE_RADIUS } = await import('/src/graphView.js')
     const { createBloom, STAR_LAYER } = await import('/src/bloom.js')
     const { createSkybox } = await import('/src/skybox.js')
@@ -45,7 +46,7 @@ test('bloom pipeline and sky: layers, composite, roundness, orientation', async 
     const dust = createDust().object
     scene.add(dust)
 
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const view = createGraphView(graph, scene, renderer)
     const bloom = createBloom(renderer, scene, camera)
     const noBloom = createBloom(renderer, scene, camera, { strength: 0 })

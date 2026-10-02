@@ -19,7 +19,7 @@
  * imports it: an exported map has no edits to undo.
  */
 
-const nodeName = (node) => node.label || node.id
+import { nodeName } from './ids.js'
 
 export function createCommands({ graph, view, physics, history }) {
   function edgeName(edge) {
