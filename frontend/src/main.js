@@ -12,6 +12,9 @@ import { createGraph } from './graph.js'
 import { createGraphView } from './graphView.js'
 import { createPhysics } from './physics.js'
 import { createFiles } from './files.js'
+import { createMapDoc } from './mapDoc.js'
+import { createDocBridge } from './docBridge.js'
+import { createUndo } from './undo.js'
 import { createRadialMenu } from './radialMenu.js'
 import { createEditor } from './editor.js'
 import { createOverview } from './overview.js'
@@ -136,7 +139,13 @@ const physics = createPhysics(graph, view, {
     inner: layoutParam.find((v) => ['force', 'rings', 'subgroups'].includes(v)),
   },
 })
-const files = createFiles({ graph, view, camera, physics, settings })
+// The map as a Yjs doc (context/MOONSHOT.md): commands write it, the bridge
+// carries every change into the graph and the scene, undo walks back only
+// this tab's edits.
+const mapDoc = createMapDoc()
+const undo = createUndo({ mapDoc, graph })
+createDocBridge({ mapDoc, graph, view, physics })
+const files = createFiles({ graph, view, camera, physics, settings, mapDoc })
 
 // A map from the account's list: swapped in before anything can edit, then
 // saved back by `serverMap` from here on.
@@ -233,6 +242,8 @@ const interaction = createInteraction({
   graph,
   view,
   physics,
+  mapDoc,
+  undo,
   files,
   overview,
   renderSettings,

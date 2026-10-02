@@ -117,3 +117,33 @@ describe('undo', () => {
     expect(undo.canRedo).toBe(false)
   })
 })
+
+describe('undo.step at a mark', () => {
+  it('files the step where the stack stood at the mark, under later steps', () => {
+    const { mapDoc, undo } = setup()
+    const mark = undo.mark()
+    undo.step('edit node a', () => mapDoc.nodes.get('a').set('label', 'A'))
+    undo.step('balance', () => mapDoc.nodes.get('a').set('x', 9), { at: mark })
+    expect(undo.undo()).toBe('edit node a')
+    expect(undo.undo()).toBe('balance')
+    expect(undo.redo()).toBe('balance')
+    expect(undo.redo()).toBe('edit node a')
+  })
+
+  it('still lands right when the limit drops entries in between', () => {
+    const mapDoc = createMapDoc()
+    const graph = createGraph({ newId: sequentialIds() })
+    mapDoc.replace({ nodes: [node('a')], edges: [] })
+    graph.load({ nodes: [node('a')], edges: [] })
+    createDocBridge({ mapDoc, graph, view: stub(), physics: stub() })
+    const undo = createUndo({ mapDoc, graph, limit: 3 })
+    undo.step('one', () => mapDoc.nodes.get('a').set('label', '1'))
+    const mark = undo.mark() // one entry below it
+    for (const n of ['two', 'three', 'four']) undo.step(n, () => mapDoc.nodes.get('a').set('label', n))
+    undo.step('balance', () => mapDoc.nodes.get('a').set('x', 9), { at: mark })
+    // 'one' fell off; balance sits under two, three and four, which also lose one to the limit.
+    const labels = []
+    for (let label; (label = undo.undo());) labels.push(label)
+    expect(labels).toEqual(['four', 'three', 'balance'])
+  })
+})

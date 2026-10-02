@@ -1,7 +1,6 @@
 import * as THREE from 'three'
 import { NODE_RADIUS } from './graphView.js'
 import { createStatus } from './status.js'
-import { createHistory } from './history.js'
 import { createCommands } from './commands.js'
 import { rankNodes } from './search.js'
 import { focusSetOf } from './heat.js'
@@ -159,6 +158,8 @@ export function createInteraction({
   graph,
   view,
   physics,
+  mapDoc,
+  undo,
   files,
   overview,
   renderSettings,
@@ -182,7 +183,7 @@ export function createInteraction({
   const point = new THREE.Vector3()
   const status = createStatus(hud)
   // Every edit goes through here, which is what makes it undoable.
-  const commands = createCommands({ graph, view, physics, history: createHistory() })
+  const commands = createCommands({ graph, view, physics, mapDoc, undo })
 
   let mode = 'idle' // idle | connecting | menu | editing | moving | searching | flying
   let hover = null // { kind, id } under the crosshair
@@ -1116,6 +1117,7 @@ export function createInteraction({
     if (mode === 'connecting') cancelConnect()
     else if (mode === 'moving') cancelMove()
     graph.load({ nodes: [], edges: [] })
+    mapDoc.replace({ nodes: [], edges: [] })
     physics.reset()
     view.sync()
     commands.clear()

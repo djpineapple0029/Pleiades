@@ -44,9 +44,15 @@ export function createDocBridge({
     const ynode = yNodes.get(id)
     const current = graph.getNode(id)
     if (!ynode) {
-      if (current && graph.removeNode(id)) {
+      const removed = current ? graph.removeNode(id) : null
+      if (removed) {
         counters.structure = true
         onRemoved({ kind: 'node', id, local })
+        // Its links went with it, inside graph.removeNode.
+        for (const edge of removed.edges) {
+          counters.edgesDropped = true
+          onRemoved({ kind: 'edge', id: edge.id, local })
+        }
       }
       return
     }
@@ -120,7 +126,7 @@ export function createDocBridge({
   function onTransaction({ nodeIds, edgesTouched }, txn) {
     const local = txn.local
     const flights = new Map()
-    const counters = { structure: false, kind: false, snapped: false, layout: new Map() }
+    const counters = { structure: false, edgesDropped: false, kind: false, snapped: false, layout: new Map() }
     for (const id of nodeIds) reconcileNode(id, local, flights, counters)
     if (counters.layout.size) {
       const positions = new Map()
@@ -134,7 +140,8 @@ export function createDocBridge({
       }
       graph.applyLayout({ positions, colors, blends, clusterCount: undefined })
     }
-    const edgesChanged = edgesTouched || counters.structure ? reconcileEdges(local) : false
+    const reconciled = edgesTouched || counters.structure ? reconcileEdges(local) : false
+    const edgesChanged = reconciled || counters.edgesDropped
     if (counters.structure || counters.snapped) view.syncNodes()
     if (edgesChanged) view.syncEdges()
     if (counters.snapped) view.updateEdgePositions()

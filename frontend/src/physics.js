@@ -48,6 +48,9 @@ export function createPhysics(graph, view, options = {}) {
   // Set while the flight in progress is someone else's layout (`flyTo`): no
   // re-plan, no recluster, no reblend — their Balance already chose all that.
   let external = false
+  // Told once a local run ends, with the layout it left (commands.js writes
+  // it to the map's doc then). Never for someone else's flight.
+  let onSettled = null
   const collideOf = (id) => COLLIDE_RADIUS * graph.sizeOf(id)
 
   function plan() {
@@ -107,6 +110,7 @@ export function createPhysics(graph, view, options = {}) {
     }
     running = false
     if (!graph.reblend()) graph.touchContent()
+    onSettled?.(graph.layoutSnapshot())
   }
 
   /**
@@ -217,6 +221,12 @@ export function createPhysics(graph, view, options = {}) {
     flyTo,
     get isRunning() {
       return running
+    },
+    get onSettled() {
+      return onSettled
+    },
+    set onSettled(callback) {
+      onSettled = callback
     },
     /** The tree Balance's shape: 'disc', 'cone' or 'off'. Takes effect on the next run. */
     get treeShape() {

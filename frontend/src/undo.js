@@ -23,12 +23,16 @@ export function createUndo({ mapDoc, graph, limit = 200 }) {
     captureTimeout: NEVER,
   })
   let pending = null // { label, before } for the next stack item a step or group adds
+  let trimmed = 0 // entries dropped off the bottom by the limit, ever
 
   manager.on('stack-item-added', ({ stackItem, type }) => {
     if (type !== 'undo' || !pending || stackItem.meta.has('label')) return
     stackItem.meta.set('label', pending.label)
     stackItem.meta.set('before', pending.before)
-    if (manager.undoStack.length > limit) manager.undoStack.shift()
+    if (manager.undoStack.length > limit) {
+      manager.undoStack.shift()
+      trimmed++
+    }
   })
   // Undoing an entry makes a fresh one on the redo stack (and redoing, on
   // the undo stack); Yjs doesn't carry `meta` across, so copy it.
@@ -45,10 +49,17 @@ export function createUndo({ mapDoc, graph, limit = 200 }) {
     manager.stopCapturing()
   }
 
-  /** Runs `fn` as one transaction and one undo step called `name`. Returns what `fn` returns. */
-  function step(name, fn, { before = graph.contentRevision } = {}) {
+  /**
+   * Runs `fn` as one transaction and one undo step called `name`. Returns
+   * what `fn` returns. `at` (a `mark()` taken earlier) files the step where
+   * the stack stood then instead of on top: a Balance reaches the doc when it
+   * settles, but started before any edit made while it ran, and undoes after
+   * them, as it did when history.js recorded it at the start.
+   */
+  function step(name, fn, { before = graph.contentRevision, at } = {}) {
     manager.stopCapturing()
     pending = { label: name, before }
+    const top = manager.undoStack.at(-1)
     let result
     try {
       mapDoc.transact(() => {
@@ -57,8 +68,15 @@ export function createUndo({ mapDoc, graph, limit = 200 }) {
     } finally {
       closeGroup(name)
     }
+    const stack = manager.undoStack
+    const added = stack.length > 0 && stack.at(-1) !== top
+    const index = at === undefined ? stack.length - 1 : Math.max(0, at.depth - (trimmed - at.trimmed))
+    if (added && index < stack.length - 1) stack.splice(index, 0, stack.pop())
     return result
   }
+
+  /** Where the stack stands now, for a later `step(…, { at })`. */
+  const mark = () => ({ depth: manager.undoStack.length, trimmed })
 
   /** Every local transaction until `end()` is one undo step called `name`. */
   function group(name) {
@@ -83,6 +101,7 @@ export function createUndo({ mapDoc, graph, limit = 200 }) {
 
   return {
     step,
+    mark,
     group,
     undo,
     redo,

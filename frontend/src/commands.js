@@ -1,215 +1,158 @@
 /**
- * Every edit to the map, each paired with its inverse on the undo stack.
+ * Every edit to the map, as a transaction on its Yjs doc (`mapDoc.js`).
+ * `docBridge.js` applies each one to the graph and the scene — the sync
+ * recipe that used to live here (which view and physics calls follow which
+ * change) lives there now — and `undo.js` turns each command into one undo
+ * step of this tab's own edits (context/MOONSHOT.md).
  *
- * This is the one place that knows which view and physics calls follow which
- * model change — the recipes every edit site used to copy by hand (V2.md
- * §2.4.1). The rules they encode:
- * - Nodes added or removed: `view.syncNodes()`, never `view.sync()`, which
- *   snaps sizes: neighbours of an edited node should ease to their new ones.
- * - Edges added or removed: `view.syncEdges()`.
- * - Positions: `syncNodes()` + `updateEdgePositions()`, which move the
- *   stars and their lines and recompute bounds, like a physics tick.
- * - Anything structural or positional: `physics.invalidate()`, so a Balance
- *   run in flight settles the new shape. Its re-seed copies the model's
- *   positions into the bodies, so a restored position wins over the run.
- * - Core and nexus flags: the view polls `graph.revision` by itself; only
- *   physics needs telling.
+ * Commands read the graph to decide what to do and name it, and write only
+ * the doc. A command that can't apply returns its "nothing happened" value
+ * (null or false) and records nothing; so does every edit while `canEdit()`
+ * says no.
+ *
+ * A Balance or orbit moves the graph frame by frame (physics.js); the doc
+ * hears about the run once, when it settles — one transaction, one undo
+ * step, filed where the stack stood when the run started, so edits made
+ * while it ran undo first.
  *
  * No DOM and no three.js, so it runs in Node against stubs. The viewer never
  * imports it: an exported map has no edits to undo.
  */
 
-import { nodeName } from './ids.js'
+import { nodeToY, edgeToY } from './format/ydoc.js'
+import { randomId, nodeName } from './ids.js'
 
-export function createCommands({ graph, view, physics, history }) {
+const sameBlend = (a, b) =>
+  a === b || (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]))
+
+export function createCommands({ graph, physics, mapDoc, undo, newId = randomId, canEdit = () => true }) {
+  const { nodes: yNodes, edges: yEdges } = mapDoc
+
   function edgeName(edge) {
     const ends = `${nodeName(graph.getNode(edge.from))} — ${nodeName(graph.getNode(edge.to))}`
     return edge.label ? `edge ${edge.label} · ${ends}` : `edge ${ends}`
   }
 
-  function record(label, before, undo, redo) {
-    history.record({ label, before, after: graph.contentRevision, undo, redo })
-  }
-
-  // --- Synced primitives, shared by the commands and their inverses ---
-
-  function removeNodeSynced(id) {
-    const snapshot = graph.removeNode(id)
-    view.syncNodes()
-    view.syncEdges()
-    physics.invalidate()
-    return snapshot
-  }
-
-  function restoreNodeSynced(snapshot) {
-    graph.restoreNode(snapshot)
-    view.syncNodes()
-    view.syncEdges()
-    physics.invalidate()
-  }
-
-  function removeEdgeSynced(id) {
-    const snapshot = graph.removeEdge(id)
-    view.syncEdges()
-    physics.invalidate()
-    return snapshot
-  }
-
-  function restoreEdgeSynced(snapshot) {
-    graph.restoreEdge(snapshot)
-    view.syncEdges()
-    physics.invalidate()
-  }
-
-  function syncPositions() {
-    view.syncNodes()
-    view.updateEdgePositions()
-  }
-
-  function placeNode(id, [x, y, z]) {
-    graph.setNodePosition(id, x, y, z)
-    syncPositions()
-    physics.invalidate()
-  }
+  const blankNode = (id, { x, y, z, label = '', notes = '' }) => ({
+    id,
+    label,
+    notes,
+    links: [],
+    x,
+    y,
+    z,
+    cluster_color_id: 0,
+    blend: null,
+    is_core: false,
+    is_nexus: false,
+  })
 
   // A node's kind is its two flags together — star, core or nexus — since
-  // setting one can clear the other. Undo puts both back.
-  const kindOf = (node) => ({ core: node.is_core, nexus: node.is_nexus })
+  // the two exclude each other.
+  function setKind(id, { core, nexus }) {
+    const ynode = yNodes.get(id)
+    ynode.set('is_core', core && !nexus)
+    ynode.set('is_nexus', nexus)
+  }
 
-  function setKindSynced(id, { core, nexus }) {
-    graph.setNexus(id, false)
-    graph.setCore(id, core)
-    if (nexus) graph.setNexus(id, true)
-    physics.invalidate()
+  function setPosition(ynode, [x, y, z]) {
+    if (ynode.get('x') !== x) ynode.set('x', x)
+    if (ynode.get('y') !== y) ynode.set('y', y)
+    if (ynode.get('z') !== z) ynode.set('z', z)
   }
 
   // --- Commands ---
 
   function spawn({ x, y, z }) {
-    const before = graph.contentRevision
-    const node = graph.addNode({ x, y, z })
-    view.syncNodes()
-    physics.invalidate()
-    // Taken at undo time, not now: a Balance run may have moved it since, and
-    // redo should put it back where it was last seen.
-    let snapshot = null
-    record(
-      'new node',
-      before,
-      () => (snapshot = removeNodeSynced(node.id)),
-      () => restoreNodeSynced(snapshot),
-    )
-    return node
+    if (!canEdit()) return null
+    const id = newId('n', graph.nodes)
+    undo.step('new node', () => yNodes.set(id, nodeToY(blankNode(id, { x, y, z }))))
+    return graph.getNode(id)
   }
 
-  /** Returns the new edge, or null if `graph.addEdge` refused it. */
+  /** Returns the new edge, or null for a self-loop, a missing end or a pair already linked. */
   function connect(fromId, toId) {
-    const before = graph.contentRevision
-    const edge = graph.addEdge(fromId, toId)
-    if (!edge) return null
-    view.syncEdges()
-    physics.invalidate()
-    let snapshot = null
-    record(
-      `link ${edgeName(edge)}`,
-      before,
-      () => (snapshot = removeEdgeSynced(edge.id)),
-      () => restoreEdgeSynced(snapshot),
-    )
-    return edge
+    if (!canEdit() || fromId === toId || !graph.getNode(fromId) || !graph.getNode(toId)) return null
+    for (const other of graph.neighbours(fromId)) if (other === toId) return null
+    const id = newId('e', graph.edges)
+    const edge = { id, from: fromId, to: toId, directed: false, label: '' }
+    undo.step(`link ${edgeName(edge)}`, () => yEdges.set(id, edgeToY(edge)))
+    return graph.getEdge(id)
   }
 
   function deleteNode(id) {
     const node = graph.getNode(id)
-    if (!node) return false
-    const before = graph.contentRevision
+    if (!canEdit() || !node) return false
     const links = graph.degree(id)
     const label = `delete node ${nodeName(node)}${links ? ` (${links} link${links === 1 ? '' : 's'})` : ''}`
-    let snapshot = removeNodeSynced(id)
-    record(
-      label,
-      before,
-      () => restoreNodeSynced(snapshot),
-      () => (snapshot = removeNodeSynced(id)),
-    )
+    // Deleted explicitly, not left dangling, so undoing the delete brings them back.
+    const touching = [...graph.edges.values()].filter((edge) => edge.from === id || edge.to === id)
+    undo.step(label, () => {
+      for (const edge of touching) yEdges.delete(edge.id)
+      yNodes.delete(id)
+    })
     return true
   }
 
   function deleteEdge(id) {
     const edge = graph.getEdge(id)
-    if (!edge) return false
-    const before = graph.contentRevision
-    const label = `delete ${edgeName(edge)}`
-    let snapshot = removeEdgeSynced(id)
-    record(
-      label,
-      before,
-      () => restoreEdgeSynced(snapshot),
-      () => (snapshot = removeEdgeSynced(id)),
-    )
+    if (!canEdit() || !edge) return false
+    undo.step(`delete ${edgeName(edge)}`, () => yEdges.delete(id))
     return true
+  }
+
+  function replaceText(ytext, value) {
+    if (ytext.toString() === value) return
+    ytext.delete(0, ytext.length)
+    ytext.insert(0, value)
   }
 
   function setNodeText(id, label, notes) {
     const node = graph.getNode(id)
-    if (!node || (node.label === label && node.notes === notes)) return false
-    const before = graph.contentRevision
-    const previous = [node.label, node.notes]
-    graph.setNodeText(id, label, notes)
-    record(
-      `edit node ${nodeName(node)}`,
-      before,
-      () => graph.setNodeText(id, ...previous),
-      () => graph.setNodeText(id, label, notes),
-    )
+    if (!canEdit() || !node || (node.label === label && node.notes === notes)) return false
+    undo.step(`edit node ${nodeName(node)}`, () => {
+      const ynode = yNodes.get(id)
+      if (ynode.get('label') !== label) ynode.set('label', label)
+      replaceText(ynode.get('notes'), notes)
+    })
     return true
+  }
+
+  /**
+   * A live notes session: typing goes straight into the shared text, and
+   * the whole session is one undo step. `{ text, end() }`, or null. Each
+   * keystroke must go in through `mapDoc.transact` (origin LOCAL): an edit
+   * made outside one is nobody's, and undo never sees it.
+   */
+  function editNotes(id) {
+    const node = graph.getNode(id)
+    if (!canEdit() || !node) return null
+    const session = undo.group(`edit node ${nodeName(node)}`)
+    return { text: yNodes.get(id).get('notes'), end: () => session.end() }
   }
 
   function setEdgeLabel(id, label) {
     const edge = graph.getEdge(id)
-    if (!edge || edge.label === label) return false
-    const before = graph.contentRevision
-    const previous = edge.label
-    const name = edgeName(edge)
-    graph.setEdgeLabel(id, label)
-    record(
-      `edit ${name}`,
-      before,
-      () => graph.setEdgeLabel(id, previous),
-      () => graph.setEdgeLabel(id, label),
-    )
+    if (!canEdit() || !edge || edge.label === label) return false
+    undo.step(`edit ${edgeName(edge)}`, () => yEdges.get(id).set('label', label))
     return true
   }
 
   function toggleCore(id) {
     const node = graph.getNode(id)
-    if (!node) return false
-    const before = graph.contentRevision
-    const previous = kindOf(node)
-    const next = { core: !node.is_core, nexus: false }
-    setKindSynced(id, next)
-    record(
-      `${next.core ? 'mark' : 'unmark'} core ${nodeName(node)}`,
-      before,
-      () => setKindSynced(id, previous),
-      () => setKindSynced(id, next),
-    )
+    if (!canEdit() || !node) return false
+    const core = !node.is_core
+    undo.step(`${core ? 'mark' : 'unmark'} core ${nodeName(node)}`, () => setKind(id, { core, nexus: false }))
     return true
   }
 
   /** A star becomes a nexus (a small shared connection point), or back. */
   function toggleNexus(id) {
     const node = graph.getNode(id)
-    if (!node) return false
-    const before = graph.contentRevision
-    const previous = kindOf(node)
-    const next = { core: false, nexus: !node.is_nexus }
-    setKindSynced(id, next)
-    record(
-      `${next.nexus ? 'make nexus' : 'make star'} ${nodeName(node)}`,
-      before,
-      () => setKindSynced(id, previous),
-      () => setKindSynced(id, next),
+    if (!canEdit() || !node) return false
+    const nexus = !node.is_nexus
+    undo.step(`${nexus ? 'make nexus' : 'make star'} ${nodeName(node)}`, () =>
+      setKind(id, { core: false, nexus }),
     )
     return true
   }
@@ -236,74 +179,72 @@ export function createCommands({ graph, view, physics, history }) {
    */
   function splitEdge(edgeId) {
     const edge = graph.getEdge(edgeId)
-    if (!edge) return null
+    if (!canEdit() || !edge) return null
     const a = graph.getNode(edge.from)
     const b = graph.getNode(edge.to)
     if (!a || !b) return null
-    const before = graph.contentRevision
-    const label = `split ${edgeName(edge)} with a nexus`
-    let edgeSnapshot = graph.removeEdge(edgeId)
-    const nexus = graph.addNode({
-      x: (a.x + b.x) / 2,
-      y: (a.y + b.y) / 2,
-      z: (a.z + b.z) / 2,
-      label: edgeSnapshot.label,
+    const nexusId = newId('n', graph.nodes)
+    const taken = new Set(graph.edges.keys())
+    const first = newId('e', taken)
+    taken.add(first)
+    const second = newId('e', taken)
+    undo.step(`split ${edgeName(edge)} with a nexus`, () => {
+      yEdges.delete(edgeId)
+      const middle = [(a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2]
+      const nexus = blankNode(nexusId, { x: middle[0], y: middle[1], z: middle[2], label: edge.label })
+      nexus.is_nexus = true
+      yNodes.set(nexusId, nodeToY(nexus))
+      yEdges.set(first, edgeToY({ id: first, from: a.id, to: nexusId, directed: edge.directed, label: '' }))
+      yEdges.set(second, edgeToY({ id: second, from: nexusId, to: b.id, directed: edge.directed, label: '' }))
     })
-    graph.setNexus(nexus.id, true)
-    graph.addEdge(a.id, nexus.id, { directed: edgeSnapshot.directed })
-    graph.addEdge(nexus.id, b.id, { directed: edgeSnapshot.directed })
-    view.syncNodes()
-    view.syncEdges()
-    physics.invalidate()
-    // Taken at undo time, like `spawn`: a Balance run may move the nexus.
-    let nexusSnapshot = null
-    record(
-      label,
-      before,
-      () => {
-        nexusSnapshot = removeNodeSynced(nexus.id)
-        restoreEdgeSynced(edgeSnapshot)
-      },
-      () => {
-        edgeSnapshot = removeEdgeSynced(edgeId)
-        restoreNodeSynced(nexusSnapshot)
-      },
-    )
-    return nexus
+    return graph.getNode(nexusId)
   }
 
   function move(id, { x, y, z }) {
     const node = graph.getNode(id)
-    if (!node) return false
-    const from = [node.x, node.y, node.z]
-    const to = [x, y, z]
-    if (from.every((value, i) => value === to[i])) return false
-    const before = graph.contentRevision
-    placeNode(id, to)
-    record(
-      `move ${nodeName(node)}`,
-      before,
-      () => placeNode(id, from),
-      () => placeNode(id, to),
-    )
+    if (!canEdit() || !node || (node.x === x && node.y === y && node.z === z)) return false
+    undo.step(`move ${nodeName(node)}`, () => setPosition(yNodes.get(id), [x, y, z]))
     return true
   }
 
-  function applyLayoutSynced(layout) {
-    graph.applyLayout(layout)
-    syncPositions()
+  // --- Layout runs ---
+
+  let run = null // { label, before, at } while a local Balance or orbit is in flight
+
+  // Called by physics once a local run ends — landed, toggled off, or cut
+  // short — after the colours are faded. Writes what changed, once.
+  physics.onSettled = (snapshot) => {
+    if (!run) return
+    const { label, before, at } = run
+    run = null
+    undo.step(
+      label,
+      () => {
+        for (const [id, position] of snapshot.positions) {
+          const ynode = yNodes.get(id)
+          if (!ynode) continue // deleted while the run flew
+          setPosition(ynode, position)
+          const colour = snapshot.colors.get(id)
+          if (ynode.get('cluster_color_id') !== colour) ynode.set('cluster_color_id', colour)
+          const blend = snapshot.blends.get(id) ?? null
+          if (!sameBlend(ynode.get('blend') ?? null, blend)) ynode.set('blend', blend)
+        }
+      },
+      { before, at },
+    )
   }
 
-  /**
-   * Balance on/off. Starting a run is one undo entry covering the whole run:
-   * every position and cluster colour as they were before `recluster`, which
-   * `physics.start()` calls first. Stopping one records nothing.
-   *
-   * The end state is captured on the first undo, after stopping the run —
-   * not when the run ends, which nothing here observes. By the time this
-   * entry is undone every later one already has been, so the layout at that
-   * moment *is* where the run finished (or was cut short).
-   */
+  /** One undo entry covering a whole layout run that `begin` starts. */
+  function layoutRun(label, begin) {
+    if (!canEdit()) return false
+    const before = graph.contentRevision
+    const at = undo.mark()
+    if (!begin()) return false
+    run = { label, before, at }
+    return true
+  }
+
+  /** Balance on/off. Stopping a run settles it; it records nothing new. */
   function toggleBalance() {
     if (physics.isRunning) {
       physics.stop()
@@ -314,58 +255,28 @@ export function createCommands({ graph, view, physics, history }) {
 
   /**
    * Lays the map out round one star (`orbit.js`), as one undo entry the same
-   * way a Balance is: Ctrl+Z puts the map back as it was. A run already in
-   * flight is stopped where it got to first, and that is what undo returns to.
+   * way a Balance is. A run already in flight is stopped where it got to
+   * first, and that is what undo returns to.
    */
   function orbitAround(id, plane) {
     if (physics.isRunning) physics.stop()
     return layoutRun('orbit', () => physics.orbit(id, plane))
   }
 
-  /** One undo entry covering a whole layout run that `begin` starts. */
-  function layoutRun(label, begin) {
-    const before = graph.contentRevision
-    const layoutBefore = graph.layoutSnapshot()
-    if (!begin()) return false
-    let layoutAfter = null
-    const entry = {
-      label,
-      before,
-      after: null,
-      undo() {
-        physics.stop()
-        if (!layoutAfter) {
-          layoutAfter = graph.layoutSnapshot()
-          entry.after = graph.contentRevision
-        }
-        applyLayoutSynced(layoutBefore)
-        physics.invalidate()
-      },
-      redo() {
-        physics.stop()
-        applyLayoutSynced(layoutAfter)
-        physics.invalidate()
-      },
-    }
-    history.record(entry)
-    return true
+  // A run in flight is settled (and so on the stack) before undo or redo looks.
+  function settleFirst() {
+    if (physics.isRunning) physics.stop()
   }
 
   /** Steps back one entry. Returns its label, or null if there was nothing to undo. */
-  function undo() {
-    const entry = history.undo()
-    if (!entry) return null
-    entry.undo()
-    graph.setContentRevision(entry.before)
-    return entry.label
+  function undoStep() {
+    settleFirst()
+    return canEdit() ? undo.undo() : null
   }
 
-  function redo() {
-    const entry = history.redo()
-    if (!entry) return null
-    entry.redo()
-    graph.setContentRevision(entry.after)
-    return entry.label
+  function redoStep() {
+    settleFirst()
+    return canEdit() ? undo.redo() : null
   }
 
   return {
@@ -374,6 +285,7 @@ export function createCommands({ graph, view, physics, history }) {
     deleteNode,
     deleteEdge,
     setNodeText,
+    editNotes,
     setEdgeLabel,
     toggleCore,
     toggleNexus,
@@ -382,8 +294,11 @@ export function createCommands({ graph, view, physics, history }) {
     move,
     toggleBalance,
     orbitAround,
-    undo,
-    redo,
-    clear: () => history.clear(),
+    undo: undoStep,
+    redo: redoStep,
+    clear() {
+      run = null
+      undo.clear()
+    },
   }
 }

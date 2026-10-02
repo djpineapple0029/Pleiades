@@ -119,6 +119,19 @@ describe('doc → graph', () => {
     expect(graph.getNode('a')).toBeNull()
     expect(graph.getEdge('e1')).toBeNull()
     expect(onRemoved).toHaveBeenCalledWith(expect.objectContaining({ kind: 'node', id: 'a', local: false }))
+    expect(onRemoved).toHaveBeenCalledWith(expect.objectContaining({ kind: 'edge', id: 'e1', local: false }))
+  })
+
+  it('a node delete that takes its links redraws the lines', () => {
+    const { mapDoc, view } = setup()
+    mapDoc.transact(() => mapDoc.edges.set('e1', edgeToY(edge('e1', 'a', 'b'))))
+    const before = view.calls.syncEdges
+    mapDoc.transact(() => {
+      mapDoc.edges.delete('e1')
+      mapDoc.nodes.delete('a')
+    })
+    expect(view.calls.syncEdges).toBe(before + 1)
+    expect(view.calls.syncNodes).toBeGreaterThan(0)
   })
 
   it('Review Focus 1: two concurrent links between the same pair → one link, the smaller id', () => {
