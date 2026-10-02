@@ -180,6 +180,25 @@ describe('roomClient', () => {
     expect(seen.at(-1)).toEqual({ type: 'closed', code: 4404 })
   })
 
+  it('a close after the room already said why (deleted, kicked) is not reported again', async () => {
+    const server = fakeServer()
+    const seen = []
+    const ca = createRoomClient({
+      url: 'ws://x',
+      doc: new Y.Doc(),
+      WebSocketImpl: server.FakeSocket,
+      setTimer: () => {},
+      onControl: (m) => seen.push(m.type),
+    })
+    await ca.whenSynced
+    const socket = [...server.sockets][0]
+    socket.deliver(JSON.stringify({ type: 'deleted' }))
+    socket.close(4404)
+    expect(ca.state).toBe('closed')
+    expect(seen.at(-1)).toBe('deleted')
+    expect(seen).not.toContain('closed')
+  })
+
   it('flush asks the room to save now and resolves with its answer', async () => {
     const server = fakeServer()
     const ca = createRoomClient({ url: 'ws://x', doc: new Y.Doc(), WebSocketImpl: server.FakeSocket })

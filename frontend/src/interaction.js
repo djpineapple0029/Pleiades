@@ -1618,6 +1618,10 @@ export function createInteraction({
     openMenuFor: (id) => openMenu({ kind: 'node', id }),
     /** Test seam: what the Balance key does, the warning included. */
     balance,
+    /** Test seam: what Ctrl/Cmd+E does, the permission check included. */
+    exportMap: () => {
+      exportMap()
+    },
     /** Test seam: what the orbit key does on a star, the warning included. */
     orbitFor: (id) => {
       orbit(id, {})

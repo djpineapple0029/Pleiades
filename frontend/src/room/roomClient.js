@@ -100,9 +100,12 @@ export function createRoomClient({
       // frame…): trying again would only be refused again.
       const refused = event?.code >= 4000 && event.code < 5000
       if (finished || refused) {
+        // Already told why (deleted, kicked, reload): the close that follows
+        // says nothing new, and reporting it would talk over that.
+        const toldWhy = finished
         finished = true
         setState('closed')
-        if (refused) onControl({ type: 'closed', code: event.code })
+        if (refused && !toldWhy) onControl({ type: 'closed', code: event.code })
         return
       }
       lost()
