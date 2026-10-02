@@ -743,11 +743,12 @@ class RoomRegistry:
 
         loop.call_soon_threadsafe(lambda: asyncio.ensure_future(run()))
 
-    def online(self, map_ids: list[str]) -> dict[str, list[dict[str, str]]]:
+    def online(self, map_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+        """From any thread: who is in each of these maps now, as a list row shows them."""
         with self._guard:
             rooms = {mid: self.rooms.get(mid) for mid in map_ids}
         return {
-            mid: [{"name": p.name, "colour": p.colour} for p in list(room.peers)]
+            mid: [{"name": p.name, "colour": p.colour, "guest": p.guest} for p in list(room.peers)]
             for mid, room in rooms.items()
             if room is not None and room.peers
         }

@@ -306,6 +306,18 @@ async def test_registry_online_lists_who_is_in_each_map(store):
 
 
 @pytest.mark.anyio
+async def test_registry_online_marks_guests(store):
+    registry = RoomRegistry(store)
+    registry.bind_loop(asyncio.get_running_loop())
+    await registry.join("m", peer("ed"), "")
+    guest = Peer(conn="g", name="sam", role="viewer", perms={}, guest=True, user_id=None, guest_key="k")
+    await registry.join("m", guest, "")
+    online = registry.online(["m"])["m"]
+    assert [(p["name"], p["guest"]) for p in online] == [("ed", False), ("sam", True)]
+    assert all(set(p) == {"name", "colour", "guest"} for p in online)  # nothing a list row shouldn't show
+
+
+@pytest.mark.anyio
 async def test_notify_reaches_the_room_from_another_thread(store):
     registry = RoomRegistry(store)
     registry.bind_loop(asyncio.get_running_loop())

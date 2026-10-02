@@ -286,4 +286,30 @@ test.describe('social', () => {
     await bob.getByLabel('Show viewers').uncheck()
     await expect.poll(() => bob.evaluate(() => window.__pleiades.avatars.drawn)).toBe(1)
   })
+
+  test("My maps shows who's in each map, and keeps it fresh without closing what's open", async () => {
+    test.setTimeout(120_000)
+    // Alice's list, in another tab of hers, while she and Bob are in the map.
+    const shell = await alice.context().newPage()
+    await shell.goto('/account.html')
+    const row = shell.locator(`#maps .map[data-id="${mapId}"]`)
+    const marker = row.locator('.online')
+    await expect(marker).toBeVisible()
+    await expect(marker.locator('.person')).toHaveCount(2)
+    await expect(marker).toHaveAttribute('title', new RegExp(`In this map now: .*${bobName}`))
+    await shell.screenshot({ path: 'artifacts/e2e-multiplayer/my-maps-online.png' })
+    // Bob's list shows it too, on the Shared with me row.
+    const bobShell = await bob.context().newPage()
+    await bobShell.goto('/account.html')
+    await expect(bobShell.locator('#shared-maps .map .online .person')).toHaveCount(2)
+    await bobShell.close()
+    // Alice opens the Share panel; Bob leaves the map; the next poll updates
+    // the marker in place and the panel stays open.
+    await row.getByRole('button', { name: 'Share' }).click()
+    await expect(row.locator('.sharing')).toBeVisible()
+    await bob.goto('about:blank')
+    await expect(marker.locator('.person')).toHaveCount(1, { timeout: 40_000 })
+    await expect(row.locator('.sharing')).toBeVisible()
+    await shell.close()
+  })
 })

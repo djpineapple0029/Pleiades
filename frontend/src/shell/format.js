@@ -85,3 +85,24 @@ export function deleteQuestion(members, online) {
   const inNow = online ? `, and ${online} ${online === 1 ? 'is' : 'are'} in it now` : ''
   return { text: `This map is shared with ${people(members)}${inNow}. ${after}`, yes: 'Delete for everyone' }
 }
+
+const SHOWN_INITIALS = 3
+
+/**
+ * Who is in a map right now, for its row (context/MOONSHOT.md decision 17):
+ * up to three coloured initials, "+N" for the rest, and every name in a
+ * title. Null when nobody is. Names are text wherever this lands.
+ */
+export function whoIsIn(online) {
+  if (!online?.length) return null
+  const names = online.map((p) => (p.guest ? `${p.name} (guest)` : p.name))
+  const listed = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
+  return {
+    initials: online.slice(0, SHOWN_INITIALS).map((p) => ({
+      initial: ([...(p.name ?? '').trim()][0] ?? '?').toUpperCase(),
+      colour: p.colour,
+    })),
+    more: online.length > SHOWN_INITIALS ? `+${online.length - SHOWN_INITIALS}` : '',
+    title: `In this map now: ${listed}`,
+  }
+}

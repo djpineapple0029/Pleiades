@@ -191,6 +191,9 @@ test('share from My maps: it lands in Shared with me, marked new until opened, a
   await bob.goto('/account.html')
   await expect(bob.locator('#shared-maps .map .badge')).toHaveCount(0)
   await bob.locator('#shared-maps .map').getByRole('button', { name: 'Leave' }).click()
+  // It asks first (milestone 3), in the row; the same word confirms.
+  await expect(bob.locator('#shared-maps .map .confirm')).toContainText('Leave')
+  await bob.locator('#shared-maps .map').getByRole('button', { name: 'Leave' }).click()
   await expect(bob.locator('#shared-section')).toBeHidden()
 
   await alice.context().close()

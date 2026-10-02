@@ -405,6 +405,12 @@ button.small {
   white-space: nowrap;
 }
 
+.map .title-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
 .map .name:hover {
   text-decoration: underline;
 }
@@ -971,6 +977,44 @@ kbd {
   margin: 0 0 10px;
   font-size: 18px;
   font-weight: 500;
+}
+
+/* Who's in a map now (decision 17): a live dot and up to three coloured
+   initials, "+N" past that; the names are in the title. */
+.map .online {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.map .online .live-dot {
+  width: 7px;
+  height: 7px;
+  margin-right: 3px;
+  border-radius: 50%;
+  background: #06d6a0;
+  box-shadow: 0 0 6px #06d6a0;
+}
+
+.map .online .person {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--person, #fff);
+  border-radius: 50%;
+  color: var(--person, #fff);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.map .online .more {
+  font-size: 11px;
+  opacity: 0.7;
 }
 
 .map .badge {
