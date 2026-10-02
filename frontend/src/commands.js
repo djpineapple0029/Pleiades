@@ -94,10 +94,23 @@ export function createCommands({ graph, physics, mapDoc, undo, newId = randomId,
     return true
   }
 
+  /**
+   * Deletes the link `id` and any twin of it in the doc: two people linking
+   * the same pair at once leaves two, of which only the smaller id shows
+   * (keptEdges), and deleting just that one would bring the other back.
+   */
+  function deletePair(edge) {
+    const ends = new Set([edge.from, edge.to])
+    for (const [id, yedge] of [...yEdges.entries()]) {
+      if (ends.has(yedge.get('from')) && ends.has(yedge.get('to')) && yedge.get('from') !== yedge.get('to'))
+        yEdges.delete(id)
+    }
+  }
+
   function deleteEdge(id) {
     const edge = graph.getEdge(id)
     if (!canEdit() || !edge) return false
-    undo.step(`delete ${edgeName(edge)}`, () => yEdges.delete(id))
+    undo.step(`delete ${edgeName(edge)}`, () => deletePair(edge))
     return true
   }
 
@@ -190,7 +203,7 @@ export function createCommands({ graph, physics, mapDoc, undo, newId = randomId,
     taken.add(first)
     const second = newId('e', taken)
     undo.step(`split ${edgeName(edge)} with a nexus`, () => {
-      yEdges.delete(edgeId)
+      deletePair(edge)
       const middle = [(a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2]
       const nexus = blankNode(nexusId, { x: middle[0], y: middle[1], z: middle[2], label: edge.label })
       nexus.is_nexus = true

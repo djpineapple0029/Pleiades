@@ -245,3 +245,11 @@ def test_delete_and_membership_changes_reach_the_room(three, rooms):
     assert (three["map"], "access") in rooms.events
     three["owner"].delete(f"/api/maps/{three['map']}", headers=CSRF)
     assert (three["map"], "deleted") in rooms.events
+
+
+def test_only_the_owner_can_put_a_version_into_history(three):
+    share(three, "eddie", "editor")
+    planted = three["eddie"].post(
+        f"/api/maps/{three['map']}/snapshots", json={"payload": {"nodes": [], "edges": []}}, headers=CSRF
+    )
+    assert planted.status_code == 403

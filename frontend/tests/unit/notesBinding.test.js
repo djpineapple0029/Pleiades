@@ -111,3 +111,28 @@ describe('bindTextarea', () => {
     expect(area.value).toBe('')
   })
 })
+
+describe('trimText', () => {
+  it('drops leading and trailing whitespace, as Save used to, in one transaction under the origin', async () => {
+    const { trimText } = await import('../../src/room/notesBinding.js')
+    const doc = new Y.Doc()
+    const text = doc.getText('notes')
+    text.insert(0, '  \n line one\nline two \n\n')
+    const origins = []
+    doc.on('afterTransaction', (txn) => origins.push(txn.origin))
+    trimText(text, 'local')
+    expect(text.toString()).toBe('line one\nline two')
+    expect(origins).toEqual(['local'])
+  })
+
+  it('leaves trimmed text alone, with no transaction', async () => {
+    const { trimText } = await import('../../src/room/notesBinding.js')
+    const doc = new Y.Doc()
+    const text = doc.getText('notes')
+    text.insert(0, 'tidy')
+    let count = 0
+    doc.on('afterTransaction', () => count++)
+    trimText(text, 'local')
+    expect(count).toBe(0)
+  })
+})

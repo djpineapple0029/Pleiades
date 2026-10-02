@@ -79,11 +79,20 @@ test.describe('two people, one map', () => {
     await expect.poll(() => hasNode(bob, id)).toBe(true)
     await bob.evaluate((nodeId) => window.__pleiades.interaction.openMenuFor(nodeId), id)
     await expect(bob.locator('#radial-menu')).toBeVisible()
+    // The HUD's notice is short-lived: record whatever it says from here on.
+    await bob.evaluate(() => {
+      const hud = document.getElementById('hud')
+      window.__hudSaid = []
+      new MutationObserver(() => window.__hudSaid.push(hud.textContent)).observe(hud, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      })
+    })
     await alice.evaluate((nodeId) => window.__pleiades.commands.deleteNode(nodeId), id)
     await expect(bob.locator('#radial-menu')).toBeHidden()
-    await expect
-      .poll(() => bob.evaluate(() => document.getElementById('hud').textContent))
-      .toContain('was deleted')
+    await expect.poll(() => hasNode(bob, id)).toBe(false)
+    await expect.poll(() => bob.evaluate(() => window.__hudSaid.join(' | '))).toContain('was deleted')
   })
 
   test('Balance asks first when another editor is here', async () => {
@@ -98,6 +107,32 @@ test.describe('two people, one map', () => {
       window.__pleiades.interaction.balance()
     })
     await expect(alice.locator('#editor')).toContainText('is editing. Rearrange the map for everyone?')
+  })
+
+  test('Orbit asks first too: it rearranges the map for everyone', async () => {
+    const id = await alice.evaluate(() => {
+      const c = window.__pleiades.commands
+      const a = c.spawn({ x: 0, y: 0, z: 0 })
+      const b = c.spawn({ x: 9, y: 0, z: 0 })
+      c.connect(a.id, b.id)
+      return a.id
+    })
+    await alice.evaluate((nodeId) => {
+      window.__pleiades.interaction.orbitFor(nodeId)
+    }, id)
+    await expect(alice.locator('#editor')).toContainText('is editing. Rearrange the map for everyone?')
+  })
+
+  test('the notes editor goes read-only while offline, and back', async () => {
+    const id = await bob.evaluate(() => window.__pleiades.commands.spawn({ x: 0, y: 0, z: 0 }).id)
+    await bob.evaluate((nodeId) => window.__pleiades.interaction.editNotesFor(nodeId), id)
+    const notes = bob.locator('#notes-sidebar textarea')
+    await expect(notes).toBeVisible()
+    await expect(notes).not.toHaveAttribute('readonly')
+    await bob.context().setOffline(true)
+    await expect(notes).toHaveAttribute('readonly')
+    await bob.context().setOffline(false)
+    await expect(notes).not.toHaveAttribute('readonly', { timeout: 20_000 })
   })
 
   test('offline is read-only and recovers', async () => {

@@ -171,7 +171,9 @@ def main() -> int:
         out.write("\n")
         out.flush()
         server.should_exit = True
-        thread.join(1)
+        # Long enough for uvicorn's shutdown to close the live map rooms and
+        # save what's in them (server/rooms.py); the daemon thread dies with us.
+        thread.join(15)
     return 0
 
 

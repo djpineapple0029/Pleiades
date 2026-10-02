@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { NODE_RADIUS } from './graphView.js'
 import { createStatus } from './status.js'
-import { bindTextarea } from './room/notesBinding.js'
+import { bindTextarea, trimText } from './room/notesBinding.js'
 import { createCommands } from './commands.js'
 import { rankNodes } from './search.js'
 import { focusSetOf } from './heat.js'
@@ -189,6 +189,10 @@ export function createInteraction({
   // The star or link a label or notes editor is open on, so a delete by
   // someone else can close it (closeAbout).
   let editingAbout = null
+  // The notes textarea while it's open: read-only whenever the room is
+  // (offline, or a viewer now), like every other edit (decision 21).
+  let notesArea = null
+  const canTypeNotes = () => !room || room.canEdit
   let refusedAt = -Infinity
   function canEdit() {
     if (!room || room.canEdit) return true
@@ -666,14 +670,22 @@ export function createInteraction({
     try {
       const kept = await sidebar.edit(nodeName(node), (textarea) => {
         binding = bindTextarea(textarea, session.text, { origin: mapDoc.LOCAL })
+        notesArea = textarea
+        notesArea.readOnly = !canTypeNotes()
       })
       binding?.destroy()
       binding = null
       endModal()
-      if (kept) session.end()
-      else session.discard()
+      if (kept) {
+        // A local map's notes are trimmed on Done, as Save always did. Not
+        // in a room: the ends may be someone else's typing.
+        if (!room) trimText(session.text, mapDoc.LOCAL)
+        session.end()
+      } else session.discard()
     } finally {
       binding?.destroy()
+      if (notesArea) notesArea.readOnly = false
+      notesArea = null
       editingAbout = null
       if (mode === 'editing') endModal()
       sidebarKey = null // view mode redraws from scratch
@@ -803,6 +815,7 @@ export function createInteraction({
   function roomState(state) {
     const before = lastRoomState
     lastRoomState = state
+    if (notesArea) notesArea.readOnly = !canTypeNotes()
     if (state === 'offline') {
       roomProblem = 'reconnecting… · changes are paused'
     } else if (roomProblem?.startsWith('reconnecting')) {
@@ -860,29 +873,43 @@ export function createInteraction({
     names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
 
   /**
-   * Balance (B, the map menu, a shape from T). Stopping a run is instant;
-   * starting one while other editors are in the map asks first, since it
-   * rearranges the map for all of them.
+   * True to go ahead with a layout that moves every star for everyone in the
+   * map (decision 12): asks first while other editors are in it.
    */
+  async function rearrangeForEveryone(what) {
+    const others = otherEditors()
+    if (!others.length) return true
+    const choice = await askChoice(
+      `${listNames(others)} ${others.length === 1 ? 'is' : 'are'} editing. Rearrange the map for everyone?`,
+      `${what} moves every star, for everyone in this map. Undo takes it back.`,
+      [{ key: 'r', label: 'R: rearrange' }],
+    )
+    return choice === 'r'
+  }
+
+  /** Balance (B, the map menu, a shape from T). Stopping a run is instant. */
   async function balance() {
     if (physics.isLocalRun) return commands.toggleBalance()
-    const others = otherEditors()
-    if (others.length) {
-      const choice = await askChoice(
-        `${listNames(others)} ${others.length === 1 ? 'is' : 'are'} editing. Rearrange the map for everyone?`,
-        'Balance moves every star, for everyone in this map. Undo takes it back.',
-        [{ key: 'r', label: 'R: rearrange' }],
-      )
-      if (choice !== 'r') return null
-    }
+    if (!(await rearrangeForEveryone('Balance'))) return null
     return commands.toggleBalance()
+  }
+
+  /** Orbit (O on a star): a whole-map layout like Balance, so it asks the same. */
+  async function orbit(id, plane) {
+    if (!(await rearrangeForEveryone('Orbit'))) return
+    if (graph.getNode(id) && commands.orbitAround(id, plane)) setFocus({ kind: 'orbit', id })
   }
 
   /**
    * Someone else deleted this star or link (docBridge.js `onRemoved`):
    * anything open about it closes (decision 10), and the HUD says what went.
    */
-  function closeAbout({ kind, id, label }) {
+  function closeAbout({ kind, id, label, at }) {
+    // Their delete plays like a local one (decision 11): the star still has
+    // its drawn size and tint here, the view hasn't caught up yet.
+    if (kind === 'node' && at && !renderSettings?.reducedMotion && renderSettings?.supernova !== false) {
+      supernova?.burst({ position: at, radius: view.radiusOf(id), tint: view.tintOf(id) })
+    }
     if (menuTarget && menuTarget.kind === kind && menuTarget.id === id) {
       menu.close()
       menuTarget = null
@@ -1469,7 +1496,7 @@ export function createInteraction({
       // Flat, facing the camera: its right and up are the orbit's plane.
       const e = camera.matrixWorld.elements
       const plane = { right: [e[0], e[1], e[2]], up: [e[4], e[5], e[6]] }
-      if (commands.orbitAround(hover.id, plane)) setFocus({ kind: 'orbit', id: hover.id })
+      orbit(hover.id, plane)
     }
 
     if (is('path') && !event.repeat && controls.isLocked && mode === 'idle') pathKey()
@@ -1576,6 +1603,15 @@ export function createInteraction({
     openMenuFor: (id) => openMenu({ kind: 'node', id }),
     /** Test seam: what the Balance key does, the warning included. */
     balance,
+    /** Test seam: what the orbit key does on a star, the warning included. */
+    orbitFor: (id) => {
+      orbit(id, {})
+    },
+    /** Test seam: the notes editor on a star, as Ctrl/Cmd+Enter on it opens it. */
+    editNotesFor: (id) => {
+      const node = graph.getNode(id)
+      if (node) editNotes(node)
+    },
     /** True while a panel owns the keyboard, or a file is being decrypted and
      *  swapped in — nothing should steal focus back, or re-lock and edit the
      *  graph that's about to be replaced. */

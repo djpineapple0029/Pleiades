@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from pycrdt import Doc, Map, create_sync_message, create_update_message, handle_sync_message
+from pycrdt import Doc, Map, Text, create_sync_message, create_update_message, handle_sync_message
 from starlette.testclient import TestClient
 
 CSRF = {"X-Pleiades": "1"}
@@ -140,6 +140,7 @@ def test_an_edit_is_saved_as_the_payload(world):
             client.get("nodes", type=Map)["n-1"] = node
             for k, v in {"id": "n-1", "label": "Hi", "x": 0.0, "y": 0.0, "z": 0.0}.items():
                 node[k] = v
+            node["notes"] = Text("")  # a star's notes are shared text, or the room refuses it
         ws.send_bytes(create_update_message(updates[-1]))
     # Leaving persists at once (last person out).
     download = world.get(f"/api/maps/{map_id}").json()
@@ -200,3 +201,17 @@ def test_a_reset_password_account_is_refused(world, asgi):
     with asgi.state.flask.extensions["pleiades_db"].connect() as conn:
         conn.execute("UPDATE users SET must_change_password = 1")
     assert closed_code(world, map_id) == 4404
+
+
+def test_a_removed_member_is_sent_out_of_the_open_map(world):
+    bob = sign_up(world, "bobby")
+    alice = sign_up(world, "alice")
+    map_id = new_map(world)
+    world.post(f"/api/maps/{map_id}/members", json={"username": "bobby", "role": "editor"}, headers=CSRF)
+    be(world, bob)
+    bob_id = world.get("/api/auth/me").json()["user"]["id"]
+    with world.websocket_connect(f"/ws/maps/{map_id}", headers=ORIGIN) as ws:
+        first_texts(ws, 1)
+        be(world, alice)
+        assert world.delete(f"/api/maps/{map_id}/members/{bob_id}", headers=CSRF).status_code == 200
+        assert wait_for_close(ws) == 4403

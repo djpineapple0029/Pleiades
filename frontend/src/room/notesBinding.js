@@ -78,3 +78,19 @@ export function bindTextarea(textarea, ytext, { origin }) {
     },
   }
 }
+
+/**
+ * Trims the text's leading and trailing whitespace, as the notes editor's
+ * Save always did, in one transaction under `origin` (so it joins the
+ * session's undo step). Nothing at all if it's already trimmed.
+ */
+export function trimText(ytext, origin) {
+  const value = ytext.toString()
+  const start = value.length - value.trimStart().length
+  const end = value.trimEnd().length
+  if (start === 0 && end === value.length) return
+  ytext.doc.transact(() => {
+    ytext.delete(end, value.length - end)
+    if (start) ytext.delete(0, Math.min(start, end))
+  }, origin)
+}

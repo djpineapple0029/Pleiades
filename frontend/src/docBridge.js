@@ -50,10 +50,11 @@ export function createDocBridge({
     const current = graph.getNode(id)
     if (!ynode) {
       const label = current?.label ?? ''
+      const at = current ? { x: current.x, y: current.y, z: current.z } : null
       const removed = current ? graph.removeNode(id) : null
       if (removed) {
         counters.structure = true
-        onRemoved({ kind: 'node', id, local, label })
+        onRemoved({ kind: 'node', id, local, label, at })
         // Its links went with it, inside graph.removeNode.
         for (const edge of removed.edges) {
           counters.edgesDropped = true

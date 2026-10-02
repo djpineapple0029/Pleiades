@@ -15,6 +15,10 @@ export const API_ORIGIN = `http://127.0.0.1:${API_PORT}`
 export default defineConfig({
   testDir: 'tests/e2e/multiplayer',
   timeout: process.env.CI ? 360_000 : 120_000,
+  // What one person does reaches the other through a server and a second
+  // software-rendered page; on a busy machine that has taken 2-3 s (measured,
+  // nothing lost), past expect's 5 s default once two hops add up.
+  expect: { timeout: 15_000 },
   fullyParallel: false,
   workers: 1,
   reporter: [['list']],

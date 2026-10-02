@@ -119,7 +119,7 @@ describe('doc → graph', () => {
     expect(graph.getNode('a')).toBeNull()
     expect(graph.getEdge('e1')).toBeNull()
     expect(onRemoved).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'node', id: 'a', local: false, label: 'a' }),
+      expect.objectContaining({ kind: 'node', id: 'a', local: false, label: 'a', at: { x: 0, y: 0, z: 0 } }),
     )
     expect(onRemoved).toHaveBeenCalledWith(expect.objectContaining({ kind: 'edge', id: 'e1', local: false }))
   })

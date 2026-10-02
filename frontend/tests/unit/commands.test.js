@@ -10,6 +10,7 @@ import { createUndo } from '../../src/undo.js'
 import { createCommands } from '../../src/commands.js'
 import { createFiles } from '../../src/files.js'
 import { createPhysics } from '../../src/physics.js'
+import { edgeToY } from '../../src/format/ydoc.js'
 
 function stubView() {
   const calls = { syncNodes: 0, syncEdges: 0, updateEdgePositions: 0, sync: 0 }
@@ -600,5 +601,44 @@ describe("Balance while someone else's layout is flying in", () => {
     expect(physics.isLocalRun).toBe(false)
     expect(commands.toggleBalance()).toBe(true)
     expect(physics.isLocalRun).toBe(true)
+  })
+})
+
+describe('Review Focus 1: a link two people made at once, deleted', () => {
+  function withDuplicatePair() {
+    const ctx = setup()
+    const a = ctx.commands.spawn({ x: 0, y: 0, z: 0 })
+    const b = ctx.commands.spawn({ x: 10, y: 0, z: 0 })
+    // Two concurrent links between a and b: only the smaller id shows.
+    ctx.mapDoc.transact(() => {
+      ctx.mapDoc.edges.set(
+        'e-bbb',
+        edgeToY({ id: 'e-bbb', from: a.id, to: b.id, directed: false, label: '' }),
+      )
+      ctx.mapDoc.edges.set(
+        'e-aaa',
+        edgeToY({ id: 'e-aaa', from: b.id, to: a.id, directed: false, label: '' }),
+      )
+    }, 'room')
+    expect([...ctx.graph.edges.keys()]).toEqual(['e-aaa'])
+    return { ...ctx, a, b }
+  }
+
+  it('deleting the link that shows takes its hidden twin too, so it stays deleted', () => {
+    const { graph, mapDoc, commands } = withDuplicatePair()
+    expect(commands.deleteEdge('e-aaa')).toBe(true)
+    expect(graph.edges.size).toBe(0)
+    expect(mapDoc.edges.size).toBe(0)
+    commands.undo()
+    expect(graph.edges.size).toBe(1)
+  })
+
+  it('splitting it leaves no direct link behind', () => {
+    const { graph, commands, a, b } = withDuplicatePair()
+    commands.splitEdge('e-aaa')
+    const direct = [...graph.edges.values()].filter(
+      (e) => (e.from === a.id && e.to === b.id) || (e.from === b.id && e.to === a.id),
+    )
+    expect(direct).toEqual([])
   })
 })

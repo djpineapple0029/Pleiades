@@ -351,3 +351,171 @@ async def test_flush_that_cannot_save_says_so(store):
     store.fail = True
     await room.on_text(a, {"type": "flush"})
     assert {"type": "flushed", "ok": False} in texts(a)
+
+
+# --- Final review: updates the materialiser can't take never get in ----------
+
+
+def add_node(key, fields, notes=True):
+    def fn(d):
+        with d.transaction():
+            node = Map()
+            d.get("nodes", type=Map)[key] = node
+            for k, v in fields.items():
+                node[k] = v
+            if notes:
+                from pycrdt import Text
+
+                node["notes"] = Text("")
+
+    return fn
+
+
+GOOD = {"id": "zz", "label": "", "x": 0.0, "y": 0.0, "z": 0.0}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("key", "fields", "notes"),
+    [
+        ("zz", {k: v for k, v in GOOD.items() if k != "id"}, True),  # no id
+        ("zz", {**GOOD, "id": "other"}, True),  # id isn't its key
+        ("zz", {**GOOD, "notes": "plain"}, False),  # notes not shared text
+    ],
+)
+async def test_a_star_the_payload_could_not_hold_is_refused(store, key, fields, notes):
+    room = Room("m", store, persist_delay=0.01)
+    await room.open()
+    p = peer()
+    client = await joined(room, p)
+    await room.on_binary(p, edit_message(client, add_node(key, fields, notes)))
+    assert ("close", 4400) in [(kind, rest[0]) for kind, *rest in drain(p) if kind == "close"]
+    assert "zz" not in room.doc.get("nodes", type=Map)
+
+
+@pytest.mark.anyio
+async def test_a_good_new_star_is_still_taken(store):
+    room = Room("m", store, persist_delay=0.01)
+    await room.open()
+    p = peer()
+    client = await joined(room, p)
+    await room.on_binary(p, edit_message(client, add_node("zz", GOOD)))
+    assert "zz" in room.doc.get("nodes", type=Map)
+
+
+@pytest.mark.anyio
+async def test_a_link_whose_id_is_not_its_key_is_refused(store):
+    room = Room("m", store, persist_delay=0.01)
+    await room.open()
+    p = peer()
+    client = await joined(room, p)
+
+    def fn(d):
+        with d.transaction():
+            edge = Map()
+            d.get("edges", type=Map)["e1"] = edge
+            for k, v in {"id": "e2", "from": "a", "to": "a2", "directed": False, "label": ""}.items():
+                edge[k] = v
+
+    await room.on_binary(p, edit_message(client, fn))
+    assert "e1" not in room.doc.get("edges", type=Map)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("root", ["meta", "evil"])
+async def test_updates_to_meta_or_other_roots_are_refused(store, root):
+    room = Room("m", store, persist_delay=0.01)
+    await room.open()
+    p = peer()
+    client = await joined(room, p)
+    await room.on_binary(p, edit_message(client, lambda d: d.get(root, type=Map).__setitem__("schema", 999)))
+    assert ("close", 4400) in [(kind, rest[0]) for kind, *rest in drain(p) if kind == "close"]
+    assert room.doc.get("meta", type=Map).get("schema") != 999
+
+
+@pytest.mark.anyio
+async def test_one_room_failing_to_save_does_not_stop_the_others_at_shutdown(store, monkeypatch):
+    registry = RoomRegistry(store)
+    registry.bind_loop(asyncio.get_running_loop())
+    a, b = peer("a"), peer("b")
+    room_a = await registry.join("m1", a, "")
+    room_b = await registry.join("m2", b, "")
+    client_b = Doc()
+    await answer_handshake(room_b, b, client_b)
+    room_b.persist_delay = 60
+    await room_b.on_binary(b, edit_message(client_b, set_label("kept")))
+    room_a._dirty = True
+    monkeypatch.setattr(room_a, "doc", None)  # its save will blow up
+    await registry.shutdown()
+    assert store.saves and store.saves[-1]["nodes"][0]["label"] == "kept"
+
+
+@pytest.mark.anyio
+async def test_constant_editing_still_saves_within_the_maximum_wait(store):
+    room = Room("m", store, persist_delay=0.05, persist_max_wait=0.12)
+    await room.open()
+    a = peer("a")
+    client = await joined(room, a)
+    for i in range(12):  # an edit every 30 ms: the debounce alone would never fire
+        await room.on_binary(a, edit_message(client, set_label(f"v{i}")))
+        await asyncio.sleep(0.03)
+    assert store.saves
+
+
+@pytest.mark.anyio
+async def test_flush_answers_for_its_own_save_even_if_someone_edits_meanwhile(store):
+    room = Room("m", store, persist_delay=60)
+    await room.open()
+    a, b = peer("a"), peer("b")
+    client_a = await joined(room, a)
+    client_b = await joined(room, b)
+    await room.on_binary(a, edit_message(client_a, set_label("mine")))
+    real_save = store.save
+
+    def slow_save(*args):
+        import time
+
+        time.sleep(0.05)
+        return real_save(*args)
+
+    store.save = slow_save
+    flushing = asyncio.ensure_future(room.on_text(a, {"type": "flush"}))
+    await asyncio.sleep(0.01)
+    await room.on_binary(b, edit_message(client_b, lambda d: d.get("nodes", type=Map)["a"].__setitem__("x", 3.0)))
+    await flushing
+    assert {"type": "flushed", "ok": True} in texts(a)
+
+
+# --- Final review: removing or demoting someone reaches their open socket ----
+
+
+@pytest.mark.anyio
+async def test_access_changes_reach_people_already_in_the_room(store):
+    from server.access import Access
+
+    roles = {1: "editor", 2: "editor"}
+
+    def resolve(map_id, user_id):
+        role = roles.get(user_id)
+        return Access(role, {"invite": role == "editor"}, 99, user_id=user_id) if role else None
+
+    registry = RoomRegistry(store, resolve=resolve)
+    registry.bind_loop(asyncio.get_running_loop())
+    stays = Peer(conn="s", name="stays", role="editor", perms={}, guest=False, user_id=1, guest_key=None)
+    goes = Peer(conn="g", name="goes", role="editor", perms={}, guest=False, user_id=2, guest_key=None)
+    room = await registry.join("m", stays, "")
+    await registry.join("m", goes, "")
+    drain(stays)
+    drain(goes)
+
+    roles[1] = "viewer"
+    del roles[2]
+    await asyncio.to_thread(registry.notify, "m", "access")
+    await asyncio.sleep(0.05)
+
+    assert stays.role == "viewer" and not stays.can_edit
+    assert {"type": "access", "role": "viewer", "perms": {"invite": False}} in texts(stays)
+    gone = drain(goes)
+    assert any(kind == "text" and json.loads(rest[0])["type"] == "kicked" for kind, *rest in gone)
+    assert gone[-1][:2] == ("close", 4403)
+    assert [p.name for p in room.peers] == ["stays"]

@@ -389,7 +389,8 @@ def keep_unsaved_edits(map_id: str) -> Response | tuple[Response, int]:
     except ValueError:
         return fail("`payload` holds a number JSON can't represent.", 400)
     base = body.get("revision")
-    require(map_id, edit=True)
+    # Owner only: it writes into the owner's History, which an editor can't even read.
+    require(map_id, owner=True)
     with database().transaction() as conn:
         row = map_row(conn, map_id)
         if not isinstance(base, int) or isinstance(base, bool) or not 1 <= base <= row["revision"]:

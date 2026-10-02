@@ -18,6 +18,7 @@ map must not add a revision.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import secrets
@@ -32,6 +33,7 @@ from pycrdt import (
     Decoder,
     Doc,
     Map,
+    Text,
     YMessageType,
     YSyncMessageType,
     create_awareness_message,
@@ -58,6 +60,11 @@ PLAYER_COLOURS = [
     "#e9ecef",
 ]
 FAILURES_BEFORE_WARNING = 3
+# The only roots a map's doc has (server/ydoc.py). Clients write `nodes` and
+# `edges`; `meta` (camera, envelope, pass-through keys) is the server's alone
+# until a later milestone gives a client something to put there.
+CLIENT_ROOTS = {"nodes", "edges"}
+DOC_ROOTS = {"nodes", "edges", "meta"}
 # A Yjs update with no structs and an empty delete set: the handshake reply of
 # a client that has nothing the server lacks.
 EMPTY_UPDATE = b"\x00\x00"
@@ -111,10 +118,24 @@ class Peer:
 
 
 class Room:
-    def __init__(self, map_id: str, store: RoomStore, *, persist_delay: float = 3.0, evict_delay: float = 60.0) -> None:
+    def __init__(
+        self,
+        map_id: str,
+        store: RoomStore,
+        *,
+        persist_delay: float = 3.0,
+        persist_max_wait: float = 20.0,
+        evict_delay: float = 60.0,
+    ) -> None:
         self.map_id = map_id
         self.store = store
+        # Saved `persist_delay` after the last edit, but never more than
+        # `persist_max_wait` after the first unsaved one: people typing
+        # without pause still get saved (Review Focus 3).
         self.persist_delay = persist_delay
+        self.persist_max_wait = persist_max_wait
+        self._dirty_since: float | None = None
+        self._last_save_ok = True
         self.evict_delay = evict_delay
         self.peers: list[Peer] = []
         self.doc = Doc()
@@ -282,16 +303,19 @@ class Room:
         if peer.closing or self.closed:
             return
         if message.get("type") == "flush":
-            await self.persist()
+            ok = await self.persist()
             async with self._lock:
                 pass  # a save already under way when this came in has finished too
-            peer.send_text({"type": "flushed", "ok": not self._dirty})
+            # Its own save, not whether anyone has edited since.
+            peer.send_text({"type": "flushed", "ok": ok and self._last_save_ok})
 
     # --- validation --------------------------------------------------------
 
     def _check(self, update: bytes) -> str | None:
-        """Apply to the shadow doc first; check every node and edge it touched."""
-        touched: dict[str, set[str]] = {"nodes": set(), "edges": set()}
+        """Apply to the shadow doc first; check every node and edge it touched,
+        and that it touched nothing else. Whatever gets past this, the
+        materialiser (doc_to_payload) and every client can read."""
+        touched: dict[str, set[str]] = {"nodes": set(), "edges": set(), "meta": set()}
 
         def collect(root: str) -> Callable[[list[Any]], None]:
             def callback(events: list[Any]) -> None:
@@ -306,29 +330,53 @@ class Room:
 
         nodes = self.shadow.get("nodes", type=Map)
         edges = self.shadow.get("edges", type=Map)
-        subs = [nodes.observe_deep(collect("nodes")), edges.observe_deep(collect("edges"))]
+        meta = self.shadow.get("meta", type=Map)
+        watched = [(nodes, nodes.observe_deep(collect("nodes")))]
+        watched.append((edges, edges.observe_deep(collect("edges"))))
+        watched.append((meta, meta.observe_deep(collect("meta"))))
         try:
             self.shadow.apply_update(update)
         except Exception as exc:  # noqa: BLE001 -- any decode failure is a bad update
             self._rebuild_shadow()
             return f"undecodable update: {exc}"
         finally:
-            nodes.unobserve(subs[0])
-            edges.unobserve(subs[1])
+            for root, sub in watched:
+                root.unobserve(sub)
+        problem = self._problem(nodes, edges, touched)
+        if problem:
+            self._rebuild_shadow()
+        return problem
+
+    def _problem(self, nodes: Map, edges: Map, touched: dict[str, set[str]]) -> str | None:
+        if touched["meta"]:
+            return "meta is not the client's to change"
+        extra = set(self.shadow.keys()) - DOC_ROOTS
+        if extra:
+            return f"unknown root {sorted(extra)[0]!r}"
         for node_id in touched["nodes"]:
-            if node_id in nodes:
-                value = nodes[node_id]
-                problem = node_problem(value.to_py() or {}) if isinstance(value, Map) else "a star is not a map"
-                if problem:
-                    self._rebuild_shadow()
-                    return f"node {node_id}: {problem}"
+            if node_id not in nodes:
+                continue
+            value = nodes[node_id]
+            if not isinstance(value, Map):
+                return f"node {node_id}: a star is not a map"
+            if value.get("id") != node_id:
+                return f"node {node_id}: its id is not its key"
+            if not isinstance(value.get("notes"), Text):
+                return f"node {node_id}: notes are not shared text"
+            problem = node_problem(value.to_py() or {})
+            if problem:
+                return f"node {node_id}: {problem}"
         for edge_id in touched["edges"]:
-            if edge_id in edges:
-                value = edges[edge_id]
-                problem = edge_problem(value.to_py() or {}) if isinstance(value, Map) else "a link is not a map"
-                if problem:
-                    self._rebuild_shadow()
-                    return f"edge {edge_id}: {problem}"
+            if edge_id not in edges:
+                continue
+            value = edges[edge_id]
+            if not isinstance(value, Map):
+                return f"edge {edge_id}: a link is not a map"
+            if value.get("id") != edge_id:
+                return f"edge {edge_id}: its id is not its key"
+            problem = edge_problem(value.to_py() or {})
+            if problem:
+                return f"edge {edge_id}: {problem}"
         return None
 
     def _rebuild_shadow(self) -> None:
@@ -339,41 +387,77 @@ class Room:
 
     def _schedule_persist(self) -> None:
         loop = asyncio.get_running_loop()
+        now = loop.time()
+        if self._dirty_since is None:
+            self._dirty_since = now
+        delay = min(self.persist_delay, max(0.0, self._dirty_since + self.persist_max_wait - now))
         if self._persist_handle:
             self._persist_handle.cancel()
-        self._persist_handle = loop.call_later(self.persist_delay, lambda: asyncio.ensure_future(self.persist()))
+        self._persist_handle = loop.call_later(delay, lambda: asyncio.ensure_future(self.persist()))
 
-    async def persist(self) -> None:
+    async def persist(self) -> bool:
+        """Saves now if anything is unsaved. True if that save worked (or there
+        was nothing to save); never raises — one map failing to save must not
+        stop another from saving."""
         if self._persist_handle:
             self._persist_handle.cancel()
             self._persist_handle = None
         if not self._dirty or self.closed:
-            return
+            return True
         async with self._lock:
             self._dirty = False
-            state = self.doc.get_update()
-            payload = doc_to_payload(self.doc)
+            self._dirty_since = None
             try:
+                state = self.doc.get_update()
+                payload = doc_to_payload(self.doc)
                 revision = await to_thread.run_sync(
                     self.store.save, self.map_id, state, self.epoch, payload, self.revision
                 )
             except Exception:
                 log.exception("room %s: save failed", self.map_id)
                 self._dirty = True
+                self._last_save_ok = False
                 self._failures += 1
                 if self._failures == FAILURES_BEFORE_WARNING:
                     for p in self.peers:
                         p.send_text({"type": "error", "code": "not_saved"})
-                self._schedule_persist()
-                return
+                if not self.closed:
+                    with contextlib.suppress(RuntimeError):  # no running loop: shutting down
+                        self._schedule_persist()
+                return False
             if revision is None:
+                self._last_save_ok = False
                 await self.reload("changed elsewhere")
-                return
+                return False
             self.revision = revision
+            self._last_save_ok = True
             if self._failures >= FAILURES_BEFORE_WARNING:
                 for p in self.peers:
                     p.send_text({"type": "saved"})
             self._failures = 0
+            return True
+
+    async def reaccess(self, resolve: Callable[[str, int], Any]) -> None:
+        """Someone's access to this map changed (a member removed or re-roled,
+        sharing switched off): asks again for everyone signed in. Gone →
+        `kicked` and closed; a new role → `access`, and edits follow it at
+        once (a viewer's next update is refused). Milestone 2 adds links,
+        bans and per-person permissions to what `resolve` knows."""
+        changed = False
+        for peer in list(self.peers):
+            if peer.user_id is None:
+                continue
+            found = await to_thread.run_sync(resolve, self.map_id, peer.user_id)
+            if found is None:
+                peer.send_text({"type": "kicked", "reason": "access"})
+                peer.close(4403, "access")
+                await self.leave(peer)  # their avatar and bubble go now, not when the socket does
+            elif found.role != peer.role or found.perms != peer.perms:
+                peer.role, peer.perms = found.role, found.perms
+                peer.send_text({"type": "access", "role": found.role, "perms": found.perms})
+                changed = True
+        if changed:
+            self._broadcast_roster()
 
     def _close_all(self, message: dict[str, Any], code: int, reason: str) -> None:
         self.closed = True
@@ -429,9 +513,17 @@ class RoomRegistry:
     """Every open room. Async methods run on the server's loop; `notify` and
     `online` may be called from Flask's worker threads."""
 
-    def __init__(self, store: RoomStore, *, max_people: int = 10) -> None:
+    def __init__(
+        self,
+        store: RoomStore,
+        *,
+        max_people: int = 10,
+        resolve: Callable[[str, int], Any] | None = None,
+    ) -> None:
         self.store = store
         self.max_people = max_people
+        # (map_id, user_id) -> access.Access | None, from a worker thread.
+        self.resolve = resolve
         self.rooms: dict[str, Room] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
         self._guard = threading.Lock()
@@ -485,7 +577,8 @@ class RoomRegistry:
             await room.reload("changed")
         elif event == "deleted":
             await room.deleted()
-        # 'access' re-checks everyone in milestone 2 (room.reaccess).
+        elif event == "access" and self.resolve is not None:
+            await room.reaccess(self.resolve)
         if room.closed:
             with self._guard:
                 if self.rooms.get(map_id) is room:
