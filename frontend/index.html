@@ -16,6 +16,22 @@
     <p id="hud"></p>
     <div id="roster" hidden></div>
     <p id="speed"></p>
+    <!-- Your own emote, for a moment (room/emotes.js). -->
+    <p id="my-emote" aria-live="polite" hidden></p>
+    <!-- Chat in a shared map (room/chat.js): recent lines that fade, and the
+         line Y opens to type into. -->
+    <div id="chat">
+      <div id="chat-feed" aria-live="polite" hidden></div>
+      <form id="chat-form" hidden>
+        <input
+          type="text"
+          autocomplete="off"
+          aria-label="Chat message"
+          placeholder="Say something · Enter sends · Esc closes"
+        />
+        <p class="chat-note" role="status" hidden>Not sent: reconnecting. Enter again once it's back.</p>
+      </form>
+    </div>
 
     <div id="radial-menu" hidden></div>
     <div id="editor" hidden></div>
@@ -31,6 +47,8 @@
         <!-- A shared server map, for people who may invite (main.js). -->
         <p class="prompt-share" id="share-hint" hidden><a id="share-link">Share this map…</a></p>
       </div>
+      <!-- A shared map's people and chat (room/roomPanel.js). -->
+      <aside id="room-panel" hidden></aside>
       <!-- Filled from the server's keymap at startup (keysHelp.js); only
            shown on `?`, the full list lives on the Help page. -->
       <ul class="keys" hidden></ul>

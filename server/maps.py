@@ -33,6 +33,7 @@ from . import access, history
 from . import db as dbmod
 from .accounts import current_user, database, fail, finish, gate, json_body, signed_in, store
 from .atlasfile import FormatError, PasswordError, decode_any
+from .config import SETTINGS
 from .filenames import map_name
 from .permissions import effective
 
@@ -326,18 +327,44 @@ def save_map(map_id: str) -> Response | tuple[Response, int]:
     return jsonify(revision=revision, updated_at=now)
 
 
+# The Looks a map can open in (context/MOONSHOT.md decision 19): the same
+# list the account's own "Starting look" picks from.
+LOOK_IDS = frozenset(SETTINGS[("visuals", "look")]["options"])
+
+
 @maps.patch("/<map_id>")
 @signed_in
-def rename_map(map_id: str) -> Response | tuple[Response, int]:
+def update_map(map_id: str) -> Response | tuple[Response, int]:
+    """The owner renames the map and/or sets the Look it opens in for
+    everyone (`default_look`; null clears it). An open room hears both, for
+    whoever joins next; people already in keep their own Look."""
     require(map_id, owner=True)
-    name = clean_name(json_body().get("name"))
-    if name is None:
+    body = json_body()
+    fields: dict[str, str | None] = {}
+    if "name" in body:
+        name = clean_name(body.get("name"))
+        if name is None:
+            return fail("A map needs a name.", 400)
+        fields["name"] = name
+    if "default_look" in body:
+        look = body.get("default_look")
+        if look is not None and (not isinstance(look, str) or look not in LOOK_IDS):
+            return fail("That isn't one of the Looks.", 400)
+        fields["default_look"] = look
+    if not fields:
         return fail("A map needs a name.", 400)
     with database().connect() as conn:
-        changed = conn.execute("UPDATE maps SET name = ? WHERE id = ?", (name, map_id)).rowcount
-    if not changed:
+        changed = conn.execute(
+            f"UPDATE maps SET {', '.join(f'{key} = ?' for key in fields)} WHERE id = ?",  # noqa: S608 -- keys are ours
+            (*fields.values(), map_id),
+        ).rowcount
+        row = conn.execute("SELECT name, default_look FROM maps WHERE id = ?", (map_id,)).fetchone()
+    if not changed or row is None:
         abort(404)
-    return jsonify(id=map_id, name=name)
+    rooms = current_app.extensions.get("pleiades_rooms")
+    if rooms is not None:
+        rooms.set_meta(map_id, name=row["name"], default_look=row["default_look"])
+    return jsonify(id=map_id, name=row["name"], default_look=row["default_look"])
 
 
 @maps.post("/<map_id>/duplicate")

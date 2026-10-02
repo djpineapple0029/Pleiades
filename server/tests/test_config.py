@@ -149,10 +149,10 @@ def test_hand_typed_password_is_hashed_and_removed(store, isolated_config):
 
 
 def test_hand_edits_keep_comments_through_a_panel_save(store, isolated_config):
-    text = isolated_config.read_text().replace('balance = ["B"]', 'balance = ["G"] # mine')
+    text = isolated_config.read_text().replace('balance = ["B"]', 'balance = ["K"] # mine')
     isolated_config.write_text(text + "\n# a note at the end\n")
     store.load()
-    assert store.values["keybinds"]["balance"] == ["G"]
+    assert store.values["keybinds"]["balance"] == ["K"]
     values = store.all_values()
     values["flight"]["move_speed"] = 150
     assert store.save(values) == []
@@ -228,11 +228,11 @@ def test_admin_endpoints_need_a_session(client):
 def test_save_through_the_panel_reaches_the_public_config(client):
     auth = sign_in(client)
     values = client.get("/api/admin/config", headers=auth).json["values"]
-    values["keybinds"]["balance"] = ["G"]
+    values["keybinds"]["balance"] = ["K"]
     values["visuals"]["bloom_strength"] = 0.5
     assert client.put("/api/admin/config", json=values, headers=auth).status_code == 200
     public = client.get("/api/config").json
-    assert public["keybinds"]["balance"] == ["G"]
+    assert public["keybinds"]["balance"] == ["K"]
     assert public["visuals"]["bloom_strength"] == 0.5
 
 

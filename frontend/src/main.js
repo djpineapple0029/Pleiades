@@ -4,7 +4,7 @@ import { createScene } from './scene.js'
 import { createFlight } from './flight.js'
 import { createSkybox } from './skybox.js'
 import { createDust } from './dust.js'
-import { createLooks, storedLook } from './looks.js'
+import { LOOKS, createLooks, storedLook } from './looks.js'
 import { createDustRivers } from './dustRivers.js'
 import { createSupernova } from './supernova.js'
 import { createBloom } from './bloom.js'
@@ -38,6 +38,10 @@ import { colourFor, hexToRgb, personName } from './room/authors.js'
 import { createPosePublisher } from './room/presence.js'
 import { createAvatars } from './room/avatars.js'
 import { createRoster } from './room/roster.js'
+import { createChat, createChatLog } from './room/chat.js'
+import { createEmotes } from './room/emotes.js'
+import { createFollow, yieldsInCircle } from './room/follow.js'
+import { createRoomPanel } from './room/roomPanel.js'
 import { docToPayload } from './format/ydoc.js'
 
 const MAX_FRAME_DELTA = 0.1 // seconds — clamps the jump after a backgrounded tab
@@ -258,6 +262,9 @@ const clock = new THREE.Clock()
 // whether anything moves. A look without motion freezes the star-pulse clock
 // read by the frame loop below; the others carry on from where it stopped.
 let frozenElapsed = 0
+// Other people are drawn in the look's style, and the owner's default-Look
+// line names the one they're in; both arrive below.
+let lookForRoom = () => {}
 const looks = createLooks({
   renderer,
   skybox,
@@ -270,12 +277,16 @@ const looks = createLooks({
   bloomStrength: visuals.bloom_strength,
   onChange: (look) => {
     if (!look.motion) frozenElapsed = clock.elapsedTime
+    lookForRoom(look)
   },
   // Signed in, a V pick is kept in the account, not this browser, and the
   // account's look (the config's, for them) is where every map starts.
   ...(settings.account ? { store: keepLookInAccount } : {}),
 })
-looks.set(settings.account ? visuals.look : (storedLook() ?? visuals.look), {
+// A shared map can name the Look it opens in (decision 19); anyone can
+// still switch with V.
+const ownLook = settings.account ? visuals.look : (storedLook() ?? visuals.look)
+looks.set(room?.map?.default_look ?? ownLook, {
   instant: true,
   remember: false,
 })
@@ -308,6 +319,83 @@ const renderSettings = {
   looks,
 }
 
+// Presence and chat (context/MOONSHOT.md): everyone else as avatars, what
+// they say over them, in a feed over the HUD and in the Esc screen's panel.
+const avatars = room ? createAvatars({ scene }) : null
+if (avatars) {
+  lookForRoom = (look) => {
+    avatars.setLook(look)
+    showLookLine()
+  }
+  avatars.setLook(looks.current)
+}
+// Show editors / Show viewers (decision 14a): the account's settings, and
+// the Esc screen's switches, which keep a change in the account too.
+const shown = {
+  editors: settings.multiplayer.show_editor_avatars,
+  viewers: settings.multiplayer.show_viewer_avatars,
+}
+avatars?.setVisible(shown)
+async function keepShown(next) {
+  avatars.setVisible(next)
+  if (!settings.account) return
+  const result = await request('api/account/settings', {
+    method: 'PATCH',
+    body: { multiplayer: { show_editor_avatars: next.editors, show_viewer_avatars: next.viewers } },
+  })
+  if (!result.ok) interaction.reportError(`not saved to your account: ${result.error}`)
+}
+const chatLog = room ? createChatLog() : null
+const chat = room
+  ? createChat({
+      room,
+      log: chatLog,
+      feed: document.getElementById('chat-feed'),
+      form: document.getElementById('chat-form'),
+      avatars,
+      personName,
+    })
+  : null
+const emotes = room ? createEmotes({ room, avatars, corner: document.getElementById('my-emote') }) : null
+// F: the camera trails someone (room/follow.js), from their smoothed pose.
+const follow = room
+  ? createFollow({ camera, presence: avatars, onStop: (reason) => interaction.followStopped(reason) })
+  : null
+/** Everyone else drawn now, where they're drawn: who F can pick from. */
+function followables() {
+  const now = performance.now()
+  const people = []
+  for (const person of room.roster) {
+    if (person.conn === room.you?.conn) continue
+    for (const clientId of person.clientIds ?? []) {
+      const pose = avatars.sampleOf(clientId, now)
+      const following = room.awareness.getStates().get(clientId)?.following ?? null
+      if (pose) people.push({ clientId, p: pose.p, name: personName(person), following })
+    }
+  }
+  return people
+}
+const roomPanel = room
+  ? createRoomPanel(document.getElementById('room-panel'), {
+      onSend: (text) => chat.send(text),
+      shown,
+      onShow: keepShown,
+      onSetLook: setMapLook,
+      // The Esc screen's Follow: start trailing them, and fly (a click may lock).
+      onFollow: (person) => {
+        const people = followables()
+        const target = people.find((p) => person.clientIds.includes(p.clientId))
+        if (!target) return
+        interaction.followPerson(target.clientId, target.name, target.following)
+        requestLock()
+      },
+    })
+  : null
+if (room) {
+  roomPanel.element.hidden = false
+  chatLog.onAdd(() => roomPanel.renderChat(chatLog.messages))
+}
+
 const interaction = createInteraction({
   camera,
   controls: flight.controls,
@@ -334,6 +422,10 @@ const interaction = createInteraction({
   speedEl: speed,
   keymap,
   room,
+  chat,
+  emotes,
+  follow,
+  followables,
   leaveToMaps,
 })
 
@@ -372,14 +464,18 @@ function onRoomMessage(message) {
     showPeople()
   } else if (message.type === 'access') {
     showShareLink()
+    roomPanel.setCanChat(can(room, 'chat'))
+  } else if (message.type === 'chat') {
+    chat.receive(message)
+  } else if (message.type === 'emote') {
+    emotes.receive(message)
   } else {
     interaction.roomMessage(message)
   }
 }
 
-// Presence (context/MOONSHOT.md): this camera out through awareness, everyone
-// else in as avatars and roster bubbles.
-const avatars = room ? createAvatars({ scene }) : null
+// Presence: this camera out through awareness, everyone else in as avatars
+// (above) and roster bubbles.
 const publisher = room ? createPosePublisher({ awareness: room.awareness }) : null
 const BEHIND = 30 // how far back a roster click puts you, along their view
 const roster = room
@@ -406,6 +502,30 @@ function showPeople() {
   }
   avatars.sync(others)
   roster.render(room.roster, room.you)
+  roomPanel.renderPeople(room.roster, room.you)
+}
+
+// The owner's default Look (decision 19), set from the Esc screen.
+let mapLook = room?.map?.default_look ?? null
+function showLookLine() {
+  roomPanel?.renderLook({
+    canSet: room.you?.role === 'owner',
+    saved: mapLook,
+    current: looks.current.id,
+    looks: LOOKS,
+  })
+}
+async function setMapLook(id) {
+  const result = await request(`api/maps/${encodeURIComponent(mapId)}`, {
+    method: 'PATCH',
+    body: { default_look: id },
+  })
+  if (!result.ok) {
+    interaction.reportError(`the map's Look was not saved: ${result.error}`)
+    return
+  }
+  mapLook = result.data.default_look
+  showLookLine()
 }
 
 // The Esc screen's "Share this map…", for anyone with the Invite permission
@@ -428,6 +548,8 @@ if (room) {
     }
   })
   showPeople()
+  roomPanel.setCanChat(can(room, 'chat'))
+  showLookLine()
 }
 // Someone else deleted it: whatever is open about it here closes (decision 10).
 onRemoved = (removal) => {
@@ -445,7 +567,20 @@ const hasUnsaved = () => (room ? false : files.isDirty)
 // The e2e suites' handle on the app (tests/e2e/multiplayer). Dev server only:
 // `npm run build` drops this block, so it never ships.
 if (import.meta.env.DEV) {
-  window.__pleiades = { graph, mapDoc, undo, room, interaction, avatars, commands: interaction.commands }
+  window.__pleiades = {
+    graph,
+    mapDoc,
+    undo,
+    room,
+    interaction,
+    avatars,
+    chat,
+    chatLog,
+    emotes,
+    follow,
+    looks,
+    commands: interaction.commands,
+  }
 }
 
 flight.controls.addEventListener('lock', () => {
@@ -565,6 +700,14 @@ renderer.setAnimationLoop(guard.guardFrame(renderer, frame, onRenderCrash))
 function frame() {
   const delta = Math.min(clock.getDelta(), MAX_FRAME_DELTA)
   flight.update(delta)
+  // After flight: following someone has the last word on where the camera
+  // is (any movement key ends it, in interaction.js).
+  if (follow?.active) {
+    // They started following this tab too: one of the two gives way.
+    const theirTarget = room.awareness.getStates().get(follow.target)?.following ?? null
+    if (yieldsInCircle({ me: mapDoc.doc.clientID, target: follow.target, theirTarget })) follow.stop('mutual')
+    follow.update()
+  }
   // After flight: the flight out to the overview owns the camera outright, and
   // pointer lock takes a moment to actually go.
   overview.update(delta)

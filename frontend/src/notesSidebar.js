@@ -73,6 +73,13 @@ export function createNotesSidebar(aside, { writeKey = 'Ctrl/⌘+Enter' } = {}) 
   const textarea = document.createElement('textarea')
   textarea.className = 'notes-textarea'
   textarea.spellcheck = true
+  // Other people's carets in a shared map (room/notesCursors.js) draw in a
+  // layer over the textarea; clicks go through it.
+  const field = document.createElement('div')
+  field.className = 'notes-field'
+  const cursorLayer = document.createElement('div')
+  cursorLayer.className = 'notes-cursors'
+  field.append(textarea, cursorLayer)
 
   /**
    * Edit mode. `bind(textarea)` connects it to the notes (and fills it).
@@ -103,7 +110,7 @@ export function createNotesSidebar(aside, { writeKey = 'Ctrl/⌘+Enter' } = {}) 
     actions.append(cancelButton, saveButton)
 
     body.classList.remove('notes-body--empty')
-    body.replaceChildren(textarea, hint, actions)
+    body.replaceChildren(field, hint, actions)
     aside.classList.add('notes-sidebar--editing')
     aside.hidden = false
 
@@ -119,6 +126,8 @@ export function createNotesSidebar(aside, { writeKey = 'Ctrl/⌘+Enter' } = {}) 
     show,
     edit,
     cancel: () => finish(false),
+    /** Where other people's carets are drawn while editing. */
+    cursorLayer,
     toggle: () => setVisible(!visible),
     get isVisible() {
       return visible

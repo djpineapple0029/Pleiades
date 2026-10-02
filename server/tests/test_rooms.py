@@ -306,6 +306,18 @@ async def test_registry_online_lists_who_is_in_each_map(store):
 
 
 @pytest.mark.anyio
+async def test_registry_online_marks_guests(store):
+    registry = RoomRegistry(store)
+    registry.bind_loop(asyncio.get_running_loop())
+    await registry.join("m", peer("ed"), "")
+    guest = Peer(conn="g", name="sam", role="viewer", perms={}, guest=True, user_id=None, guest_key="k")
+    await registry.join("m", guest, "")
+    online = registry.online(["m"])["m"]
+    assert [(p["name"], p["guest"]) for p in online] == [("ed", False), ("sam", True)]
+    assert all(set(p) == {"name", "colour", "guest"} for p in online)  # nothing a list row shouldn't show
+
+
+@pytest.mark.anyio
 async def test_notify_reaches_the_room_from_another_thread(store):
     registry = RoomRegistry(store)
     registry.bind_loop(asyncio.get_running_loop())
@@ -641,3 +653,191 @@ async def test_the_registry_rechecks_a_link_guest_when_their_link_expires(store)
     await asyncio.sleep(0.3)
     assert expired == ["guest"]
     assert ("close", 4403, "access removed") in drain(guest)
+
+
+# --- chat (Task 3.1) ---------------------------------------------------------
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("text", "sent"),
+    [
+        ("hi", "hi"),
+        ("<img src=x onerror=alert(1)>", "<img src=x onerror=alert(1)>"),  # text, never markup
+        ("👩‍🚀 مرحبا", "👩‍🚀 مرحبا"),
+        ("a\u0007b", "ab"),
+        ("two\nlines", "two\nlines"),
+        ("  padded  ", "padded"),
+        ("é", "é"),  # NFC
+        ("x" * 500, "x" * 500),
+        ("x" * 501, None),
+        ("   ", None),
+        ("\u0007", None),
+        (42, None),
+        (None, None),
+    ],
+)
+async def test_review_focus_4_chat_text(store, text, sent):
+    room = Room("m", store)
+    await room.open()
+    a = Peer(conn="a", name="a", role="editor", perms={"chat": True}, guest=False, user_id=1, guest_key=None)
+    b = peer("b")
+    await room.join(a, "")
+    await room.join(b, "")
+    drain(a), drain(b)
+    await room.on_text(a, {"type": "chat", "text": text})
+    got = [t for t in texts(b) if t["type"] == "chat"]
+    assert ([m["text"] for m in got] or [None]) == [sent]
+
+
+@pytest.mark.anyio
+async def test_chat_reaches_everyone_including_the_sender_with_who_sent_it(store):
+    room = Room("m", store)
+    await room.open()
+    a = Peer(conn="a", name="Ari", role="editor", perms={"chat": True}, guest=False, user_id=1, guest_key=None)
+    g = Peer(conn="g", name="Sam", role="viewer", perms={"chat": False}, guest=True, user_id=None, guest_key="k")
+    await room.join(a, "")
+    await room.join(g, "")
+    drain(a), drain(g)
+    await room.on_text(a, {"type": "chat", "text": "hello"})
+    mine, theirs = texts(a), texts(g)
+    assert mine == theirs
+    (message,) = mine
+    assert message["type"] == "chat" and message["conn"] == "a" and message["name"] == "Ari"
+    assert message["colour"] == a.colour and message["guest"] is False and message["text"] == "hello"
+    assert isinstance(message["at"], int) and message["at"] > 1_700_000_000_000
+    assert store.saves == []  # never stored
+
+
+@pytest.mark.anyio
+async def test_chat_needs_the_permission(store):
+    room = Room("m", store)
+    await room.open()
+    v = Peer(conn="v", name="v", role="viewer", perms={"chat": False}, guest=False, user_id=2, guest_key=None)
+    other = peer("o")
+    await room.join(v, "")
+    await room.join(other, "")
+    drain(v), drain(other)
+    await room.on_text(v, {"type": "chat", "text": "hi"})
+    assert texts(v) == [{"type": "error", "code": "no_chat"}]
+    assert texts(other) == []
+
+
+# --- emotes (Task 3.2) -------------------------------------------------------
+
+
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+async def emote_room(store, monkeypatch, perms=None):
+    clock = Clock()
+    monkeypatch.setattr("server.rooms.time.monotonic", clock)
+    room = Room("m", store)
+    await room.open()
+    a = Peer(conn="a", name="a", role="editor", perms=perms or {"chat": True}, guest=False, user_id=1, guest_key=None)
+    b = peer("b")
+    await room.join(a, "")
+    await room.join(b, "")
+    drain(a), drain(b)
+    return room, a, b, clock
+
+
+def emotes(p):
+    return [t for t in texts(p) if t["type"] == "emote"]
+
+
+@pytest.mark.anyio
+async def test_an_emote_reaches_everyone_with_who_sent_it(store, monkeypatch):
+    room, a, b, _ = await emote_room(store, monkeypatch)
+    await room.on_text(a, {"type": "emote", "id": "wave"})
+    assert emotes(b) == [{"type": "emote", "conn": "a", "colour": a.colour, "id": "wave"}]
+    assert len(emotes(a)) == 1
+
+
+@pytest.mark.anyio
+async def test_emotes_half_a_second_apart_send_one(store, monkeypatch):
+    room, a, b, clock = await emote_room(store, monkeypatch)
+    await room.on_text(a, {"type": "emote", "id": "wave"})
+    clock.now += 0.5
+    await room.on_text(a, {"type": "emote", "id": "heart"})
+    assert [e["id"] for e in emotes(b)] == ["wave"]
+    assert [t["type"] for t in texts(a)] == ["emote"]  # the wave; the second is dropped without an error
+
+
+@pytest.mark.anyio
+async def test_emotes_more_than_a_second_apart_send_both(store, monkeypatch):
+    room, a, b, clock = await emote_room(store, monkeypatch)
+    await room.on_text(a, {"type": "emote", "id": "wave"})
+    clock.now += 1.1
+    await room.on_text(a, {"type": "emote", "id": "heart"})
+    assert [e["id"] for e in emotes(b)] == ["wave", "heart"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("emote_id", ["dance", "", None, 3, "<b>wave</b>"])
+async def test_an_unknown_emote_is_ignored(store, monkeypatch, emote_id):
+    room, a, b, _ = await emote_room(store, monkeypatch)
+    await room.on_text(a, {"type": "emote", "id": emote_id})
+    assert texts(b) == [] and texts(a) == []
+
+
+@pytest.mark.anyio
+async def test_an_unknown_emote_does_not_start_the_cooldown(store, monkeypatch):
+    room, a, b, _ = await emote_room(store, monkeypatch)
+    await room.on_text(a, {"type": "emote", "id": "dance"})
+    await room.on_text(a, {"type": "emote", "id": "wave"})
+    assert [e["id"] for e in emotes(b)] == ["wave"]
+
+
+@pytest.mark.anyio
+async def test_emotes_need_the_chat_permission(store, monkeypatch):
+    room, a, b, _ = await emote_room(store, monkeypatch, perms={"chat": False})
+    await room.on_text(a, {"type": "emote", "id": "wave"})
+    assert texts(b) == [] and texts(a) == []
+
+
+def test_the_emote_list_matches_the_clients():
+    from pathlib import Path
+
+    from server.rooms import EMOTE_IDS
+
+    source = (Path(__file__).parents[2] / "frontend/src/room/emotes.js").read_text()
+    listed = source.split("export const EMOTES = [", 1)[1].split("]", 1)[0]
+    assert {part.strip().strip("'\"") for part in listed.split(",") if part.strip()} == EMOTE_IDS
+
+
+@pytest.mark.anyio
+async def test_set_meta_reaches_whoever_joins_next(store):
+    registry = RoomRegistry(store)
+    registry.bind_loop(asyncio.get_running_loop())
+    first = peer("a")
+    await registry.join("m", first, "")
+    drain(first)
+    await asyncio.to_thread(registry.set_meta, "m", name="Renamed", default_look="deep-sea")
+    await asyncio.sleep(0.01)
+    later = peer("b")
+    await registry.join("m", later, "")
+    welcome = texts(later)[0]
+    assert welcome["map"] == {"id": "m", "name": "Renamed", "default_look": "deep-sea"}
+    # Nobody already in is told to switch.
+    assert not [t for t in texts(first) if t["type"] not in ("roster",)]
+
+
+@pytest.mark.anyio
+async def test_chat_has_a_budget_per_connection(store, monkeypatch):
+    room, a, b, clock = await emote_room(store, monkeypatch)
+    for i in range(7):
+        await room.on_text(a, {"type": "chat", "text": f"line {i}"})
+    got = [t["text"] for t in texts(b) if t["type"] == "chat"]
+    assert got == [f"line {i}" for i in range(5)]  # a burst of five, then no more
+    errors = [t for t in texts(a) if t["type"] == "error"]
+    assert errors == [{"type": "error", "code": "chat_slow"}] * 2  # the sender alone hears why
+    clock.now += 1.0  # a second later, one more fits
+    await room.on_text(a, {"type": "chat", "text": "again"})
+    await room.on_text(a, {"type": "chat", "text": "too soon"})
+    assert [t["text"] for t in texts(b) if t["type"] == "chat"] == ["again"]

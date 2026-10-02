@@ -24,6 +24,7 @@ import logging
 import secrets
 import threading
 import time
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple, Protocol
@@ -61,6 +62,14 @@ PLAYER_COLOURS = [
     "#e9ecef",
 ]
 FAILURES_BEFORE_WARNING = 3
+CHAT_MAX = 500  # characters, after cleaning (MOONSHOT-BUILD.md limits)
+# The emote ring's choices, the same list as frontend/src/room/emotes.js.
+EMOTE_IDS = frozenset({"wave", "yes", "no", "look", "idea", "laugh", "heart", "question"})
+EMOTE_COOLDOWN = 1.0  # seconds between one connection's emotes (decision 16)
+# Chat lines one connection may send at once, and how many a second after
+# that: plenty to talk, too few to flood everyone's screen.
+CHAT_BURST = 5
+CHAT_PER_SECOND = 1.0
 # The only roots a map's doc has (server/ydoc.py). Clients write `nodes` and
 # `edges`; `meta` (camera, envelope, pass-through keys) is the server's alone
 # until a later milestone gives a client something to put there.
@@ -106,6 +115,11 @@ class Peer:
     outbox: asyncio.Queue = field(default_factory=asyncio.Queue)
     # Set once a close is queued: nothing more it sends is acted on.
     closing: bool = False
+    # time.monotonic() of this connection's last emote that went out.
+    last_emote: float | None = None
+    # Chat budget: lines in hand, and when it was last topped up.
+    chat_tokens: float = CHAT_BURST
+    chat_checked: float | None = None
 
     @property
     def can_edit(self) -> bool:
@@ -311,19 +325,73 @@ class Room:
 
     async def on_text(self, peer: Peer, message: dict[str, Any]) -> None:
         """`flush`: save now and say whether it worked (Ctrl+S, and leaving
-        for the map list, which then shows what was just done). Chat and
-        emotes join in milestone 3. Unknown types are ignored."""
+        for the map list, which then shows what was just done). `chat`: a
+        line to everyone. Unknown types are ignored."""
         if peer.closing or self.closed or peer not in self.peers:
             return
         if peer.link_expired:
             await self._remove(peer)
             return
-        if message.get("type") == "flush":
+        kind = message.get("type")
+        if kind == "flush":
             ok = await self.persist()
             async with self._lock:
                 pass  # a save already under way when this came in has finished too
             # Its own save, not whether anyone has edited since.
             peer.send_text({"type": "flushed", "ok": ok and self._last_save_ok})
+        elif kind == "chat":
+            self._chat(peer, message.get("text"))
+        elif kind == "emote":
+            self._emote(peer, message.get("id"))
+
+    def _chat(self, peer: Peer, text: Any) -> None:
+        """To everyone, the sender too, so every log is in the room's order.
+        Never stored. Clients show it as text, never markup (Review Focus 4)."""
+        if not peer.perms.get("chat"):
+            peer.send_text({"type": "error", "code": "no_chat"})
+            return
+        cleaned = clean_chat(text)
+        if cleaned is None:
+            return
+        if not self._chat_budget(peer):
+            peer.send_text({"type": "error", "code": "chat_slow"})
+            return
+        message = {
+            "type": "chat",
+            "conn": peer.conn,
+            "name": peer.name,
+            "colour": peer.colour,
+            "guest": peer.guest,
+            "text": cleaned,
+            "at": int(time.time() * 1000),
+        }
+        for p in self.peers:
+            p.send_text(message)
+
+    @staticmethod
+    def _chat_budget(peer: Peer) -> bool:
+        """Takes one line from the peer's budget if there is one."""
+        now = time.monotonic()
+        if peer.chat_checked is not None:
+            peer.chat_tokens = min(CHAT_BURST, peer.chat_tokens + (now - peer.chat_checked) * CHAT_PER_SECOND)
+        peer.chat_checked = now
+        if peer.chat_tokens < 1:
+            return False
+        peer.chat_tokens -= 1
+        return True
+
+    def _emote(self, peer: Peer, emote_id: Any) -> None:
+        """One a second per connection; too soon, unknown, or without the chat
+        permission is dropped without a word (an error a second would be spam)."""
+        if not peer.perms.get("chat") or not isinstance(emote_id, str) or emote_id not in EMOTE_IDS:
+            return
+        now = time.monotonic()
+        if peer.last_emote is not None and now - peer.last_emote < EMOTE_COOLDOWN:
+            return
+        peer.last_emote = now
+        message = {"type": "emote", "conn": peer.conn, "colour": peer.colour, "id": emote_id}
+        for p in self.peers:
+            p.send_text(message)
 
     # --- validation --------------------------------------------------------
 
@@ -526,6 +594,18 @@ class Room:
             p.send_text(message)
 
 
+def clean_chat(text: Any) -> str | None:
+    """A chat line as it is sent on: NFC, control characters gone (line breaks
+    stay), trimmed; None if that leaves nothing or more than CHAT_MAX."""
+    if not isinstance(text, str):
+        return None
+    text = unicodedata.normalize("NFC", text)
+    text = "".join(ch for ch in text if ch == "\n" or unicodedata.category(ch) != "Cc").strip()
+    if not text or len(text) > CHAT_MAX:
+        return None
+    return text
+
+
 def _awareness_client_ids(update: bytes) -> set[int]:
     """The client ids an awareness update speaks for (y-protocols encoding)."""
     decoder = Decoder(update)
@@ -625,6 +705,20 @@ class RoomRegistry:
 
         loop.call_soon_threadsafe(lambda: asyncio.ensure_future(run()))
 
+    def set_meta(self, map_id: str, *, name: str, default_look: str | None) -> None:
+        """From any thread: the map was renamed or given a default Look. An
+        open room tells whoever joins next; nobody already in is moved."""
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            return
+
+        def apply() -> None:
+            room = self.rooms.get(map_id)
+            if room is not None:
+                room.name, room.default_look = name, default_look
+
+        loop.call_soon_threadsafe(apply)
+
     def notify_all(self, event: str) -> None:
         """From any thread: `notify` every open room (an admin switch changed)."""
         with self._guard:
@@ -685,11 +779,12 @@ class RoomRegistry:
 
         loop.call_soon_threadsafe(lambda: asyncio.ensure_future(run()))
 
-    def online(self, map_ids: list[str]) -> dict[str, list[dict[str, str]]]:
+    def online(self, map_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+        """From any thread: who is in each of these maps now, as a list row shows them."""
         with self._guard:
             rooms = {mid: self.rooms.get(mid) for mid in map_ids}
         return {
-            mid: [{"name": p.name, "colour": p.colour} for p in list(room.peers)]
+            mid: [{"name": p.name, "colour": p.colour, "guest": p.guest} for p in list(room.peers)]
             for mid, room in rooms.items()
             if room is not None and room.peers
         }

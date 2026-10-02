@@ -47,6 +47,25 @@ function slerp(a, b, t) {
   return [a[0] * wa + bx * wb, a[1] * wa + by * wb, a[2] * wa + bz * wb, a[3] * wa + bw * wb]
 }
 
+// Far past any map: a pose out here is nonsense, not a place.
+const FARTHEST = 1e6
+
+/**
+ * Another browser's pose as it arrived through awareness, made safe to draw
+ * and to follow: three finite coordinates within reach, and a rotation of
+ * four finite numbers, normalised. Null for anything else — a modified
+ * client must not be able to send a camera that follows it to NaN.
+ */
+export function cleanPose(pose) {
+  if (!pose || typeof pose !== 'object') return null
+  const { p, q } = pose
+  const numbers = (list, n) => Array.isArray(list) && list.length === n && list.every(Number.isFinite)
+  if (!numbers(p, 3) || !numbers(q, 4) || p.some((v) => Math.abs(v) > FARTHEST)) return null
+  const length = Math.hypot(...q)
+  if (!(length > 1e-6)) return null
+  return { p: [...p], q: q.map((v) => v / length) }
+}
+
 /**
  * One person's recent poses, by arrival time. `sample(now)` shows them
  * `delay` ms in the past, between the two poses that bracket that moment

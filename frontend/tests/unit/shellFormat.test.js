@@ -1,6 +1,14 @@
 // The account shell's list wording (src/shell/format.js).
 import { describe, it, expect } from 'vitest'
-import { dateTime, formatSize, mapSummary, relativeTime, versionSummary } from '../../src/shell/format.js'
+import {
+  dateTime,
+  formatSize,
+  mapSummary,
+  relativeTime,
+  sameMaps,
+  versionSummary,
+  whoIsIn,
+} from '../../src/shell/format.js'
 
 describe('shell format', () => {
   const now = 1_800_000_000
@@ -75,5 +83,50 @@ describe('asking before a change that reaches other people', () => {
     expect(deleteQuestion(0, 2).text).toBe(
       '2 people are in this map now. Deleting it removes it for everyone.',
     )
+  })
+})
+
+describe("who's in a map, on its row (MOONSHOT decision 17)", () => {
+  const person = (name, colour = '#fff', guest = false) => ({ name, colour, guest })
+
+  it('nobody: nothing to show', () => {
+    expect(whoIsIn([])).toBeNull()
+    expect(whoIsIn(undefined)).toBeNull()
+  })
+
+  it('up to three coloured initials, every name in the title', () => {
+    expect(whoIsIn([person('ari', '#f00'), person('Sam', '#0f0')])).toEqual({
+      initials: [
+        { initial: 'A', colour: '#f00' },
+        { initial: 'S', colour: '#0f0' },
+      ],
+      more: '',
+      title: 'In this map now: ari and Sam',
+    })
+  })
+
+  it('past three, "+N"', () => {
+    const shown = whoIsIn(['a', 'b', 'c', 'd', 'e'].map((n) => person(n)))
+    expect(shown.initials).toHaveLength(3)
+    expect(shown.more).toBe('+2')
+    expect(shown.title).toBe('In this map now: a, b, c, d and e')
+  })
+
+  it('a guest is marked as one; an emoji name keeps its whole first character', () => {
+    const shown = whoIsIn([person('🌍 earth'), person('<b>x</b>', '#fff', true)])
+    expect(shown.initials.map((i) => i.initial)).toEqual(['🌍', '<'])
+    expect(shown.title).toBe('In this map now: 🌍 earth and <b>x</b> (guest)')
+  })
+})
+
+describe('sameMaps: when the 15 s poll needs to rebuild the list (review fix)', () => {
+  it('the same maps in a new order (someone saved one) is no change', () => {
+    expect(sameMaps(['a', 'b', 'c'], ['c', 'a', 'b'])).toBe(true)
+  })
+
+  it('a map that came or went is', () => {
+    expect(sameMaps(['a', 'b'], ['a', 'b', 'c'])).toBe(false)
+    expect(sameMaps(['a', 'b'], ['a'])).toBe(false)
+    expect(sameMaps(['a', 'b'], ['a', 'x'])).toBe(false)
   })
 })

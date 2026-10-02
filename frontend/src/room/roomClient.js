@@ -231,8 +231,11 @@ export function createRoomClient({
     get roster() {
       return roster
     },
+    /** True if it went; false while the connection is down (nothing is queued). */
     send(message) {
-      if (socket && socket.readyState === 1) socket.send(JSON.stringify(message))
+      if (!socket || socket.readyState !== 1) return false
+      socket.send(JSON.stringify(message))
+      return true
     },
     /**
      * Asks the room to save now. Resolves true once it has, false if it

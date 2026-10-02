@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { NODE_RADIUS } from './graphView.js'
 import { createStatus } from './status.js'
 import { bindTextarea, trimText } from './room/notesBinding.js'
+import { createCursorOverlay, cursorsFor } from './room/notesCursors.js'
 import { createCommands } from './commands.js'
 import { rankNodes } from './search.js'
 import { focusSetOf } from './heat.js'
@@ -12,6 +13,8 @@ import { LOOKS } from './looks.js'
 import { nodeName } from './ids.js'
 import { personName } from './room/authors.js'
 import { can, denyText } from './room/can.js'
+import { EMOTE_MENU } from './room/emotes.js'
+import { pickTarget } from './room/follow.js'
 
 const SPAWN_DISTANCE = 90 // world units ahead of the camera for a new node
 const DOUBLE_CLICK_MS = 320
@@ -112,6 +115,7 @@ const MAP_TARGET = { kind: 'map', ring: 'top' }
 const MAP_TARGET_MORE = { kind: 'map', ring: 'more' }
 const LOOK_TARGET = { kind: 'look' }
 const SHAPE_TARGET = { kind: 'shape' }
+const EMOTE_TARGET = { kind: 'emote' }
 
 // The layout shapes (physics.js `treeShape`), clockwise from the top. Off is
 // the constellation layout, which has no tree.
@@ -178,6 +182,14 @@ export function createInteraction({
   speedEl,
   keymap = createKeymap(),
   room = null,
+  // room/chat.js in a live map: Y opens its line.
+  chat = null,
+  // room/emotes.js in a live map: G holds its ring open.
+  emotes = null,
+  // room/follow.js in a live map (F), and who could be followed:
+  // `[{ clientId, p, name }]` for everyone else drawn now.
+  follow = null,
+  followables = () => [],
   leaveToMaps = () => {},
 }) {
   const raycaster = new THREE.Raycaster()
@@ -225,7 +237,7 @@ export function createInteraction({
   let moveDistance = 0 // camera-to-node distance captured when the move started
   const lastGhostPoint = new THREE.Vector3()
   let menuTarget = null
-  let heldKey = null // the action ('look' or 'tree_shape') whose held key has a ring open
+  let heldKey = null // the action ('look', 'tree_shape' or 'emote') whose held key has a ring open
   let dwellKey = null // submenu wedge ('more', 'type' or 'back') currently being held
   let dwellSince = 0
   let lastLeftDown = 0
@@ -288,7 +300,9 @@ export function createInteraction({
     if (mode === 'flying') return ''
 
     let text = ''
-    if (overview.isActive) {
+    if (follow?.active) {
+      text = `following ${followingName} — move to stop`
+    } else if (overview.isActive) {
       // The overview hides the overlay, so the HUD is the only thing left
       // saying how to get out of it.
       const back = keymap.label('overview')
@@ -677,12 +691,19 @@ export function createInteraction({
     beginModal()
     editingAbout = { kind: 'node', id: node.id }
     let binding = null
+    let carets = null
     try {
       const kept = await sidebar.edit(nodeName(node), (textarea) => {
-        binding = bindTextarea(textarea, session.text, { origin: mapDoc.LOCAL })
+        binding = bindTextarea(textarea, session.text, {
+          origin: mapDoc.LOCAL,
+          cursor: room ? { awareness: room.awareness, node: node.id } : null,
+        })
         notesArea = textarea
         notesArea.readOnly = !canTypeNotes()
+        if (room) carets = showCarets(node.id, textarea, session.text)
       })
+      carets?.destroy()
+      carets = null
       binding?.destroy()
       binding = null
       endModal()
@@ -693,6 +714,7 @@ export function createInteraction({
         session.end()
       } else session.discard()
     } finally {
+      carets?.destroy()
       binding?.destroy()
       if (notesArea) notesArea.readOnly = false
       notesArea = null
@@ -700,6 +722,37 @@ export function createInteraction({
       if (mode === 'editing') endModal()
       sidebarKey = null // view mode redraws from scratch
       lock.resume()
+    }
+  }
+
+  /**
+   * Everyone else's caret in this star's notes, in their colour (decision 8),
+   * redrawn as they move, as anyone types, and as the box scrolls or resizes.
+   */
+  function showCarets(nodeId, textarea, ytext) {
+    const overlay = createCursorOverlay({ textarea, layer: sidebar.cursorLayer })
+    const redraw = () => {
+      const cursors = cursorsFor(nodeId, room.awareness.getStates(), mapDoc.doc, {
+        exclude: mapDoc.doc.clientID,
+      })
+      overlay.render(
+        cursors.flatMap((cursor) => {
+          const person = room.roster.find((p) => p.clientIds?.includes(cursor.clientId))
+          return person ? [{ ...cursor, colour: person.colour, name: personName(person) }] : []
+        }),
+      )
+    }
+    // After the binding has put their text in the textarea.
+    const onText = () => queueMicrotask(redraw)
+    room.awareness.on('change', redraw)
+    ytext.observe(onText)
+    redraw()
+    return {
+      destroy() {
+        room.awareness.off('change', redraw)
+        ytext.unobserve(onText)
+        overlay.destroy()
+      },
     }
   }
 
@@ -844,8 +897,75 @@ export function createInteraction({
     } else if (message.type === 'saved' && roomProblem?.startsWith('not saved')) {
       roomProblem = null
       status.notice('saved again')
+    } else if (message.type === 'error' && message.code === 'no_chat') {
+      status.notice(denyText('chat'))
+    } else if (message.type === 'error' && message.code === 'chat_slow') {
+      status.notice("slow down · that message wasn't sent")
     } else if (message.type === 'error' && message.code === 'bad_update') {
       roomProblem = 'the server refused an edit from this tab · reload'
+    }
+  }
+
+  // Who F is following, by name, for the HUD.
+  let followingName = ''
+  const MOVEMENT = ['move_forward', 'move_back', 'move_left', 'move_right', 'move_up', 'move_down']
+
+  /** F: whoever is on the crosshair, or the nearest one ahead. */
+  function followKey() {
+    if (follow.active) {
+      follow.stop('key')
+      return
+    }
+    forward.set(0, 0, -1).applyQuaternion(camera.quaternion)
+    const people = followables()
+    const id = pickTarget({ p: camera.position.toArray(), forward: forward.toArray() }, people)
+    if (id === null) {
+      status.notice(
+        people.length ? 'nobody ahead to follow · aim at their ship' : 'nobody else is here to follow',
+      )
+      return
+    }
+    const person = people.find((p) => p.clientId === id)
+    followPerson(id, person?.name, person?.following)
+  }
+
+  /** Trails this person's camera until a move, Tab, Backspace or / (decision 15). */
+  function followPerson(clientId, name, theirTarget = null) {
+    if (!follow || (mode !== 'idle' && mode !== 'flying')) return
+    // Each behind the other would chase round for ever.
+    if (theirTarget === mapDoc.doc.clientID) {
+      status.notice(`${name || 'they'} ${name ? 'is' : 'are'} following you`)
+      return
+    }
+    if (mode === 'flying') {
+      flyTo.cancel() // cancel doesn't call its `done`, so end the flight here
+      view.setEmphasis(null)
+      endModal()
+    }
+    followingName = name || 'someone'
+    follow.start(clientId)
+    room?.awareness.setLocalStateField('following', clientId)
+  }
+
+  /** follow.js says it ended: by a key here, or because they left. */
+  function followStopped(reason) {
+    room?.awareness.setLocalStateField('following', null)
+    if (reason === 'left') status.notice(`${followingName} left`)
+    else if (reason === 'mutual') status.notice(`${followingName} started following you`)
+    else status.info(`stopped following ${followingName}`)
+  }
+
+  /** Y: the chat line, with the pointer free until it closes (like notes). */
+  async function openChat() {
+    if (!allowed('chat')) return
+    await lock.release('panel')
+    mode = 'editing'
+    beginModal()
+    try {
+      await chat.prompt()
+    } finally {
+      if (mode === 'editing') endModal()
+      lock.resume()
     }
   }
 
@@ -1244,6 +1364,7 @@ export function createInteraction({
   /** A roster bubble: fly to a camera pose (behind someone, looking where they look). */
   function flyToPose(position, quaternion) {
     if (mode !== 'idle' && mode !== 'flying') return
+    follow?.stop('moved')
     jumps.push({ position: camera.position.clone(), quaternion: camera.quaternion.clone() })
     mode = 'flying'
     beginModal()
@@ -1291,15 +1412,20 @@ export function createInteraction({
   }
 
   /**
-   * A ring held open by a key (look: V, tree_shape: T) and picked on that
-   * key's release rather than the right button's.
+   * A ring held open by a key (look: V, tree_shape: T, emote: G) and picked
+   * on that key's release rather than the right button's.
    */
+  const KEY_RINGS = {
+    look: { target: LOOK_TARGET, items: () => LOOK_MENU(renderSettings.looks.current) },
+    tree_shape: { target: SHAPE_TARGET, items: () => SHAPE_MENU(physics.treeShape) },
+    emote: { target: EMOTE_TARGET, items: () => EMOTE_MENU },
+  }
   function openKeyMenu(action) {
-    menuTarget = action === 'look' ? LOOK_TARGET : SHAPE_TARGET
+    menuTarget = KEY_RINGS[action].target
     heldKey = action
     mode = 'menu'
     beginModal()
-    menu.open(action === 'look' ? LOOK_MENU(renderSettings.looks.current) : SHAPE_MENU(physics.treeShape))
+    menu.open(KEY_RINGS[action].items())
   }
 
   function closeMenu() {
@@ -1309,6 +1435,11 @@ export function createInteraction({
     endModal()
     heldKey = null
     if (!key || !target) return
+
+    if (target.kind === 'emote') {
+      emotes?.send(key)
+      return
+    }
 
     if (target.kind === 'look') {
       const look = LOOKS.find((item) => item.id === key)
@@ -1439,6 +1570,10 @@ export function createInteraction({
     if (mode === 'editing' || mode === 'searching' || mode === 'flying') return
     const is = (id) => keymap.is(event, id)
 
+    // Moving, the overview, a jump back or a search take the camera back
+    // from whoever it's following; the key then does what it always does.
+    if (follow?.active && [...MOVEMENT, 'overview', 'jump_back', 'search'].some(is)) follow.stop('moved')
+
     // File chords and undo first, and always with preventDefault, so the
     // browser's own save-page and open-file dialogs never see the chord.
     if (mode !== 'menu') {
@@ -1520,14 +1655,28 @@ export function createInteraction({
       connectKey()
     }
 
-    // Hold to open the look ring or the layout-shape ring, move the mouse
-    // onto one, let go.
-    for (const action of ['look', 'tree_shape']) {
+    // Hold to open the look ring, the layout-shape ring or (in a live map)
+    // the emote ring, move the mouse onto one, let go.
+    for (const action of emotes ? ['look', 'tree_shape', 'emote'] : ['look', 'tree_shape']) {
       if (is(action) && !event.repeat && (controls.isLocked || overview.isActive) && mode === 'idle') {
         event.preventDefault()
+        if (action === 'emote' && !allowed('chat')) return
         openKeyMenu(action)
         return
       }
+    }
+
+    if (follow && is('follow') && !event.repeat && controls.isLocked && mode === 'idle') {
+      event.preventDefault()
+      followKey()
+      return
+    }
+
+    if (chat && is('chat') && !event.repeat && (controls.isLocked || overview.isActive) && mode === 'idle') {
+      // Or the Y would land in the field that's about to take focus.
+      event.preventDefault()
+      openChat()
+      return
     }
 
     if (is('heat') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
@@ -1601,6 +1750,8 @@ export function createInteraction({
     roomEnded,
     closeAbout,
     flyToPose,
+    followPerson,
+    followStopped,
     /** What this tab is doing, for presence: 'fly', 'overview', 'menu' or 'editing'. */
     get presenceMode() {
       if (overview.isActive) return 'overview'

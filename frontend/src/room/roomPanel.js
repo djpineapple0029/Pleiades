@@ -1,0 +1,175 @@
+/**
+ * The room panel on the Esc screen (context/MOONSHOT.md, "Esc menu"): who's
+ * in the map, the chat log and a line to type into, beside the slim "Click
+ * to fly", which stays the main thing. Everything people typed (names, chat)
+ * is set as text, never markup (Review Focus 4).
+ */
+import { personName } from './authors.js'
+import { CHAT_MAX, chatLine } from './chat.js'
+
+/** The people list: you first, then the room's order. Pure. */
+export function panelPeople(roster, you) {
+  const people = (roster ?? []).map((person) => ({
+    conn: person.conn,
+    name: personName(person),
+    colour: person.colour,
+    role: person.role,
+    you: Boolean(you) && person.conn === you.conn,
+    clientIds: person.clientIds ?? [],
+  }))
+  return [...people.filter((p) => p.you), ...people.filter((p) => !p.you)]
+}
+
+/**
+ * The owner's line about the map's default Look (decision 19): what it is,
+ * the Look they're in as the one to make it, and whether there's one to
+ * clear. Pure.
+ */
+export function defaultLookLine({ saved, current, looks }) {
+  const nameOf = (id) => looks.find((look) => look.id === id)?.name ?? id
+  return {
+    note: saved
+      ? `This map opens in ${nameOf(saved)} for everyone.`
+      : 'Everyone opens this map in their own Look.',
+    make: current && current !== saved ? `Make ${nameOf(current)} this map's Look` : null,
+    clear: Boolean(saved),
+  }
+}
+
+const el = (tag, className, text) => {
+  const node = document.createElement(tag)
+  if (className) node.className = className
+  if (text !== undefined) node.textContent = text
+  return node
+}
+
+export function createRoomPanel(
+  element,
+  {
+    onSend = () => {},
+    onFollow = null,
+    shown = { editors: true, viewers: true },
+    onShow = () => {},
+    onSetLook = () => {},
+  } = {},
+) {
+  const people = el('ul', 'room-people')
+  const log = el('div', 'room-chat-log')
+  log.setAttribute('role', 'log')
+  log.setAttribute('aria-label', 'Chat')
+  const form = el('form', 'room-chat-form')
+  const field = el('input')
+  field.type = 'text'
+  field.maxLength = CHAT_MAX
+  field.placeholder = 'Say something to everyone here'
+  field.setAttribute('aria-label', 'Chat message')
+  form.append(field)
+  const notSent = el('p', 'chat-note', "Not sent: reconnecting. Enter again once it's back.")
+  notSent.hidden = true
+  form.append(notSent)
+  const chatOff = el('p', 'room-note', 'Chat is off for you on this map')
+  chatOff.hidden = true
+  // Show editors / Show viewers (decision 14a): who gets drawn, for you only.
+  const showing = { ...shown }
+  const toggle = (key, text) => {
+    const label = el('label', 'room-toggle')
+    const box = el('input')
+    box.type = 'checkbox'
+    box.checked = showing[key]
+    box.addEventListener('change', () => {
+      showing[key] = box.checked
+      onShow({ ...showing })
+    })
+    label.append(box, document.createTextNode(text))
+    return label
+  }
+  const toggles = el('div', 'room-toggles')
+  toggles.append(toggle('editors', 'Show editors'), toggle('viewers', 'Show viewers'))
+  // The owner's default Look (decision 19); empty for everyone else.
+  const lookLine = el('div', 'room-look')
+  lookLine.hidden = true
+  element.replaceChildren(
+    el('h2', 'room-heading', 'In this map'),
+    people,
+    toggles,
+    lookLine,
+    el('h2', 'room-heading', 'Chat'),
+    log,
+    form,
+    chatOff,
+  )
+
+  // Its keys are its own: Enter here sends rather than taking the pointer
+  // back, ? is a question mark, Tab doesn't switch to the overview.
+  field.addEventListener('keydown', (event) => {
+    event.stopPropagation()
+    if (event.key === 'Enter' && !event.isComposing) {
+      event.preventDefault()
+      const result = field.value.trim() ? onSend(field.value) : 'empty'
+      // Offline, what was typed stays to send again.
+      notSent.hidden = result !== 'offline'
+      if (result !== 'offline') field.value = ''
+    } else if (event.key === 'Escape') field.blur()
+  })
+  field.addEventListener('keyup', (event) => event.stopPropagation())
+  form.addEventListener('submit', (event) => event.preventDefault())
+
+  function renderPeople(roster, you) {
+    people.replaceChildren(
+      ...panelPeople(roster, you).map((person) => {
+        const row = el('li', 'room-person')
+        const dot = el('span', 'room-dot')
+        dot.style.background = person.colour
+        const name = el('span', 'room-name', person.you ? `${person.name} (you)` : person.name)
+        name.style.color = person.colour
+        row.append(dot, name, el('span', 'room-role', person.role))
+        if (onFollow && !person.you) {
+          const button = el('button', 'room-follow', 'Follow')
+          button.type = 'button'
+          button.setAttribute('aria-label', `Follow ${person.name}`)
+          button.addEventListener('click', () => onFollow(person))
+          row.append(button)
+        }
+        return row
+      }),
+    )
+  }
+
+  function renderChat(messages) {
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 8
+    log.replaceChildren(...messages.map((message) => chatLine(message, personName)))
+    log.hidden = messages.length === 0
+    if (atBottom) log.scrollTop = log.scrollHeight
+  }
+
+  /** `canSet`: you own the map. `saved`: its default Look id or null; `current`: yours now. */
+  function renderLook({ canSet, saved, current, looks }) {
+    lookLine.hidden = !canSet
+    if (!canSet) return
+    const line = defaultLookLine({ saved, current, looks })
+    const parts = [el('p', 'room-note', `${line.note} Anyone can still switch with V.`)]
+    const buttons = el('div', 'room-look-buttons')
+    if (line.make) {
+      const make = el('button', 'room-follow', line.make)
+      make.type = 'button'
+      make.addEventListener('click', () => onSetLook(current))
+      buttons.append(make)
+    }
+    if (line.clear) {
+      const clear = el('button', 'room-follow', 'Clear')
+      clear.type = 'button'
+      clear.setAttribute('aria-label', "Clear this map's Look")
+      clear.addEventListener('click', () => onSetLook(null))
+      buttons.append(clear)
+    }
+    if (buttons.childElementCount) parts.push(buttons)
+    lookLine.replaceChildren(...parts)
+  }
+
+  function setCanChat(allowed) {
+    form.hidden = !allowed
+    chatOff.hidden = allowed
+  }
+
+  return { renderPeople, renderChat, renderLook, setCanChat, element }
+}

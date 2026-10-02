@@ -95,6 +95,8 @@ const TERMINAL = {
 export const LOOKS = [
   {
     id: 'deep-space',
+    // How other people in a shared map are drawn (room/avatarStyles.js).
+    avatar: 'ship',
     name: 'Deep Space',
     blurb: 'Everything moving: dust, drift, bloom',
     motion: true,
@@ -110,6 +112,7 @@ export const LOOKS = [
   },
   {
     id: 'deep-sea',
+    avatar: 'sub',
     name: 'Deep Sea',
     blurb: 'The ocean: jellies and marine snow',
     motion: true,
@@ -125,6 +128,9 @@ export const LOOKS = [
   },
   {
     id: 'terminal',
+    avatar: 'cursor',
+    // The cursor avatar's base colour: the page's terminal green (style.css --ink).
+    avatarInk: '#8cf5a4',
     name: 'Terminal',
     blurb: 'Abstract data in hacker green',
     motion: true,
@@ -143,6 +149,7 @@ export const LOOKS = [
 
   {
     id: 'minimal',
+    avatar: 'marker',
     name: 'Minimal',
     blurb: 'Plain orbs, nothing animated, fastest',
     motion: false,
@@ -158,6 +165,7 @@ export const LOOKS = [
   },
   {
     id: 'shallow-space',
+    avatar: 'ship',
     name: 'Shallow Space',
     blurb: 'A planet below, standing still',
     motion: false,

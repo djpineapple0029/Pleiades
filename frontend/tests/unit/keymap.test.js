@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { chordFromEvent, chordText, createKeymap, parseChord } from '../../src/keymap.js'
 import { defaultSettings, mergeSettings } from '../../src/settings.js'
+import { APP_ROWS, SERVER_MAP_ROWS } from '../../src/keysHelp.js'
+import schema from '../../../server/settings_schema.json'
 
 // A keydown as the browser would report it. `code` defaults from a letter key.
 function key(k, { code, ctrl = false, meta = false, alt = false, shift = false } = {}) {
@@ -162,5 +164,40 @@ describe('chordFromEvent', () => {
   it('gives up on a key the config has no name for', () => {
     expect(chordFromEvent(key('ä', { code: 'Quote' }))).toBeUndefined()
     expect(chordFromEvent(key('MediaPlayPause'))).toBeUndefined()
+  })
+})
+
+describe('multiplayer keys (Task 3.8)', () => {
+  it('Y chats, G emotes, F follows, by default', () => {
+    const keymap = createKeymap()
+    expect(keymap.chords('chat').map(chordText)).toEqual(['Y'])
+    expect(keymap.chords('emote').map(chordText)).toEqual(['G'])
+    expect(keymap.chords('follow').map(chordText)).toEqual(['F'])
+  })
+
+  it('no two default keys clash where both are live (the server refuses the same)', () => {
+    // Mod is Ctrl off a Mac and Cmd on one: it clashes with either.
+    const variants = (text) =>
+      text.startsWith('Mod+') ? [text, `Ctrl+${text.slice(4)}`, `Cmd+${text.slice(4)}`] : [text]
+    const owners = new Map()
+    for (const action of schema.keybinds) {
+      for (const chord of action.default) {
+        for (const variant of variants(chordText(parseChord(chord)))) {
+          for (const other of owners.get(variant) ?? []) {
+            const shared = action.contexts.filter((c) => other.contexts.includes(c))
+            expect(shared, `${action.id} and ${other.id} both on ${variant}`).toEqual([])
+          }
+          owners.set(variant, [...(owners.get(variant) ?? []), action])
+        }
+      }
+    }
+  })
+
+  it("the in-map key list (?) has them on a shared map, not on a file's", () => {
+    const ids = (rows) => rows.flatMap((row) => row.ids ?? [])
+    for (const id of ['chat', 'emote', 'follow']) {
+      expect(ids(SERVER_MAP_ROWS)).toContain(id)
+      expect(ids(APP_ROWS)).not.toContain(id)
+    }
   })
 })

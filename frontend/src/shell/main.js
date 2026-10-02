@@ -21,7 +21,9 @@ import {
   mapSummary,
   relativeTime,
   restoreQuestion,
+  sameMaps,
   versionSummary,
+  whoIsIn,
 } from './format.js'
 import { renderHelp } from './helpPage.js'
 import { ACCEPT, fileName, mapFileBlob, nameFromFile, probe, readMapFile, readsHere } from './mapFiles.js'
@@ -335,6 +337,80 @@ function openShareFromHash() {
   row?.scrollIntoView({ block: 'nearest' })
 }
 
+// --- Who's in each map, kept fresh while the list is on screen ----------------------
+
+const POLL_MS = 15_000
+
+/** A row's live dot and coloured initials (decision 17), or nothing. Text only. */
+function onlineMarker(online) {
+  const shown = whoIsIn(online)
+  const marker = document.createElement('span')
+  marker.className = 'online'
+  if (!shown) {
+    marker.hidden = true
+    return marker
+  }
+  marker.title = shown.title
+  marker.setAttribute('aria-label', shown.title)
+  const dot = document.createElement('span')
+  dot.className = 'live-dot'
+  marker.append(dot)
+  for (const { initial, colour } of shown.initials) {
+    const bubble = document.createElement('span')
+    bubble.className = 'person'
+    bubble.textContent = initial
+    bubble.style.setProperty('--person', colour)
+    marker.append(bubble)
+  }
+  if (shown.more)
+    marker.append(
+      Object.assign(document.createElement('span'), { className: 'more', textContent: shown.more }),
+    )
+  return marker
+}
+
+/** The map's name with who's in it now beside it. */
+function titleLine(link, map) {
+  const line = document.createElement('div')
+  line.className = 'title-line'
+  line.append(link, onlineMarker(map.online))
+  return line
+}
+
+/** True while someone is busy in a row: a panel, a question or a rename is open. */
+const listBusy = () =>
+  Boolean(document.querySelector('.map :is(.sharing, .history, .download, .confirm, input)'))
+
+/**
+ * Every 15 s while My maps is on screen (and the tab visible): who's in each
+ * map, updated in place. Maps that came or went rebuild the list, but only
+ * when nobody is in the middle of something on it.
+ */
+async function pollList() {
+  if (document.visibilityState !== 'visible' || !signedInNow || pageName() !== 'maps') return
+  const [result, shared] = await Promise.all([request('api/maps'), request('api/maps/shared')])
+  if (!result.ok || !shared.ok) return // quietly: the next poll, or a reload, tries again
+  const maps = result.data.maps
+  const sharedMaps = shared.data.maps
+  const shownIds = [...document.querySelectorAll('#maps .map, #shared-maps .map')].map(
+    (row) => row.dataset.id,
+  )
+  const ids = [...maps, ...sharedMaps].map((map) => map.id)
+  // Order alone (a map saved and moved up) keeps the rows where they are.
+  if (!sameMaps(shownIds, ids) && !listBusy()) {
+    renderList(maps)
+    renderShared(sharedMaps)
+    return
+  }
+  for (const map of [...maps, ...sharedMaps]) {
+    const known = mapsById.get(map.id) ?? sharedById.get(map.id)
+    if (known) known.online = map.online
+    document.querySelector(`.map[data-id="${map.id}"] .online`)?.replaceWith(onlineMarker(map.online))
+  }
+}
+setInterval(pollList, POLL_MS)
+document.addEventListener('visibilitychange', pollList)
+
 // --- Shared with me (context/MOONSHOT.md) -----------------------------------------
 
 const sharedById = new Map()
@@ -367,7 +443,7 @@ function sharedRow(map, now) {
   const meta = document.createElement('span')
   meta.className = 'meta'
   meta.textContent = `${map.owner}'s · ${map.role} · ${mapSummary(map, now)}`
-  info.append(link, meta)
+  info.append(titleLine(link, map), meta)
 
   const actions = document.createElement('div')
   actions.className = 'actions'
@@ -379,7 +455,7 @@ function sharedRow(map, now) {
     ...(perms.history ? [button('History', () => toggleHistory(row, map))] : []),
     ...(perms.export ? [button('Download', () => toggleDownload(row, map))] : []),
     ...(perms.export ? [button('Duplicate', () => duplicate(map))] : []),
-    button('Leave', () => leave(row, map)),
+    button('Leave', () => confirmLeave(row, map)),
   )
   const error = document.createElement('p')
   error.className = 'error'
@@ -388,11 +464,33 @@ function sharedRow(map, now) {
   return row
 }
 
-async function leave(row, map) {
+/** "Leave": asks first, in the row, like Delete — getting back in takes the owner. */
+function confirmLeave(row, map) {
   if (myId === null) return
-  const result = await request(`api/maps/${encodeURIComponent(map.id)}/members/${myId}`, { method: 'DELETE' })
-  if (!result.ok) return signedOutBy(result) || rowError(row, `Could not leave it: ${result.error}`)
-  refreshList()
+  const question = document.createElement('span')
+  question.className = 'confirm'
+  question.textContent = `Leave ${map.owner}'s map? It goes from this list; ${map.owner} can share it with you again.`
+  const yes = button(
+    'Leave',
+    async () => {
+      yes.disabled = true
+      const result = await request(`api/maps/${encodeURIComponent(map.id)}/members/${myId}`, {
+        method: 'DELETE',
+      })
+      if (!result.ok) {
+        yes.disabled = false
+        return signedOutBy(result) || rowError(row, `Could not leave it: ${result.error}`)
+      }
+      refreshList()
+    },
+    'danger small',
+  )
+  row.querySelector('.actions').replaceChildren(
+    question,
+    yes,
+    button('Cancel', () => refreshList()),
+  )
+  yes.focus()
 }
 
 /** Opens or closes who a map is shared with, under its row. */
@@ -448,7 +546,7 @@ function mapRow(map, now) {
   const meta = document.createElement('span')
   meta.className = 'meta'
   meta.textContent = mapSummary(map, now)
-  info.append(link, meta)
+  info.append(titleLine(link, map), meta)
 
   const actions = document.createElement('div')
   actions.className = 'actions'

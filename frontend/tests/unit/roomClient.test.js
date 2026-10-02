@@ -133,6 +133,20 @@ describe('roomClient', () => {
     expect(server.urls.at(-1)).toBe('ws://x?epoch=E1')
   })
 
+  it('send says whether the message went: not while offline (review fix)', async () => {
+    const server = fakeServer()
+    const ca = createRoomClient({
+      url: 'ws://x',
+      doc: new Y.Doc(),
+      WebSocketImpl: server.FakeSocket,
+      setTimer: () => {},
+    })
+    await ca.whenSynced
+    expect(ca.send({ type: 'chat', text: 'hi' })).toBe(true)
+    ;[...server.sockets][0].drop()
+    expect(ca.send({ type: 'chat', text: 'lost?' })).toBe(false)
+  })
+
   it('kicked, deleted and reload stop reconnecting', async () => {
     const server = fakeServer()
     const timers = []

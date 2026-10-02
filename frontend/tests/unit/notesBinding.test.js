@@ -136,3 +136,47 @@ describe('trimText', () => {
     expect(count).toBe(0)
   })
 })
+
+describe('bindTextarea: my caret, for other people (Task 3.7)', () => {
+  const fakeAwareness = () => {
+    const fields = {}
+    return { fields, setLocalStateField: (key, value) => (fields[key] = value) }
+  }
+  const indexOf = (json, doc) =>
+    Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(json), doc).index
+
+  it('publishes where I am typing, as relative positions in this star', () => {
+    const doc = new Y.Doc()
+    const text = doc.getText('notes')
+    text.insert(0, 'hello')
+    const area = fakeTextarea('')
+    const awareness = fakeAwareness()
+    bindTextarea(area, text, { origin: 'local', cursor: { awareness, node: 'n1' } })
+    area.type('hello!', 6)
+    const { cursor } = awareness.fields
+    expect(cursor.node).toBe('n1')
+    expect(indexOf(cursor.anchor, doc)).toBe(6)
+    expect(indexOf(cursor.head, doc)).toBe(6)
+  })
+
+  it('clears it when the editor closes', () => {
+    const doc = new Y.Doc()
+    const area = fakeTextarea('')
+    const awareness = fakeAwareness()
+    const binding = bindTextarea(area, doc.getText('notes'), {
+      origin: 'local',
+      cursor: { awareness, node: 'n1' },
+    })
+    area.type('x', 1)
+    binding.destroy()
+    expect(awareness.fields.cursor).toBeNull()
+    expect(area.listening).toEqual([])
+  })
+
+  it('without a room, nothing is published', () => {
+    const doc = new Y.Doc()
+    const area = fakeTextarea('')
+    bindTextarea(area, doc.getText('notes'), { origin: 'local' })
+    expect(() => area.type('x', 1)).not.toThrow()
+  })
+})

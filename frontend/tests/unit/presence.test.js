@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createPoseBuffer, createPosePublisher } from '../../src/room/presence.js'
+import { cleanPose, createPoseBuffer, createPosePublisher } from '../../src/room/presence.js'
 
 const pose = (x) => ({ p: [x, 0, 0], q: [0, 0, 0, 1] })
 
@@ -73,5 +73,27 @@ describe('pose publisher', () => {
       'pose',
       { p: [1, 0, 0], q: [0, 0, 0, 1], mode: 'editing', editing: 'n1' },
     ])
+  })
+})
+
+describe('cleanPose: what another browser says about where it is (review fix)', () => {
+  it('a good pose passes, its rotation normalised', () => {
+    const cleaned = cleanPose({ p: [1, 2, 3], q: [0, 0, 0, 2] })
+    expect(cleaned).toEqual({ p: [1, 2, 3], q: [0, 0, 0, 1] })
+  })
+
+  it.each([
+    ['NaN in p', { p: [Number.NaN, 0, 0], q: [0, 0, 0, 1] }],
+    ['Infinity in p', { p: [Infinity, 0, 0], q: [0, 0, 0, 1] }],
+    ['p absurdly far', { p: [1e30, 0, 0], q: [0, 0, 0, 1] }],
+    ['p too short', { p: [0, 0], q: [0, 0, 0, 1] }],
+    ['p of strings', { p: ['0', '0', '0'], q: [0, 0, 0, 1] }],
+    ['q all zero', { p: [0, 0, 0], q: [0, 0, 0, 0] }],
+    ['q with NaN', { p: [0, 0, 0], q: [Number.NaN, 0, 0, 1] }],
+    ['q too short', { p: [0, 0, 0], q: [0, 0, 1] }],
+    ['no pose', null],
+    ['not an object', 'here'],
+  ])('%s is refused', (_, given) => {
+    expect(cleanPose(given)).toBeNull()
   })
 })
