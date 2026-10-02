@@ -78,8 +78,8 @@ describe('pose publisher', () => {
 
 describe('cleanPose: what another browser says about where it is (review fix)', () => {
   it('a good pose passes, its rotation normalised', () => {
-    const pose = cleanPose({ p: [1, 2, 3], q: [0, 0, 0, 2] })
-    expect(pose).toEqual({ p: [1, 2, 3], q: [0, 0, 0, 1] })
+    const cleaned = cleanPose({ p: [1, 2, 3], q: [0, 0, 0, 2] })
+    expect(cleaned).toEqual({ p: [1, 2, 3], q: [0, 0, 0, 1] })
   })
 
   it.each([
@@ -93,7 +93,7 @@ describe('cleanPose: what another browser says about where it is (review fix)', 
     ['q too short', { p: [0, 0, 0], q: [0, 0, 1] }],
     ['no pose', null],
     ['not an object', 'here'],
-  ])('%s is refused', (_, pose) => {
-    expect(cleanPose(pose)).toBeNull()
+  ])('%s is refused', (_, given) => {
+    expect(cleanPose(given)).toBeNull()
   })
 })

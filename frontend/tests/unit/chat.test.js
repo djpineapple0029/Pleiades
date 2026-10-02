@@ -86,8 +86,8 @@ describe('sending while the room is unreachable (review fix)', () => {
     const room = {
       you: { conn: 'me' },
       roster: [],
-      send: (message) => {
-        if (connected) sent.push(message)
+      send: (sentMessage) => {
+        if (connected) sent.push(sentMessage)
         return connected
       },
     }
