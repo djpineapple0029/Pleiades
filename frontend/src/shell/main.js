@@ -21,6 +21,7 @@ import {
   mapSummary,
   relativeTime,
   restoreQuestion,
+  sameMaps,
   versionSummary,
   whoIsIn,
 } from './format.js'
@@ -395,7 +396,8 @@ async function pollList() {
     (row) => row.dataset.id,
   )
   const ids = [...maps, ...sharedMaps].map((map) => map.id)
-  if (ids.join() !== shownIds.join() && !listBusy()) {
+  // Order alone (a map saved and moved up) keeps the rows where they are.
+  if (!sameMaps(shownIds, ids) && !listBusy()) {
     renderList(maps)
     renderShared(sharedMaps)
     return

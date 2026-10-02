@@ -106,3 +106,13 @@ export function whoIsIn(online) {
     title: `In this map now: ${listed}`,
   }
 }
+
+/**
+ * Whether two lists of map ids hold the same maps, whatever their order:
+ * a live map saving moves up the list, which is no reason to rebuild it.
+ */
+export function sameMaps(shown, now) {
+  if (shown.length !== now.length) return false
+  const set = new Set(shown)
+  return now.every((id) => set.has(id))
+}

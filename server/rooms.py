@@ -66,6 +66,10 @@ CHAT_MAX = 500  # characters, after cleaning (MOONSHOT-BUILD.md limits)
 # The emote ring's choices, the same list as frontend/src/room/emotes.js.
 EMOTE_IDS = frozenset({"wave", "yes", "no", "look", "idea", "laugh", "heart", "question"})
 EMOTE_COOLDOWN = 1.0  # seconds between one connection's emotes (decision 16)
+# Chat lines one connection may send at once, and how many a second after
+# that: plenty to talk, too few to flood everyone's screen.
+CHAT_BURST = 5
+CHAT_PER_SECOND = 1.0
 # The only roots a map's doc has (server/ydoc.py). Clients write `nodes` and
 # `edges`; `meta` (camera, envelope, pass-through keys) is the server's alone
 # until a later milestone gives a client something to put there.
@@ -113,6 +117,9 @@ class Peer:
     closing: bool = False
     # time.monotonic() of this connection's last emote that went out.
     last_emote: float | None = None
+    # Chat budget: lines in hand, and when it was last topped up.
+    chat_tokens: float = CHAT_BURST
+    chat_checked: float | None = None
 
     @property
     def can_edit(self) -> bool:
@@ -346,6 +353,9 @@ class Room:
         cleaned = clean_chat(text)
         if cleaned is None:
             return
+        if not self._chat_budget(peer):
+            peer.send_text({"type": "error", "code": "chat_slow"})
+            return
         message = {
             "type": "chat",
             "conn": peer.conn,
@@ -357,6 +367,18 @@ class Room:
         }
         for p in self.peers:
             p.send_text(message)
+
+    @staticmethod
+    def _chat_budget(peer: Peer) -> bool:
+        """Takes one line from the peer's budget if there is one."""
+        now = time.monotonic()
+        if peer.chat_checked is not None:
+            peer.chat_tokens = min(CHAT_BURST, peer.chat_tokens + (now - peer.chat_checked) * CHAT_PER_SECOND)
+        peer.chat_checked = now
+        if peer.chat_tokens < 1:
+            return False
+        peer.chat_tokens -= 1
+        return True
 
     def _emote(self, peer: Peer, emote_id: Any) -> None:
         """One a second per connection; too soon, unknown, or without the chat

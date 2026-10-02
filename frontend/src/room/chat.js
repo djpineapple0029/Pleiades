@@ -68,6 +68,7 @@ export function chatLine(message, personName) {
  */
 export function createChat({ room, log, feed, form, avatars, personName, now = () => performance.now() }) {
   const field = form.querySelector('input')
+  const note = form.querySelector('.chat-note')
   field.maxLength = CHAT_MAX
   const arrived = new WeakMap()
   let fadeTimer = null
@@ -88,12 +89,11 @@ export function createChat({ room, log, feed, form, avatars, personName, now = (
     if (lines.length) fadeTimer = setTimeout(renderFeed, 1000)
   }
 
-  /** Sends a line; false if there was nothing to send. */
+  /** Sends a line: 'sent', 'empty', or 'offline' (reconnecting: keep the text and say so). */
   function send(text) {
     const trimmed = text.trim()
-    if (!trimmed) return false
-    room.send({ type: 'chat', text: trimmed.slice(0, CHAT_MAX) })
-    return true
+    if (!trimmed) return 'empty'
+    return room.send({ type: 'chat', text: trimmed.slice(0, CHAT_MAX) }) ? 'sent' : 'offline'
   }
 
   // The field keeps its keys: Enter here must not also take the pointer
@@ -103,7 +103,11 @@ export function createChat({ room, log, feed, form, avatars, personName, now = (
     event.stopPropagation()
     if (event.key === 'Enter' && !event.isComposing) {
       event.preventDefault()
-      send(field.value)
+      if (send(field.value) === 'offline') {
+        // Kept, to send once the map is back.
+        if (note) note.hidden = false
+        return
+      }
       close?.()
     } else if (event.key === 'Escape') {
       event.preventDefault()
@@ -121,6 +125,7 @@ export function createChat({ room, log, feed, form, avatars, personName, now = (
     return new Promise((resolve) => {
       form.hidden = false
       feed.hidden = false
+      if (note) note.hidden = true
       field.value = ''
       field.focus()
       close = () => {

@@ -316,6 +316,12 @@ kbd {
   pointer-events: none;
 }
 
+.chat-note {
+  margin: 4px 0 0;
+  color: #d99a6c;
+  font-size: 12px;
+}
+
 #chat-feed {
   display: flex;
   flex-direction: column;

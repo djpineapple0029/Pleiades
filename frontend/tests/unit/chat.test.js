@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { CHAT_MAX, clientIdsOf, createChatLog, recentLines } from '../../src/room/chat.js'
+import { CHAT_MAX, clientIdsOf, createChat, createChatLog, recentLines } from '../../src/room/chat.js'
 
 const message = (text, at, conn = 'a') => ({
   type: 'chat',
@@ -74,5 +74,43 @@ describe('chat helpers', () => {
     ])
     const lines = recentLines(log, { now: 10_000, window: 8000, max: 2, arrivedAt: (m) => arrived.get(m) })
     expect(lines.map((m) => m.text)).toEqual(['b', 'c'])
+  })
+})
+
+describe('sending while the room is unreachable (review fix)', () => {
+  const element = () => ({ hidden: true, addEventListener() {}, replaceChildren() {}, focus() {}, blur() {} })
+  function chatWith(connected) {
+    const sent = []
+    const field = element()
+    const form = { ...element(), querySelector: () => field }
+    const room = {
+      you: { conn: 'me' },
+      roster: [],
+      send: (message) => {
+        if (connected) sent.push(message)
+        return connected
+      },
+    }
+    return {
+      chat: createChat({ room, log: createChatLog(), feed: element(), form, personName: (m) => m.name }),
+      sent,
+    }
+  }
+
+  it('connected: sent, trimmed and capped', () => {
+    const { chat, sent } = chatWith(true)
+    expect(chat.send(`  ${'x'.repeat(600)}  `)).toBe('sent')
+    expect(sent[0].text).toHaveLength(CHAT_MAX)
+  })
+
+  it('reconnecting: says so, so the line can keep what was typed', () => {
+    const { chat } = chatWith(false)
+    expect(chat.send('hello')).toBe('offline')
+  })
+
+  it('nothing typed: nothing to send', () => {
+    const { chat, sent } = chatWith(true)
+    expect(chat.send('   ')).toBe('empty')
+    expect(sent).toEqual([])
   })
 })

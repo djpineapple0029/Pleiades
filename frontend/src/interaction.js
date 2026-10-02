@@ -899,6 +899,8 @@ export function createInteraction({
       status.notice('saved again')
     } else if (message.type === 'error' && message.code === 'no_chat') {
       status.notice(denyText('chat'))
+    } else if (message.type === 'error' && message.code === 'chat_slow') {
+      status.notice("slow down · that message wasn't sent")
     } else if (message.type === 'error' && message.code === 'bad_update') {
       roomProblem = 'the server refused an edit from this tab · reload'
     }

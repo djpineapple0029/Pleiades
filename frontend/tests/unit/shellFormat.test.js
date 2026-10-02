@@ -5,6 +5,7 @@ import {
   formatSize,
   mapSummary,
   relativeTime,
+  sameMaps,
   versionSummary,
   whoIsIn,
 } from '../../src/shell/format.js'
@@ -115,5 +116,17 @@ describe("who's in a map, on its row (MOONSHOT decision 17)", () => {
     const shown = whoIsIn([person('🌍 earth'), person('<b>x</b>', '#fff', true)])
     expect(shown.initials.map((i) => i.initial)).toEqual(['🌍', '<'])
     expect(shown.title).toBe('In this map now: 🌍 earth and <b>x</b> (guest)')
+  })
+})
+
+describe('sameMaps: when the 15 s poll needs to rebuild the list (review fix)', () => {
+  it('the same maps in a new order (someone saved one) is no change', () => {
+    expect(sameMaps(['a', 'b', 'c'], ['c', 'a', 'b'])).toBe(true)
+  })
+
+  it('a map that came or went is', () => {
+    expect(sameMaps(['a', 'b'], ['a', 'b', 'c'])).toBe(false)
+    expect(sameMaps(['a', 'b'], ['a'])).toBe(false)
+    expect(sameMaps(['a', 'b'], ['a', 'x'])).toBe(false)
   })
 })

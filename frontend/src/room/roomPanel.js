@@ -64,6 +64,9 @@ export function createRoomPanel(
   field.placeholder = 'Say something to everyone here'
   field.setAttribute('aria-label', 'Chat message')
   form.append(field)
+  const notSent = el('p', 'chat-note', "Not sent: reconnecting. Enter again once it's back.")
+  notSent.hidden = true
+  form.append(notSent)
   const chatOff = el('p', 'room-note', 'Chat is off for you on this map')
   chatOff.hidden = true
   // Show editors / Show viewers (decision 14a): who gets drawn, for you only.
@@ -102,8 +105,10 @@ export function createRoomPanel(
     event.stopPropagation()
     if (event.key === 'Enter' && !event.isComposing) {
       event.preventDefault()
-      if (field.value.trim()) onSend(field.value)
-      field.value = ''
+      const result = field.value.trim() ? onSend(field.value) : 'empty'
+      // Offline, what was typed stays to send again.
+      notSent.hidden = result !== 'offline'
+      if (result !== 'offline') field.value = ''
     } else if (event.key === 'Escape') field.blur()
   })
   field.addEventListener('keyup', (event) => event.stopPropagation())

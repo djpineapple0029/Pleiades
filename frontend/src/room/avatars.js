@@ -14,7 +14,7 @@
  */
 import * as THREE from 'three'
 import { LABEL_LAYER } from '../bloom.js'
-import { createPoseBuffer } from './presence.js'
+import { cleanPose, createPoseBuffer } from './presence.js'
 import { avatarGeometry, avatarTint, blinkOn } from './avatarStyles.js'
 
 const MAX_PEOPLE = 16
@@ -164,8 +164,9 @@ export function createAvatars({ scene, size = 2 }) {
   /** A pose from awareness, as it arrives. Ignored for someone not (yet) in `sync`. */
   function push(clientId, pose, arrivedAt) {
     const person = people.get(clientId)
-    if (!person || !Array.isArray(pose?.p) || !Array.isArray(pose?.q)) return
-    person.buffer.push(pose, arrivedAt)
+    const clean = cleanPose(pose)
+    if (!person || !clean) return
+    person.buffer.push(clean, arrivedAt)
   }
 
   /** A chat message over these avatars (one person's client ids) for a few seconds. */

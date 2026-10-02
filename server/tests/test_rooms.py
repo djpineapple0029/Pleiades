@@ -826,3 +826,18 @@ async def test_set_meta_reaches_whoever_joins_next(store):
     assert welcome["map"] == {"id": "m", "name": "Renamed", "default_look": "deep-sea"}
     # Nobody already in is told to switch.
     assert not [t for t in texts(first) if t["type"] not in ("roster",)]
+
+
+@pytest.mark.anyio
+async def test_chat_has_a_budget_per_connection(store, monkeypatch):
+    room, a, b, clock = await emote_room(store, monkeypatch)
+    for i in range(7):
+        await room.on_text(a, {"type": "chat", "text": f"line {i}"})
+    got = [t["text"] for t in texts(b) if t["type"] == "chat"]
+    assert got == [f"line {i}" for i in range(5)]  # a burst of five, then no more
+    errors = [t for t in texts(a) if t["type"] == "error"]
+    assert errors == [{"type": "error", "code": "chat_slow"}] * 2  # the sender alone hears why
+    clock.now += 1.0  # a second later, one more fits
+    await room.on_text(a, {"type": "chat", "text": "again"})
+    await room.on_text(a, {"type": "chat", "text": "too soon"})
+    assert [t["text"] for t in texts(b) if t["type"] == "chat"] == ["again"]
