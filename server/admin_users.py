@@ -23,6 +23,7 @@ from . import db as dbmod
 from .admin import Guard, fail, harden, only_allowed_networks, signed_in
 from .config import ConfigStore, hash_password
 from .db import Database
+from .maps import disconnect_user
 
 admin_users = Blueprint("admin_users", __name__, url_prefix="/api/admin/users")
 admin_users.before_request(only_allowed_networks)
@@ -112,6 +113,7 @@ def reset_password(user_id: int) -> Response | tuple[Response, int]:
             "UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?", (password_hash, user_id)
         )
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    disconnect_user(user_id, [])
     # Whoever forgot it may have locked the name out trying; the new one should work at once.
     account_guard().succeed(f"user:{user['username']}")
     return jsonify(username=user["username"], password=password)
@@ -134,6 +136,8 @@ def set_disabled(user_id: int) -> Response | tuple[Response, int]:
         conn.execute("UPDATE users SET disabled = ? WHERE id = ?", (int(disabled), user_id))
         if disabled:
             conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    if disabled:
+        disconnect_user(user_id, [])
     return jsonify(ok=True, disabled=disabled)
 
 
@@ -146,6 +150,7 @@ def sign_out_everywhere(user_id: int) -> Response | tuple[Response, int]:
         if find_user(conn, user_id) is None:
             return missing()
         ended = conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,)).rowcount
+    disconnect_user(user_id, [])
     return jsonify(ok=True, ended=ended)
 
 
@@ -165,5 +170,7 @@ def delete_user(user_id: int) -> Response | tuple[Response, int]:
             return missing()
         if not isinstance(typed, str) or typed.strip().lower() != user["username"]:
             return fail(f"Type the username ({user['username']}) to confirm.", 400)
+        owned = [row["id"] for row in conn.execute("SELECT id FROM maps WHERE user_id = ?", (user_id,))]
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    disconnect_user(user_id, owned)
     return jsonify(ok=True)

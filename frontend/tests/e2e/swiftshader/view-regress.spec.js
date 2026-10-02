@@ -14,6 +14,7 @@ test('a loaded map renders, raycasts and balances like a hand-built one', async 
   const out = await page.evaluate(async (threeUrl) => {
     const THREE = await import(threeUrl)
     const { createGraph } = await import('/src/graph.js')
+    const { sequentialIds } = await import('/src/ids.js')
     const { createGraphView, NODE_RADIUS } = await import('/src/graphView.js')
     const { createPhysics } = await import('/src/physics.js')
     const { createFiles } = await import('/src/files.js')
@@ -37,7 +38,7 @@ test('a loaded map renders, raycasts and balances like a hand-built one', async 
     camera.layers.enable(1) // session 6: the star mesh is on layer 1 only
     scene.add(camera)
 
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const view = createGraphView(graph, scene, renderer)
     const physics = createPhysics(graph, view)
     const files = createFiles({ graph, view, camera, physics })
@@ -60,7 +61,7 @@ test('a loaded map renders, raycasts and balances like a hand-built one', async 
     const blob = await writeContainer(payload, 'pw')
 
     // A different, smaller map to land on top of it, reusing the same ids.
-    const other = createGraph()
+    const other = createGraph({ newId: sequentialIds() })
     const oa = other.addNode({ x: -60, y: 0, z: 0, label: 'left' })
     const ob = other.addNode({ x: 60, y: 0, z: 0, label: 'right' })
     other.addEdge(oa.id, ob.id)

@@ -1,0 +1,64 @@
+{
+  "empty": {
+    "payload": {
+      "nodes": [],
+      "edges": []
+    },
+    "update": "AAA="
+  },
+  "small": {
+    "payload": {
+      "camera": {
+        "position": [
+          0,
+          0,
+          260
+        ]
+      },
+      "nodes": [
+        {
+          "id": "n1",
+          "label": "Sun",
+          "notes": "hot\nvery",
+          "x": 1.5,
+          "y": -2,
+          "z": 0,
+          "cluster_color_id": 3,
+          "blend": [
+            0.1,
+            0.2,
+            0.3
+          ],
+          "is_core": true,
+          "is_nexus": false,
+          "links": [
+            "https://example.com"
+          ]
+        },
+        {
+          "id": "n-k3f9x2q7ab",
+          "label": "Ünïcødé 🌍",
+          "notes": "",
+          "x": 0,
+          "y": 0,
+          "z": 0,
+          "cluster_color_id": 0,
+          "blend": null,
+          "is_core": false,
+          "is_nexus": true,
+          "links": []
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "from": "n1",
+          "to": "n-k3f9x2q7ab",
+          "directed": true,
+          "label": "orbits"
+        }
+      ]
+    },
+    "update": "ASCX+9H9AgAnAQVub2RlcwJuMQEoAJf70f0CAAJpZAF3Am4xKACX+9H9AgAFbGFiZWwBdwNTdW4oAJf70f0CAAF4AXw/wAAAKACX+9H9AgABeQF9QigAl/vR/QIAAXoBfQAoAJf70f0CABBjbHVzdGVyX2NvbG9yX2lkAX0DKACX+9H9AgAFYmxlbmQBdQN7P7mZmZmZmZp7P8mZmZmZmZp7P9MzMzMzMzMoAJf70f0CAAdpc19jb3JlAXgoAJf70f0CAAhpc19uZXh1cwF5KACX+9H9AgAFbGlua3MBdQF3E2h0dHBzOi8vZXhhbXBsZS5jb20nAJf70f0CAAVub3RlcwIEAJf70f0CCwhob3QKdmVyeScBBW5vZGVzDG4tazNmOXgycTdhYgEoAJf70f0CFAJpZAF3DG4tazNmOXgycTdhYigAl/vR/QIUBWxhYmVsAXcQw5xuw69jw7hkw6kg8J+MjSgAl/vR/QIUAXgBfQAoAJf70f0CFAF5AX0AKACX+9H9AhQBegF9ACgAl/vR/QIUEGNsdXN0ZXJfY29sb3JfaWQBfQAoAJf70f0CFAVibGVuZAF+KACX+9H9AhQHaXNfY29yZQF5KACX+9H9AhQIaXNfbmV4dXMBeCgAl/vR/QIUBWxpbmtzAXUAJwCX+9H9AhQFbm90ZXMCJwEFZWRnZXMCZTEBKACX+9H9AiACaWQBdwJlMSgAl/vR/QIgBGZyb20BdwJuMSgAl/vR/QIgAnRvAXcMbi1rM2Y5eDJxN2FiKACX+9H9AiAIZGlyZWN0ZWQBeCgAl/vR/QIgBWxhYmVsAXcGb3JiaXRzKAEEbWV0YQZjYW1lcmEBdgEIcG9zaXRpb251A30AfQB9hAQA"
+  }
+}

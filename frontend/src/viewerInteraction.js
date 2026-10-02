@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { createStatus } from './status.js'
 import { createKeymap } from './keymap.js'
 import { focusSetOf } from './heat.js'
+import { nodeName } from './ids.js'
 
 /**
  * The read-only half of `interaction.js`, for the exported viewer.
@@ -25,8 +26,6 @@ import { focusSetOf } from './heat.js'
  * are no file flows here, so the only message this side ever posts is the
  * heat key's `info`.
  */
-
-const nodeName = (node) => node.label || node.id
 
 function sameTarget(a, b) {
   if (a === b) return true

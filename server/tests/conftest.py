@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from starlette.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
@@ -61,3 +62,69 @@ def signup():
         return response
 
     return run
+
+
+# --- Rooms (async) ------------------------------------------------------------
+
+
+@pytest.fixture
+def anyio_backend():
+    """`@pytest.mark.anyio` tests run on asyncio, the loop uvicorn uses."""
+    return "asyncio"
+
+
+# --- Shared maps (test_sharing.py, test_links.py, test_bans.py) ---------------
+
+
+@pytest.fixture
+def three(accounts_app, signup):
+    """owner, eddie, vicky — each a signed-in test client; owner has one map."""
+    clients = {}
+    for name in ("owner", "eddie", "vicky"):
+        client = accounts_app.test_client()
+        signup(client, name)
+        clients[name] = client
+    created = clients["owner"].post("/api/maps", json={"name": "Galaxy"}, headers=CSRF)
+    assert created.status_code == 201
+    clients["map"] = created.json["id"]
+    return clients
+
+
+class FakeRooms:
+    def __init__(self):
+        self.events = []
+
+    def notify(self, map_id, event):
+        self.events.append((map_id, event))
+
+    def people(self, map_id):
+        return []
+
+
+@pytest.fixture
+def rooms(accounts_app):
+    fake = FakeRooms()
+    accounts_app.extensions["pleiades_rooms"] = fake
+    return fake
+
+
+# --- The ASGI app with accounts on (test_ws.py, test_bans.py) -----------------
+
+
+@pytest.fixture
+def asgi(isolated_config, fast_scrypt):
+    from server.asgi import create_asgi
+
+    app = create_asgi()
+    config = app.state.flask.extensions["pleiades_config"]
+    values = config.all_values()
+    values["accounts"]["enabled"] = True
+    values["accounts"]["signup_open"] = True
+    config.save(values)
+    return app
+
+
+@pytest.fixture
+def world(asgi):
+    with TestClient(asgi, base_url="http://testserver") as client:
+        yield client

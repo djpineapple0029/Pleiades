@@ -18,6 +18,7 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
   const out = await page.evaluate(async (threeUrl) => {
     const THREE = await import(threeUrl)
     const { createGraph } = await import('/src/graph.js')
+    const { sequentialIds } = await import('/src/ids.js')
     const { createGraphView, NODE_RADIUS } = await import('/src/graphView.js')
     const { createPhysics } = await import('/src/physics.js')
     const { createFiles } = await import('/src/files.js')
@@ -39,7 +40,7 @@ test('core flag grows that node and nothing around it', async ({ page }, testInf
     const target = new THREE.WebGLRenderTarget(W, H)
     const raycaster = new THREE.Raycaster()
 
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const view = createGraphView(graph, scene, renderer)
     const physics = createPhysics(graph, view)
     const files = createFiles({ graph, view, camera, physics })

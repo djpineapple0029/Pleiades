@@ -2,12 +2,13 @@
 // `createGraph()` model with radii read straight from `sizeOf`.
 import { describe, it, expect } from 'vitest'
 import { createGraph } from '../../src/graph.js'
+import { sequentialIds } from '../../src/ids.js'
 import { createRiverFlow } from '../../src/riverFlow.js'
 
 const RADIUS = 5
 
 function setup(build) {
-  const graph = createGraph()
+  const graph = createGraph({ newId: sequentialIds() })
   build(graph)
   const flow = createRiverFlow(graph, { radiusOf: (id) => RADIUS * graph.sizeOf(id) })
   return { graph, flow }
@@ -150,7 +151,7 @@ describe('riverFlow', () => {
   })
 
   it('an empty map has no dust, and a cleared one drains', () => {
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const flow = createRiverFlow(graph, { radiusOf: () => RADIUS })
     flow.step(1 / 30)
     expect(flow.count).toBe(0)

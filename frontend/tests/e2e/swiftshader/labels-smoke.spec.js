@@ -18,6 +18,7 @@ test('labels compile and place: font, shaders, instances', async ({ page }) => {
   const out = await page.evaluate(async (threeUrl) => {
     const THREE = await import(threeUrl)
     const { createGraph } = await import('/src/graph.js')
+    const { sequentialIds } = await import('/src/ids.js')
     const { createGraphView } = await import('/src/graphView.js')
     const { LABEL_LAYER } = await import('/src/bloom.js')
     document.getElementById('viewport').remove()
@@ -30,7 +31,7 @@ test('labels compile and place: font, shaders, instances', async ({ page }) => {
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(70, 800 / 600, 0.5, 20000)
     scene.add(camera)
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const view = createGraphView(graph, scene, renderer)
     await document.fonts.ready
 

@@ -5,9 +5,11 @@
  *   notes of whatever star is under the crosshair (the caller decides which).
  *   With no star targeted there is no panel at all, not an empty one.
  * - **Edit**, from Ctrl/Cmd+Enter: a real textarea with a real cursor — the
- *   caller releases pointer lock first. Enter is a newline here, since notes
- *   are prose; the Save button commits (Ctrl/Cmd+Enter does too, for the
- *   keyboard-only), Esc cancels.
+ *   caller releases pointer lock first. The caller binds the textarea to the
+ *   star's shared text (room/notesBinding.js), so what's typed is in the map
+ *   as it's typed (context/MOONSHOT.md decision 8). Enter is a newline here,
+ *   since notes are prose; Done (or Ctrl/Cmd+Enter, for the keyboard-only)
+ *   keeps it, Esc or Cancel takes this session's typing back out.
  */
 export function createNotesSidebar(aside, { writeKey = 'Ctrl/⌘+Enter' } = {}) {
   const heading = document.createElement('p')
@@ -59,12 +61,12 @@ export function createNotesSidebar(aside, { writeKey = 'Ctrl/⌘+Enter' } = {}) 
     event.stopPropagation()
     if (event.key === 'Escape') {
       event.preventDefault()
-      finish(null)
+      finish(false)
     } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.repeat) {
       // Not on a repeat: the chord that opened this panel, held down, would
-      // otherwise save it the moment the textarea takes focus.
+      // otherwise close it the moment the textarea takes focus.
       event.preventDefault()
-      finish(textarea.value.trim())
+      finish(true)
     }
   })
 
@@ -72,15 +74,19 @@ export function createNotesSidebar(aside, { writeKey = 'Ctrl/⌘+Enter' } = {}) 
   textarea.className = 'notes-textarea'
   textarea.spellcheck = true
 
-  /** Edit mode. Resolves with the trimmed notes on Save, or null if cancelled. */
-  function edit(name, notes) {
-    finish(null)
+  /**
+   * Edit mode. `bind(textarea)` connects it to the notes (and fills it).
+   * Resolves true on Done, false if cancelled (Esc, Cancel, or `cancel()`).
+   */
+  function edit(name, bind) {
+    finish(false)
     heading.textContent = name
-    textarea.value = notes ?? ''
+    textarea.value = ''
+    bind(textarea)
 
     const hint = document.createElement('p')
     hint.className = 'notes-hint'
-    hint.textContent = 'Enter: new line · Ctrl/⌘+Enter: save · Esc: cancel'
+    hint.textContent = 'Saved as you type · Enter: new line · Ctrl/⌘+Enter: done · Esc: undo this edit'
 
     const actions = document.createElement('div')
     actions.className = 'editor-actions'
@@ -88,12 +94,12 @@ export function createNotesSidebar(aside, { writeKey = 'Ctrl/⌘+Enter' } = {}) 
     cancelButton.type = 'button'
     cancelButton.className = 'editor-button editor-button--secondary'
     cancelButton.textContent = 'Cancel'
-    cancelButton.addEventListener('click', () => finish(null))
+    cancelButton.addEventListener('click', () => finish(false))
     const saveButton = document.createElement('button')
     saveButton.type = 'button'
     saveButton.className = 'editor-button editor-button--primary'
-    saveButton.textContent = 'Save'
-    saveButton.addEventListener('click', () => finish(textarea.value.trim()))
+    saveButton.textContent = 'Done'
+    saveButton.addEventListener('click', () => finish(true))
     actions.append(cancelButton, saveButton)
 
     body.classList.remove('notes-body--empty')
@@ -112,7 +118,7 @@ export function createNotesSidebar(aside, { writeKey = 'Ctrl/⌘+Enter' } = {}) 
   return {
     show,
     edit,
-    cancel: () => finish(null),
+    cancel: () => finish(false),
     toggle: () => setVisible(!visible),
     get isVisible() {
       return visible

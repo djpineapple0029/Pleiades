@@ -21,6 +21,7 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
   const out = await page.evaluate(async (threeUrl) => {
     const THREE = await import(threeUrl)
     const { createGraph } = await import('/src/graph.js')
+    const { sequentialIds } = await import('/src/ids.js')
     const { createGraphView, NODE_RADIUS } = await import('/src/graphView.js')
     const { createPhysics } = await import('/src/physics.js')
     const { createFiles } = await import('/src/files.js')
@@ -40,7 +41,7 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
     scene.add(camera)
     const target = new THREE.WebGLRenderTarget(W, H)
 
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const view = createGraphView(graph, scene, renderer)
     const physics = createPhysics(graph, view)
     const files = createFiles({ graph, view, camera, physics })
@@ -189,7 +190,7 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
     // --- one cluster lays out as it did before clustering ------------------
     // A hub and its spokes are a single community; the cluster force must stand
     // aside so the link spring still reaches its rest length (cf. core-sizing.spec).
-    const hg = createGraph()
+    const hg = createGraph({ newId: sequentialIds() })
     const hub = hg.addNode({ x: 0, y: 0, z: 0 }).id
     const spokes = []
     for (let i = 0; i < 12; i++)
@@ -217,7 +218,7 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
     r.hubRest = 60 + COLLIDE * (hg.sizeOf(hub) - 1) + COLLIDE * (hg.sizeOf(spokes[0]) - 1)
 
     // --- stability across re-balances -------------------------------------
-    const sg = createGraph()
+    const sg = createGraph({ newId: sequentialIds() })
     const groups = [[], [], []]
     for (const group of groups)
       for (let i = 0; i < 9; i++)
@@ -324,7 +325,7 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
     for (const child of [...scene.children]) if (child.name === 'graph') scene.remove(child)
 
     // A fresh two-cluster map, far enough apart to photograph one at a time.
-    const pg = createGraph()
+    const pg = createGraph({ newId: sequentialIds() })
     const pblobs = [[], []]
     for (const blob of pblobs) for (let i = 0; i < 8; i++) blob.push(pg.addNode({ x: 0, y: 0, z: 0 }).id)
     for (const blob of pblobs) for (const a of blob) for (const b of blob) if (a < b) pg.addEdge(a, b)
@@ -347,7 +348,7 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
     scene.remove(scene.getObjectByName('graph'))
 
     // --- labels take the cluster's ink ------------------------------------
-    const lg = createGraph()
+    const lg = createGraph({ newId: sequentialIds() })
     const lblobs = [[], []]
     for (const blob of lblobs) for (let i = 0; i < 6; i++) blob.push(lg.addNode({ x: 0, y: 0, z: 0 }).id)
     for (const blob of lblobs) for (const a of blob) for (const b of blob) if (a < b) lg.addEdge(a, b)
@@ -496,7 +497,7 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
     // two — is what a reopen has to come back with.
     r.sourceClusters = graph.clusterCount
     r.payloadHasColors = payload.nodes.every((node) => Number.isInteger(node.cluster_color_id))
-    const rg = createGraph()
+    const rg = createGraph({ newId: sequentialIds() })
     const rview = createGraphView(rg, scene, renderer)
     const rphys = createPhysics(rg, rview)
     const rfiles = createFiles({ graph: rg, view: rview, camera, physics: rphys })
@@ -515,7 +516,7 @@ test('clustering becomes a layout, a colour, and survives a reopen', async ({ pa
     })()
 
     // --- cost --------------------------------------------------------------
-    const bg = createGraph()
+    const bg = createGraph({ newId: sequentialIds() })
     const bids = []
     for (let i = 0; i < 3000; i++)
       bids.push(

@@ -4,6 +4,7 @@
 // into a plaintext HTML export.
 import { describe, it, expect } from 'vitest'
 import { createGraph, PayloadError } from '../../src/graph.js'
+import { sequentialIds } from '../../src/ids.js'
 import { createFiles } from '../../src/files.js'
 import { CURRENT_SCHEMA, FORMAT, migrate } from '../../src/format/schema.js'
 import { exportPayload } from '../../src/format/exportPayload.js'
@@ -52,7 +53,7 @@ describe('migrate', () => {
 
 describe('graph.load: schema check comes first', () => {
   it('a newer-schema file leaves the open map untouched', () => {
-    const g = createGraph()
+    const g = createGraph({ newId: sequentialIds() })
     g.load({ nodes: [{ id: 'keep', x: 5, y: 0, z: 0 }] })
     const revision = g.revision
     expect(() => g.load({ schema: CURRENT_SCHEMA + 1, nodes: [] })).toThrow(PayloadError)
@@ -70,7 +71,7 @@ describe('graph: unknown node and edge fields pass through', () => {
     ],
     edges: [{ id: 'e1', from: 'n1', to: 'n2', strength: 0.5, kind: 'cites' }],
   }
-  const g = createGraph()
+  const g = createGraph({ newId: sequentialIds() })
   g.load(roundTrip(file))
   const out = roundTrip(g.toPayload())
   const n1 = out.nodes.find((n) => n.id === 'n1')
@@ -93,7 +94,7 @@ describe('graph: unknown node and edge fields pass through', () => {
   })
 
   it('a known field always wins over a same-named raw value', () => {
-    const g2 = createGraph()
+    const g2 = createGraph({ newId: sequentialIds() })
     g2.load({ nodes: [{ id: 'n', x: 0, y: 0, z: 0, label: 42, is_core: 'yes' }] })
     const n = g2.toPayload().nodes[0]
     expect(n.label).toBe('')
@@ -101,7 +102,7 @@ describe('graph: unknown node and edge fields pass through', () => {
   })
 
   it('survives delete + undo (restoreNode)', () => {
-    const g3 = createGraph()
+    const g3 = createGraph({ newId: sequentialIds() })
     g3.load(roundTrip(file))
     const snapshot = g3.removeNode('n1')
     g3.restoreNode(snapshot)
@@ -113,14 +114,14 @@ describe('graph: unknown node and edge fields pass through', () => {
 
 describe('files: envelope and top-level pass-through', () => {
   it('stamps format, schema and app on every save payload', () => {
-    const payload = makeFiles(createGraph()).toPayload()
+    const payload = makeFiles(createGraph({ newId: sequentialIds() })).toPayload()
     expect(payload.format).toBe(FORMAT)
     expect(payload.schema).toBe(CURRENT_SCHEMA)
     expect(payload.app).toBe(version)
   })
 
   it('writes back top-level keys it does not own, but never their envelope', () => {
-    const files = makeFiles(createGraph())
+    const files = makeFiles(createGraph({ newId: sequentialIds() }))
     files.applyPayload({
       format: FORMAT,
       schema: 1,
@@ -136,14 +137,14 @@ describe('files: envelope and top-level pass-through', () => {
   })
 
   it('New map (clearCredentials) forgets the last file’s top-level extras', () => {
-    const files = makeFiles(createGraph())
+    const files = makeFiles(createGraph({ newId: sequentialIds() }))
     files.applyPayload({ nodes: [], edges: [], views: [1] })
     files.clearCredentials()
     expect('views' in files.toPayload()).toBe(false)
   })
 
   it('a refused newer file leaves the previous extras alone', () => {
-    const files = makeFiles(createGraph())
+    const files = makeFiles(createGraph({ newId: sequentialIds() }))
     files.applyPayload({ nodes: [], edges: [], views: [1] })
     expect(() => files.applyPayload({ schema: CURRENT_SCHEMA + 1, other: 2 })).toThrow(PayloadError)
     const out = files.toPayload()
@@ -153,7 +154,7 @@ describe('files: envelope and top-level pass-through', () => {
 })
 
 describe('HTML export allowlist', () => {
-  const g = createGraph()
+  const g = createGraph({ newId: sequentialIds() })
   g.load({
     views: 'top-level secret',
     nodes: [
@@ -200,7 +201,7 @@ describe('HTML export allowlist', () => {
 
   it('is stamped, and loads back through the same migrate', () => {
     expect(out.schema).toBe(CURRENT_SCHEMA)
-    const viewer = createGraph()
+    const viewer = createGraph({ newId: sequentialIds() })
     viewer.load(roundTrip(out))
     expect(viewer.nodes.size).toBe(2)
   })

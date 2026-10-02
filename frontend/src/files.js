@@ -79,7 +79,7 @@ export function triggerDownload(blob, filename) {
 const escapeHtml = (text) =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-export function createFiles({ graph, view, camera, physics, settings = null }) {
+export function createFiles({ graph, view, camera, physics, settings = null, mapDoc = null }) {
   let password = null
   let filename = DEFAULT_FILENAME
   // The graph.contentRevision token as of the last successful save or open
@@ -115,10 +115,17 @@ export function createFiles({ graph, view, camera, physics, settings = null }) {
     if (isTriple(saved.rotation)) camera.rotation.set(...saved.rotation.slice(0, 3))
   }
 
-  /** Swaps in a decrypted payload. Throws `PayloadError` if it is not a graph. */
-  function applyPayload(payload) {
+  /**
+   * Swaps in a decrypted payload. Throws `PayloadError` if it is not a graph.
+   * `keepDoc`: the payload was read *from* the doc (a live room's, which
+   * everyone in it shares), so the doc stays as it is.
+   */
+  function applyPayload(payload, { keepDoc = false } = {}) {
     const current = migrate(payload)
     graph.load(current)
+    // After graph.load, which throws on a bad payload before changing
+    // anything: the doc then holds the map as the graph read it.
+    if (!keepDoc) mapDoc?.replace({ ...current, ...graph.toPayload() })
     const own = new Set([...ENVELOPE_KEYS, 'nodes', 'edges', 'camera'])
     passedThrough = Object.fromEntries(Object.entries(current).filter(([key]) => !own.has(key)))
     // Before the view syncs: bodies keyed by an id the new file happens to

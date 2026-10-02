@@ -15,6 +15,7 @@ test('edges: width, fog, endpoint fade, hover, drift motes', async ({ page }) =>
   const r = await page.evaluate(async (threeUrl) => {
     const THREE = await import(threeUrl)
     const { createGraph } = await import('/src/graph.js')
+    const { sequentialIds } = await import('/src/ids.js')
     const { createGraphView } = await import('/src/graphView.js')
     const { createPhysics } = await import('/src/physics.js')
     document.getElementById('viewport').remove()
@@ -32,7 +33,7 @@ test('edges: width, fog, endpoint fade, hover, drift motes', async ({ page }) =>
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(70, W / H, 0.5, 20000)
     scene.add(camera)
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const view = createGraphView(graph, scene, renderer)
     // The plain line: every measurement below is of width, fog, fades and
     // motes, which heat would tint and lift (heat.spec.js covers heat).

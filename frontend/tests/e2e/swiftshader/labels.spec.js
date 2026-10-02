@@ -16,6 +16,7 @@ test('node labels: reveal, tiers, callout, declutter, hover, edits', async ({ pa
   const r = await page.evaluate(async (threeUrl) => {
     const THREE = await import(threeUrl)
     const { createGraph } = await import('/src/graph.js')
+    const { sequentialIds } = await import('/src/ids.js')
     const { createGraphView, NODE_RADIUS } = await import('/src/graphView.js')
     const { createBloom, LABEL_LAYER } = await import('/src/bloom.js')
     const { revealRange, ALWAYS_ON_SIZE, setLabelTarget } = await import('/src/labels.js')
@@ -41,7 +42,7 @@ test('node labels: reveal, tiers, callout, declutter, hover, edits', async ({ pa
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(70, W / H, 0.5, 20000)
     scene.add(camera)
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const view = createGraphView(graph, scene, renderer)
     const bloom = createBloom(renderer, scene, camera)
     const mesh = () => scene.getObjectByName('labels')

@@ -45,9 +45,16 @@ export function createPhysics(graph, view, options = {}) {
   let last = null // the last layout's groups and bridges, for lanes
   let orbitCentre = null // set while the run in flight is an orbit, not a Balance
   let orbitPlane = {} // the camera's right and up when the orbit was asked for
+  // Set while the flight in progress is someone else's layout (`flyTo`): no
+  // re-plan, no recluster, no reblend — their Balance already chose all that.
+  let external = false
+  // Told once a local run ends, with the layout it left (commands.js writes
+  // it to the map's doc then). Never for someone else's flight.
+  let onSettled = null
   const collideOf = (id) => COLLIDE_RADIUS * graph.sizeOf(id)
 
   function plan() {
+    external = false
     from = new Map()
     for (const node of graph.nodes.values()) from.set(node.id, [node.x, node.y, node.z])
     frame = 0
@@ -94,8 +101,36 @@ export function createPhysics(graph, view, options = {}) {
    */
   function stop() {
     if (!running) return
+    if (external) {
+      // Cut short: land where they put it, so the graph matches the doc.
+      writeBack(1)
+      running = false
+      external = false
+      return
+    }
     running = false
     if (!graph.reblend()) graph.touchContent()
+    onSettled?.(graph.layoutSnapshot())
+  }
+
+  /**
+   * Flies the stars to positions someone else's edit chose (a remote Balance
+   * or move, through `docBridge.js`). Ids not in `targets` stay put — or, if
+   * another such flight is already under way, carry on to where it was
+   * taking them. A local run in flight is abandoned without settling: theirs
+   * won (docBridge.js puts what that run changed back the way the doc has it).
+   */
+  function flyTo(targets) {
+    const carried = running && external ? to : null
+    running = false
+    from = new Map()
+    for (const node of graph.nodes.values()) from.set(node.id, [node.x, node.y, node.z])
+    to = new Map(from)
+    if (carried) for (const [id, target] of carried) if (from.has(id)) to.set(id, target)
+    for (const [id, target] of targets) if (from.has(id)) to.set(id, target)
+    frame = 0
+    external = true
+    running = true
   }
 
   /** Forgets the run. Call when the graph is replaced wholesale. */
@@ -103,6 +138,7 @@ export function createPhysics(graph, view, options = {}) {
     // Not `stop()`: a reset follows a load, and fading the colours then would
     // compute blends for a file that was saved with its own.
     running = false
+    external = false
     from = new Map()
     to = new Map()
     last = null
@@ -153,6 +189,16 @@ export function createPhysics(graph, view, options = {}) {
    */
   function invalidate() {
     if (!running) return
+    if (external) {
+      // Someone else's flight: drop stars that are gone, hold new ones still.
+      for (const id of [...to.keys()]) if (!graph.nodes.has(id)) to.delete(id)
+      for (const node of graph.nodes.values()) {
+        if (to.has(node.id)) continue
+        from.set(node.id, [node.x, node.y, node.z])
+        to.set(node.id, [node.x, node.y, node.z])
+      }
+      return
+    }
     if (graph.nodes.size < 2) {
       stop()
       return
@@ -176,8 +222,19 @@ export function createPhysics(graph, view, options = {}) {
     reset,
     invalidate,
     update,
+    flyTo,
     get isRunning() {
       return running
+    },
+    /** True while the run in flight is this tab's own (a Balance or orbit), not someone else's flight. */
+    get isLocalRun() {
+      return running && !external
+    },
+    get onSettled() {
+      return onSettled
+    },
+    set onSettled(callback) {
+      onSettled = callback
     },
     /** The tree Balance's shape: 'disc', 'cone' or 'off'. Takes effect on the next run. */
     get treeShape() {

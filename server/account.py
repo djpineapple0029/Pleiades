@@ -57,6 +57,7 @@ from .accounts import (
 from .atlasfile import encode_v2
 from .config import apply_overrides, validate_overrides
 from .filenames import SUFFIX, download_name
+from .maps import disconnect_user
 
 account = Blueprint("account", __name__, url_prefix="/api/account")
 account.before_request(gate)
@@ -307,8 +308,10 @@ def delete_account() -> Response | tuple[Response, int]:
     if refused:
         return refused
     with database().transaction() as conn:
+        owned = [row["id"] for row in conn.execute("SELECT id FROM maps WHERE user_id = ?", (user["id"],))]
         # Maps, snapshots, settings and sessions go with it (ON DELETE CASCADE).
         conn.execute("DELETE FROM users WHERE id = ?", (user["id"],))
+    disconnect_user(user["id"], owned)
     # The name may be signed up again; it shouldn't inherit a lockout.
     guard().succeed(f"user:{user['username']}")
     g.pop("reissue_token", None)

@@ -12,8 +12,9 @@ from pathlib import Path
 
 from flask import Flask, Response, redirect, request, send_from_directory
 
+from . import db as dbmod
 from .account import account
-from .accounts import account_shell_url, accounts
+from .accounts import account_shell_url, accounts, available, cookie_path, session_user, token_hash
 from .admin import Guard, admin, client_ip
 from .admin_users import admin_users
 from .api import api
@@ -21,9 +22,18 @@ from .config import ConfigStore
 from .db import FILENAME, Database
 from .env import env, legacy
 from .maps import maps
+from .sharing import sharing
 from .stats import Stats, instrument
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+LINK_GONE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pleiades</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#05060a;color:#cfd6e4;
+font:16px/1.5 system-ui,sans-serif;padding:16px;box-sizing:border-box}p{max-width:28rem;text-align:center}</style>
+</head><body><p>This link doesn't work any more. Ask whoever shared it for a new one.</p></body></html>
+"""
 
 BUILD_MISSING = "Frontend build missing at server/static/. Run:\n  cd frontend && npm install && npm run build\n"
 
@@ -55,7 +65,31 @@ def create_app(config_path: Path | str | None = None) -> Flask:
     app.register_blueprint(admin_users)
     app.register_blueprint(accounts)
     app.register_blueprint(maps)
+    app.register_blueprint(sharing)
     app.register_blueprint(account)
+
+    @app.get("/s/<token>")
+    def share_link(token: str) -> Response:
+        """A share link: into the app on its map, the token in the fragment so
+        it never reaches a log or a Referer. Dead links get a small page."""
+        map_id = None
+        if available():
+            sharing_on = bool(config.get("sharing", "enabled"))
+            guests_on = bool(config.get("sharing", "guest_links"))
+            if sharing_on and (guests_on or session_user() is not None):
+                with app.extensions["pleiades_db"].connect() as conn:
+                    row = conn.execute(
+                        "SELECT map_id, expires_at FROM map_links WHERE token_hash = ?", (token_hash(token),)
+                    ).fetchone()
+                if row is not None and (row["expires_at"] is None or row["expires_at"] > dbmod.now()):
+                    map_id = row["map_id"]
+        if map_id is None:
+            response = Response(LINK_GONE, status=410, mimetype="text/html")
+        else:
+            response = redirect(f"{cookie_path()}?map={map_id}#link={token}", code=302)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
 
     @app.get("/")
     def index() -> Response:

@@ -304,7 +304,7 @@ export function createEditor(container) {
   }
 
   /**
-   * `fields` are `{ key, label, value, type }`; `type: 'password'`
+   * `fields` are `{ key, label, value, type, maxLength }`; `type: 'password'`
    * masks the field and keeps its value untrimmed. `type: 'select'` is a
    * dropdown of the field's `options` (see `createSelect`). `note` is shown above the
    * fields — a rejected password or a mismatch, on a re-prompt. `commitLabel`
@@ -355,6 +355,7 @@ export function createEditor(container) {
       const input = document.createElement('input')
       input.value = field.value ?? ''
       input.spellcheck = false
+      if (field.maxLength) input.maxLength = field.maxLength
       row.append(input)
 
       panel.append(row)

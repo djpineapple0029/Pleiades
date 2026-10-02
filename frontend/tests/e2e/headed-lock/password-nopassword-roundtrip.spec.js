@@ -71,7 +71,7 @@ test('editor focus trap, and a no-password save/reopen round trip', async ({ pag
   await page.mouse.dblclick(640, 400)
   await page.waitForTimeout(200)
   const nodesBefore = await page.evaluate(() => document.getElementById('hud')?.dataset.trace)
-  expect.soft(/^node n1/.test(nodesBefore ?? ''), 'a node was spawned').toBe(true)
+  expect.soft(/^node [0-9a-z]{4}\b/.test(nodesBefore ?? ''), 'a node was spawned').toBe(true)
 
   await ctrlS(page)
   await page.waitForTimeout(150)

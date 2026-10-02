@@ -93,6 +93,7 @@ test('context loss, the modules: the nebula and every name come back', async ({ 
   const out = await page.evaluate(async (url) => {
     const THREE = await import(url)
     const { createGraph } = await import('/src/graph.js')
+    const { sequentialIds } = await import('/src/ids.js')
     const { createGraphView } = await import('/src/graphView.js')
     const { createSkybox } = await import('/src/skybox.js')
     const { LABEL_LAYER } = await import('/src/bloom.js')
@@ -109,7 +110,7 @@ test('context loss, the modules: the nebula and every name come back', async ({ 
     const skybox = createSkybox(renderer)
     const skyScene = new THREE.Scene()
     skyScene.add(skybox.object)
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const view = createGraphView(graph, scene, renderer)
     // createLabels throws its rasters away once Jost lands; let that happen
     // now, or it would redraw every name mid-test and hide what a loss does.

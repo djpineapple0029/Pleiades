@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { NODE_RADIUS } from './graphView.js'
 import { createStatus } from './status.js'
-import { createHistory } from './history.js'
+import { bindTextarea, trimText } from './room/notesBinding.js'
 import { createCommands } from './commands.js'
 import { rankNodes } from './search.js'
 import { focusSetOf } from './heat.js'
@@ -9,6 +9,9 @@ import { orbitFocus, shortestPath } from './paths.js'
 import { FLY_DURATION } from './flyTo.js'
 import { createKeymap } from './keymap.js'
 import { LOOKS } from './looks.js'
+import { nodeName } from './ids.js'
+import { personName } from './room/authors.js'
+import { can, denyText } from './room/can.js'
 
 const SPAWN_DISTANCE = 90 // world units ahead of the camera for a new node
 const DOUBLE_CLICK_MS = 320
@@ -80,9 +83,9 @@ const SERVER_MAP_MENU = [
 // Overview up, Back down (a server map's "Save to file" pushes them to thirds).
 // Looks are not here on purpose: they change only from their own key (V), so
 // the right-button menus stay about the map.
-const MORE_MENU = (serverMap) => [
+const MORE_MENU = (onServer) => [
   { key: 'overview', label: 'Overview' },
-  ...(serverMap ? [{ key: 'save-file', label: 'Save to file' }] : []),
+  ...(onServer ? [{ key: 'save-file', label: 'Save to file' }] : []),
   { key: 'back', label: 'Back' },
 ]
 
@@ -110,7 +113,6 @@ const MAP_TARGET_MORE = { kind: 'map', ring: 'more' }
 const LOOK_TARGET = { kind: 'look' }
 const SHAPE_TARGET = { kind: 'shape' }
 
-const nodeName = (node) => node.label || node.id
 // The layout shapes (physics.js `treeShape`), clockwise from the top. Off is
 // the constellation layout, which has no tree.
 const SHAPES = [
@@ -147,9 +149,10 @@ function sameTarget(a, b) {
  * the password panel, and the panel is a modal surface — only this module knows
  * whether one is already up, and only this module can suspend flight for it.
  *
- * With a `serverMap` (a map opened from the account's list), Save sends it to
- * the server at once instead of downloading a file, the HUD shows where its
- * autosave stands, and the map menu leads back to the list (`leaveToMaps`).
+ * With a `room` (a map opened from the account's list, live through its room:
+ * room/roomClient.js), the map saves itself as it changes, the HUD says when
+ * the connection is down (read-only until it's back) or saving is failing,
+ * and the map menu leads back to the list (`leaveToMaps`).
  */
 export function createInteraction({
   camera,
@@ -159,6 +162,8 @@ export function createInteraction({
   graph,
   view,
   physics,
+  mapDoc,
+  undo,
   files,
   overview,
   renderSettings,
@@ -172,17 +177,46 @@ export function createInteraction({
   hud,
   speedEl,
   keymap = createKeymap(),
-  serverMap = null,
+  room = null,
   leaveToMaps = () => {},
-  goToMap = () => {},
 }) {
   const raycaster = new THREE.Raycaster()
   const crosshair = new THREE.Vector2(0, 0) // dead centre of the viewport
   const forward = new THREE.Vector3()
   const point = new THREE.Vector3()
   const status = createStatus(hud)
-  // Every edit goes through here, which is what makes it undoable.
-  const commands = createCommands({ graph, view, physics, history: createHistory() })
+  // Every edit goes through here, which is what makes it undoable. In a room,
+  // only while it says we may edit and the connection is up; an edit refused
+  // for that says why, once a moment, instead of silently doing nothing.
+  // The star or link a label or notes editor is open on, so a delete by
+  // someone else can close it (closeAbout).
+  let editingAbout = null
+  // The notes textarea while it's open: read-only whenever the room is
+  // (offline, or a viewer now), like every other edit (decision 21).
+  let notesArea = null
+  const canTypeNotes = () => !room || room.canEdit
+  let refusedAt = -Infinity
+  function canEdit() {
+    if (!room || room.canEdit) return true
+    const now = performance.now()
+    if (now - refusedAt > 2000) {
+      refusedAt = now
+      status.notice(room.state === 'read_only' ? 'view only' : 'reconnecting… · changes are paused')
+    }
+    return false
+  }
+  /** A permission (room/can.js), or the HUD says it's off for you here. */
+  function allowed(perm) {
+    if (can(room, perm)) return true
+    status.notice(denyText(perm))
+    return false
+  }
+  /** Balance, Orbit and a layout shape rearrange the whole map. */
+  const mayRearrange = () => canEdit() && allowed('balance')
+  const commands = createCommands({ graph, view, physics, mapDoc, undo, canEdit })
+  // What the HUD keeps saying about the room until it changes: reconnecting,
+  // or saving failing on the server. Null when there's nothing to say.
+  let roomProblem = null
 
   let mode = 'idle' // idle | connecting | menu | editing | moving | searching | flying
   let hover = null // { kind, id } under the crosshair
@@ -197,9 +231,6 @@ export function createInteraction({
   let lastLeftDown = 0
   let lastSpeedText = null
   let busy = false // a file flow is somewhere between its first prompt and its result
-  // The server map's conflict/deleted panel was shown and put off with Esc;
-  // Ctrl+S brings it back.
-  let problemPutOff = false
   // True only across a `files.open()` await: closes the gap where `endModal()`
   // has already returned `mode` to 'idle' (the moment a password is submitted)
   // but the decrypt-and-swap it triggered hasn't resolved yet. `isModal` below
@@ -264,8 +295,8 @@ export function createInteraction({
       text = back ? `${back} to fly` : ''
     } else if (focusTarget) {
       text = focusHint()
-    } else if (serverMap?.problemText) {
-      text = serverMap.problemText
+    } else if (roomProblem) {
+      text = roomProblem
     }
     if (physics.isRunning) {
       const count = graph.clusterCount
@@ -319,8 +350,8 @@ export function createInteraction({
         text = described
       } else if (focused) {
         text = focused
-      } else if (serverMap) {
-        text = `${serverMap.name} · ${serverMap.statusText} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`
+      } else if (room) {
+        text = `${room.map?.name ?? 'map'} · ${roomStatusText()} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`
       } else {
         const dirty = files.isDirty ? ' · unsaved' : ''
         text = `${files.filename}${dirty} · ${graph.nodes.size} nodes · ${graph.edges.size} edges`
@@ -493,9 +524,6 @@ export function createInteraction({
 
     updateSidebar()
     updateHud()
-
-    // Waits for any panel, menu or edit in progress to finish first.
-    if (serverMap?.isStopped && !problemPutOff && mode === 'idle' && !busy && !loading) resolveServerProblem()
   }
 
   /** Strictly the star under the crosshair, only while flying. */
@@ -619,7 +647,9 @@ export function createInteraction({
     beginModal()
     hover = target
     view.setHover(target)
+    editingAbout = { kind: target.kind, id: target.id }
     const value = await titleEdit.start(item.label, (text) => view.setLabelDraft(target, text))
+    editingAbout = null
     view.setLabelDraft(null)
     endModal()
     if (value === null) return
@@ -633,19 +663,40 @@ export function createInteraction({
 
   /**
    * Ctrl/Cmd+Enter on a targeted star: full notes editing in the sidebar, with a
-   * real cursor. Pointer lock comes back by itself on Save or Esc — the app
-   * released it, so re-locking needs no click.
+   * real cursor, live — typing goes straight into the star's shared text
+   * (decision 8), so losing the lock or the connection never loses it. Done
+   * keeps it as one undo step; Esc takes this session's typing back out.
+   * Pointer lock comes back by itself either way — the app released it, so
+   * re-locking needs no click.
    */
   async function editNotes(node) {
+    const session = commands.editNotes(node.id)
+    if (!session) return // read-only: canEdit has said why
     await lock.release('panel')
     mode = 'editing'
     beginModal()
+    editingAbout = { kind: 'node', id: node.id }
+    let binding = null
     try {
-      const notes = await sidebar.edit(nodeName(node), node.notes)
+      const kept = await sidebar.edit(nodeName(node), (textarea) => {
+        binding = bindTextarea(textarea, session.text, { origin: mapDoc.LOCAL })
+        notesArea = textarea
+        notesArea.readOnly = !canTypeNotes()
+      })
+      binding?.destroy()
+      binding = null
       endModal()
-      const current = graph.getNode(node.id)
-      if (notes !== null && current) commands.setNodeText(current.id, current.label, notes)
+      if (kept) {
+        // A local map's notes are trimmed on Done, as Save always did. Not
+        // in a room: the ends may be someone else's typing.
+        if (!room) trimText(session.text, mapDoc.LOCAL)
+        session.end()
+      } else session.discard()
     } finally {
+      binding?.destroy()
+      if (notesArea) notesArea.readOnly = false
+      notesArea = null
+      editingAbout = null
       if (mode === 'editing') endModal()
       sidebarKey = null // view mode redraws from scratch
       lock.resume()
@@ -674,8 +725,10 @@ export function createInteraction({
    * counts) and this is a single keystroke, until `Shift` asks again.
    */
   async function saveMap({ reprompt }) {
-    // A server map's Save goes to the server; Save As is still a file.
-    if (serverMap && !reprompt) return saveToServer()
+    // A server map saves itself; Save asks its room to do it now, and Save
+    // As is still a file.
+    if (room && !reprompt) return saveRoomNow()
+    if (!allowed('export')) return { ok: false }
     if (busy) {
       status.notice('a file operation is still in progress')
       return { ok: false }
@@ -696,7 +749,7 @@ export function createInteraction({
     try {
       while (!files.hasCredentials || reprompt) {
         const values = await prompt(
-          serverMap ? 'save a copy to a file' : files.hasCredentials ? 'save as' : 'save map',
+          room ? 'save a copy to a file' : files.hasCredentials ? 'save as' : 'save map',
           [
             { key: 'filename', label: 'File name', value: name },
             { key: 'password', label: 'Password (optional)', type: 'password' },
@@ -735,51 +788,70 @@ export function createInteraction({
     }
   }
 
-  /** Ctrl/Cmd+S on a server map: no panel, and no waiting for the autosave. */
-  async function saveToServer() {
-    if (serverMap.isStopped) return resolveServerProblem()
+  /** Ctrl/Cmd+S on a server map: the room saves at once rather than in a moment. */
+  async function saveRoomNow() {
     status.busy('saving')
-    const result = await serverMap.saveNow()
-    if (result.ok) status.success(result.unchanged ? 'already saved' : 'saved')
-    else status.error(`save failed: ${result.error}`)
-    return result
+    const ok = await room.flush()
+    if (ok) status.success('saved')
+    else
+      status.error(room.state === 'live' ? 'not saved · the server is having trouble' : 'not saved · offline')
+    return { ok }
   }
 
-  /**
-   * The map menu's "My maps": saves first, and only leaves unsaved work
-   * behind if the user says so after the save has failed.
-   */
+  /** The map menu's "My maps": saved first, so the list shows what was just done. */
   async function backToMaps() {
-    if (busy) {
-      status.notice('a file operation is still in progress')
-      return
-    }
+    if (busy) return
     busy = true
+    status.busy('saving')
     try {
-      if (serverMap.hasUnsaved) {
-        status.busy('saving')
-        const result = await serverMap.saveNow()
-        status.done()
-        if (!result.ok && !(await confirmLeave(result.error))) {
-          status.error(`not saved: ${result.error}`)
-          return
-        }
-      }
-      leaveToMaps()
+      await room.flush()
     } finally {
       busy = false
     }
+    leaveToMaps()
   }
 
-  /** Resolves true only if the user chooses to leave a map that isn't saved. */
-  async function confirmLeave(reason) {
-    const kept = serverMap.keepsLocally
-      ? ' Your changes stay in this browser and are offered the next time you open this map.'
-      : ''
-    const choice = await askChoice(`${serverMap.name} is not saved`, `${reason}.${kept}`, [
-      { key: 'l', label: 'L: leave anyway' },
-    ])
-    return choice === 'l'
+  /** The trace line's word for the room's connection. */
+  function roomStatusText() {
+    if (room.state === 'live') return 'live'
+    if (room.state === 'read_only') return 'view only'
+    if (room.state === 'offline') return 'reconnecting'
+    if (room.state === 'closed') return 'closed'
+    return 'connecting'
+  }
+
+  /** The room's connection changed (roomClient.js `onState`; main.js also
+   *  passes the state the map opened in). */
+  let lastRoomState = null
+  function roomState(state) {
+    const before = lastRoomState
+    lastRoomState = state
+    if (notesArea) notesArea.readOnly = !canTypeNotes()
+    if (state === 'offline') {
+      roomProblem = 'reconnecting… · changes are paused'
+    } else if (roomProblem?.startsWith('reconnecting')) {
+      roomProblem = null
+      status.notice(state === 'read_only' ? 'reconnected · view only' : 'reconnected')
+    } else if (state === 'read_only' && before !== 'read_only') {
+      status.notice('view only')
+    }
+  }
+
+  /** A message from the room (roomClient.js `onControl`) once the map is open. */
+  function roomMessage(message) {
+    if (message.type === 'error' && message.code === 'not_saved') {
+      roomProblem = 'not saved · server problem (retrying)'
+    } else if (message.type === 'saved' && roomProblem?.startsWith('not saved')) {
+      roomProblem = null
+      status.notice('saved again')
+    } else if (message.type === 'error' && message.code === 'bad_update') {
+      roomProblem = 'the server refused an edit from this tab · reload'
+    }
+  }
+
+  /** Says, and keeps saying, why this map can't be used any more. */
+  function roomEnded(text) {
+    roomProblem = text
   }
 
   /** A modal panel of keyed choices; the chosen key, or null for Esc. */
@@ -797,126 +869,79 @@ export function createInteraction({
     }
   }
 
+  /** Everyone else in the room who can edit (decision 12: viewers don't count). */
+  function otherEditors() {
+    if (!room) return []
+    const me = room.you?.conn
+    const names = new Set()
+    for (const person of room.roster) {
+      if (person.conn !== me && (person.role === 'editor' || person.role === 'owner'))
+        names.add(personName(person))
+    }
+    return [...names]
+  }
+
+  const listNames = (names) =>
+    names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
+
   /**
-   * Another tab or device saved this map, or it was deleted: autosave has
-   * stopped for good, and only the user can say what becomes of the edits
-   * here. Opens by itself the first time (from `update`); Esc puts it off,
-   * and Ctrl/Cmd+S asks again. The edits are kept in this browser meanwhile.
+   * True to go ahead with a layout that moves every star for everyone in the
+   * map (decision 12): asks first while other editors are in it.
    */
-  async function resolveServerProblem() {
-    if (busy) {
-      status.notice('a file operation is still in progress')
-      return { ok: false }
-    }
-    busy = true
-    problemPutOff = true
-    const conflict = serverMap.problemKind === 'conflict'
-    try {
-      let choice
-      if (conflict) {
-        const at = serverMap.conflictAt
-          ? ` at ${new Date(serverMap.conflictAt * 1000).toLocaleTimeString()}`
-          : ''
-        choice = await askChoice(
-          `${serverMap.name} was changed in another tab or device${at}`,
-          "Your changes here are not saved. Loading theirs keeps yours in this map's history (My maps → History).",
-          [
-            { key: 'l', label: 'L: load theirs' },
-            { key: 'c', label: 'C: save mine as a copy' },
-          ],
-        )
-      } else {
-        choice = await askChoice(
-          `${serverMap.name} was deleted`,
-          'Your changes here are not saved anywhere.',
-          [{ key: 'c', label: 'C: save as a new map' }],
-        )
-      }
-      if (choice === 'l') {
-        // Kept on the server before they're dropped here; if that can't
-        // happen, nothing is dropped.
-        status.busy('keeping your changes in history')
-        const kept = await serverMap.keepInHistory()
-        if (!kept.ok) {
-          status.error(`not loaded: could not keep your changes (${kept.error})`)
-          return kept
-        }
-        serverMap.leave()
-        await serverMap.forgetBackup()
-        goToMap(serverMap.id)
-        return { ok: true }
-      }
-      if (choice === 'c') {
-        status.busy('saving a copy')
-        const result = await serverMap.saveCopy(
-          conflict ? `${serverMap.name} (conflict copy)` : serverMap.name,
-        )
-        if (!result.ok) {
-          status.error(`copy not saved: ${result.error}`)
-          return result
-        }
-        serverMap.leave()
-        await serverMap.forgetBackup()
-        status.success(`saved as ${result.name}`)
-        goToMap(result.id)
-        return { ok: true }
-      }
-      status.notice(`not saved · ${keymap.label('save')} to choose what happens`)
-      return { ok: false }
-    } finally {
-      busy = false
-    }
+  async function rearrangeForEveryone(what) {
+    const others = otherEditors()
+    if (!others.length) return true
+    const choice = await askChoice(
+      `${listNames(others)} ${others.length === 1 ? 'is' : 'are'} editing. Rearrange the map for everyone?`,
+      `${what} moves every star, for everyone in this map. Undo takes it back.`,
+      [{ key: 'r', label: 'R: rearrange' }],
+    )
+    return choice === 'r'
+  }
+
+  /** Balance (B, the map menu, a shape from T). Stopping a run is instant. */
+  async function balance() {
+    if (physics.isLocalRun) return commands.toggleBalance()
+    if (!mayRearrange()) return null
+    if (!(await rearrangeForEveryone('Balance'))) return null
+    return commands.toggleBalance()
+  }
+
+  /** Orbit (O on a star): a whole-map layout like Balance, so it asks the same. */
+  async function orbit(id, plane) {
+    if (!mayRearrange()) return
+    if (!(await rearrangeForEveryone('Orbit'))) return
+    if (graph.getNode(id) && commands.orbitAround(id, plane)) setFocus({ kind: 'orbit', id })
   }
 
   /**
-   * Opening a server map this browser holds unsaved edits for
-   * (`localBackup.js`, `backupOffer`). 'restore' puts them straight on and
-   * autosave sends them; 'copy' (the server has moved on since) can only keep
-   * them as a map of their own. Esc keeps them for next time.
+   * Someone else deleted this star or link (docBridge.js `onRemoved`):
+   * anything open about it closes (decision 10), and the HUD says what went.
    */
-  async function offerBackup(record, kind) {
-    if (busy) return
-    busy = true
-    try {
-      const restore = kind === 'restore'
-      const choice = await askChoice(
-        `unsaved changes to ${serverMap.name} from ${new Date(record.savedAt).toLocaleString()}`,
-        restore
-          ? 'This browser kept them; they never reached the server.'
-          : 'This browser kept them, but the map has changed on the server since, so they can only be kept as a copy.',
-        [
-          restore ? { key: 'r', label: 'R: restore them' } : { key: 'c', label: 'C: save them as a copy' },
-          { key: 'd', label: 'D: discard them' },
-        ],
-      )
-      if (choice === 'd') {
-        await serverMap.forgetBackup()
-        status.info('discarded the unsaved changes')
-      } else if (choice === 'r') {
-        try {
-          files.applyPayload(record.payload)
-        } catch (error) {
-          status.error(`could not restore them: ${error.message}`)
-          return
-        }
-        commands.clear()
-        forgetJumps()
-        overview.refit()
-        serverMap.adoptBackup()
-        status.success('restored the unsaved changes')
-      } else if (choice === 'c') {
-        status.busy('saving a copy')
-        const result = await serverMap.saveCopy(`${serverMap.name} (unsaved copy)`, record.payload)
-        if (!result.ok) {
-          status.error(`copy not saved: ${result.error}`)
-          return
-        }
-        await serverMap.forgetBackup()
-        status.success(`saved as ${result.name} in My maps`)
-      }
-    } finally {
-      busy = false
+  function closeAbout({ kind, id, label, at }) {
+    // Their delete plays like a local one (decision 11): the star still has
+    // its drawn size and tint here, the view hasn't caught up yet.
+    if (kind === 'node' && at && !renderSettings?.reducedMotion && renderSettings?.supernova !== false) {
+      supernova?.burst({ position: at, radius: view.radiusOf(id), tint: view.tintOf(id) })
     }
+    if (menuTarget && menuTarget.kind === kind && menuTarget.id === id) {
+      menu.close()
+      menuTarget = null
+      endModal()
+    }
+    if (editingAbout && editingAbout.kind === kind && editingAbout.id === id) {
+      if (titleEdit.isActive) titleEdit.cancel()
+      if (sidebar.isEditing) sidebar.cancel()
+      if (editor.isOpen) editor.cancel()
+    }
+    if (kind === 'node') {
+      if (sourceId === id) cancelConnect()
+      if (moveId === id) cancelMove()
+      if (pathStart === id) pathStart = null
+    }
+    if (hover?.kind === kind && hover.id === id) clearHover()
+    if (focusTarget?.kind === kind && focusTarget.id === id) setFocus(null)
+    if (kind === 'node') status.notice(`${label || 'a star'} was deleted`)
   }
 
   /**
@@ -927,7 +952,7 @@ export function createInteraction({
    * settles, however it ends.
    */
   async function openMap() {
-    if (serverMap) {
+    if (room) {
       status.notice('this map saves to your account; open files in the app without an account')
       return
     }
@@ -1026,6 +1051,7 @@ export function createInteraction({
    * file opens in, starting on the one showing now; Enter takes that.
    */
   async function exportMap() {
+    if (!allowed('export')) return
     if (busy) {
       status.notice('a file operation is still in progress')
       return
@@ -1116,6 +1142,7 @@ export function createInteraction({
     if (mode === 'connecting') cancelConnect()
     else if (mode === 'moving') cancelMove()
     graph.load({ nodes: [], edges: [] })
+    mapDoc.replace({ nodes: [], edges: [] })
     physics.reset()
     view.sync()
     commands.clear()
@@ -1214,6 +1241,16 @@ export function createInteraction({
     flyTo.toPose(pose.position, pose.quaternion, renderSettings.reducedMotion ? 0 : FLY_DURATION, endModal)
   }
 
+  /** A roster bubble: fly to a camera pose (behind someone, looking where they look). */
+  function flyToPose(position, quaternion) {
+    if (mode !== 'idle' && mode !== 'flying') return
+    jumps.push({ position: camera.position.clone(), quaternion: camera.quaternion.clone() })
+    mode = 'flying'
+    beginModal()
+    clearHover()
+    flyTo.toPose(position, quaternion, renderSettings.reducedMotion ? 0 : FLY_DURATION, endModal)
+  }
+
   /** Poses and a focus from one map mean nothing in another. */
   function forgetJumps() {
     jumps.length = 0
@@ -1249,8 +1286,8 @@ export function createInteraction({
     menuTarget = ring === 'top' ? MAP_TARGET : MAP_TARGET_MORE
     mode = 'menu'
     beginModal() // idempotent if already modal from the ring we're leaving — do not guard it
-    const top = serverMap ? SERVER_MAP_MENU : MAP_MENU
-    menu.open(ring === 'top' ? top : MORE_MENU(Boolean(serverMap)))
+    const top = room ? SERVER_MAP_MENU : MAP_MENU
+    menu.open(ring === 'top' ? top : MORE_MENU(Boolean(room)))
   }
 
   /**
@@ -1286,10 +1323,10 @@ export function createInteraction({
     // away — one undo entry, like B. Picking the current shape re-balances.
     if (target.kind === 'shape') {
       const shape = SHAPES.find((item) => item.id === key)
-      if (!shape) return
+      if (!shape || (!physics.isLocalRun && !mayRearrange())) return
       physics.treeShape = shape.id
       if (physics.isRunning) physics.stop()
-      commands.toggleBalance()
+      balance()
       status.info(`layout: ${shape.name} · hold ${keymap.label('tree_shape')} to change`)
       return
     }
@@ -1302,7 +1339,7 @@ export function createInteraction({
         else if (key === 'open') openMap()
         else if (key === 'save') saveMap({ reprompt: false })
         else if (key === 'export') exportMap()
-        else if (key === 'balance') commands.toggleBalance()
+        else if (key === 'balance') balance()
         return
       }
       if (key === 'back') return openMapMenu('top')
@@ -1474,7 +1511,7 @@ export function createInteraction({
       // Flat, facing the camera: its right and up are the orbit's plane.
       const e = camera.matrixWorld.elements
       const plane = { right: [e[0], e[1], e[2]], up: [e[4], e[5], e[6]] }
-      if (commands.orbitAround(hover.id, plane)) setFocus({ kind: 'orbit', id: hover.id })
+      orbit(hover.id, plane)
     }
 
     if (is('path') && !event.repeat && controls.isLocked && mode === 'idle') pathKey()
@@ -1507,7 +1544,7 @@ export function createInteraction({
     // don't want. It works in the overview too, which is the natural place to
     // watch a layout settle from.
     if (is('balance') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {
-      commands.toggleBalance()
+      balance()
     }
   }
 
@@ -1559,7 +1596,41 @@ export function createInteraction({
     /** The HUD's messages alone, for when the frame loop has stopped and a
      *  save from the crash notice still has to say how it went. */
     tickStatus: () => status.tick(),
-    offerBackup,
+    roomState,
+    roomMessage,
+    roomEnded,
+    closeAbout,
+    flyToPose,
+    /** What this tab is doing, for presence: 'fly', 'overview', 'menu' or 'editing'. */
+    get presenceMode() {
+      if (overview.isActive) return 'overview'
+      if (mode === 'editing') return 'editing'
+      if (mode === 'menu' || !controls.isLocked) return 'menu'
+      return 'fly'
+    },
+    /** The star a label or notes editor is open on, or null. */
+    get editingId() {
+      return editingAbout?.kind === 'node' ? editingAbout.id : null
+    },
+    /** The edit commands (the dev-only test seam in main.js reaches them here). */
+    commands,
+    /** Test seam: the radial menu on a star, as a right-click on it would open it. */
+    openMenuFor: (id) => openMenu({ kind: 'node', id }),
+    /** Test seam: what the Balance key does, the warning included. */
+    balance,
+    /** Test seam: what Ctrl/Cmd+E does, the permission check included. */
+    exportMap: () => {
+      exportMap()
+    },
+    /** Test seam: what the orbit key does on a star, the warning included. */
+    orbitFor: (id) => {
+      orbit(id, {})
+    },
+    /** Test seam: the notes editor on a star, as Ctrl/Cmd+Enter on it opens it. */
+    editNotesFor: (id) => {
+      const node = graph.getNode(id)
+      if (node) editNotes(node)
+    },
     /** True while a panel owns the keyboard, or a file is being decrypted and
      *  swapped in — nothing should steal focus back, or re-lock and edit the
      *  graph that's about to be replaced. */

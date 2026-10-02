@@ -12,7 +12,7 @@ RUN npm run build
 
 FROM python:3.13-slim
 WORKDIR /app
-RUN pip install --no-cache-dir flask cryptography waitress tomlkit
+RUN pip install --no-cache-dir flask cryptography tomlkit starlette "uvicorn[standard]" a2wsgi pycrdt
 COPY server/ ./server/
 COPY --from=frontend-build /app/server/static ./server/static
 COPY docker_serve.py .

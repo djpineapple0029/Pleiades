@@ -84,6 +84,9 @@ jobs:
       # Its own Flask with accounts on (playwright.accounts.config.js).
       - run: npm run test:e2e:accounts
         if: ${{ !cancelled() }}
+      # Two and three people in one map, through its live room (playwright.multiplayer.config.js).
+      - run: npm run test:e2e:multiplayer
+        if: ${{ !cancelled() }}
       - uses: actions/upload-artifact@v7
         if: failure()
         with:

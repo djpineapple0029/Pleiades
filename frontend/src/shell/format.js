@@ -57,3 +57,31 @@ export function versionSummary(snapshot) {
   if (REASONS[snapshot.reason]) parts.push(REASONS[snapshot.reason])
   return parts.join(' · ')
 }
+
+const people = (n) => (n === 1 ? '1 person' : `${n} people`)
+
+/**
+ * The Restore confirm (context/MOONSHOT.md decision 13): with people in the
+ * map it swaps for all of them, so it says so.
+ */
+export function restoreQuestion(online) {
+  if (!online)
+    return { text: 'Make this the current version? The current one is kept here first.', yes: 'Restore' }
+  return {
+    text: `${people(online)} ${online === 1 ? 'is' : 'are'} in this map. Restore this version for everyone? What’s there now is kept in History.`,
+    yes: 'Restore for everyone',
+  }
+}
+
+/** The Delete confirm (decision 22): it removes the map for everyone it reaches. */
+export function deleteQuestion(members, online) {
+  if (!members && !online) return { text: "Delete it for good? This can't be undone.", yes: 'Delete' }
+  const after = 'Deleting it removes it for everyone.'
+  if (!members)
+    return {
+      text: `${people(online)} ${online === 1 ? 'is' : 'are'} in this map now. ${after}`,
+      yes: 'Delete for everyone',
+    }
+  const inNow = online ? `, and ${online} ${online === 1 ? 'is' : 'are'} in it now` : ''
+  return { text: `This map is shared with ${people(members)}${inNow}. ${after}`, yes: 'Delete for everyone' }
+}

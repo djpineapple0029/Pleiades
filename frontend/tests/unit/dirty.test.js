@@ -4,6 +4,7 @@
 // and WebCrypto, and this suite runs in plain Node (vitest.config.js).
 import { describe, it, expect } from 'vitest'
 import { createGraph } from '../../src/graph.js'
+import { sequentialIds } from '../../src/ids.js'
 import { createFiles } from '../../src/files.js'
 
 // Just enough for files.js's applyPayload/toPayload to run without a DOM.
@@ -18,11 +19,11 @@ const fakePhysics = { reset: () => {} }
 
 describe('graph.js contentRevision', () => {
   it('starts at 0 on a fresh graph', () => {
-    expect(createGraph().contentRevision).toBe(0)
+    expect(createGraph({ newId: sequentialIds() }).contentRevision).toBe(0)
   })
 
   it('every structural mutator that bumps revision also bumps contentRevision', () => {
-    const g = createGraph()
+    const g = createGraph({ newId: sequentialIds() })
     const before = g.contentRevision
     const a = g.addNode({ x: 0, y: 0, z: 0 })
     const b = g.addNode({ x: 1, y: 0, z: 0 })
@@ -35,7 +36,7 @@ describe('graph.js contentRevision', () => {
   })
 
   it('setNodeText bumps only contentRevision, never revision', () => {
-    const g = createGraph()
+    const g = createGraph({ newId: sequentialIds() })
     const node = g.addNode({ x: 0, y: 0, z: 0 })
     const revision = g.revision
     const contentRevision = g.contentRevision
@@ -47,7 +48,7 @@ describe('graph.js contentRevision', () => {
   })
 
   it('setEdgeLabel bumps only contentRevision, never revision', () => {
-    const g = createGraph()
+    const g = createGraph({ newId: sequentialIds() })
     const a = g.addNode({ x: 0, y: 0, z: 0 })
     const b = g.addNode({ x: 1, y: 0, z: 0 })
     const edge = g.addEdge(a.id, b.id)
@@ -60,7 +61,7 @@ describe('graph.js contentRevision', () => {
   })
 
   it('touchContent bumps only contentRevision — physics start/stop and a manual move use this', () => {
-    const g = createGraph()
+    const g = createGraph({ newId: sequentialIds() })
     const revision = g.revision
     const contentRevision = g.contentRevision
     g.touchContent()
@@ -69,7 +70,7 @@ describe('graph.js contentRevision', () => {
   })
 
   it('setNodeText/setEdgeLabel return false for an id that does not exist', () => {
-    const g = createGraph()
+    const g = createGraph({ newId: sequentialIds() })
     expect(g.setNodeText('missing', 'x', 'y')).toBe(false)
     expect(g.setEdgeLabel('missing', 'x')).toBe(false)
   })
@@ -77,20 +78,20 @@ describe('graph.js contentRevision', () => {
 
 describe('files.js isDirty', () => {
   it('a freshly constructed files object is clean', () => {
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const files = createFiles({ graph, view: fakeView, camera: fakeCamera(), physics: fakePhysics })
     expect(files.isDirty).toBe(false)
   })
 
   it('any graph mutation makes it dirty', () => {
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const files = createFiles({ graph, view: fakeView, camera: fakeCamera(), physics: fakePhysics })
     graph.addNode({ x: 0, y: 0, z: 0 })
     expect(files.isDirty).toBe(true)
   })
 
   it('markClean and reset both re-baseline against the current content revision', () => {
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const files = createFiles({ graph, view: fakeView, camera: fakeCamera(), physics: fakePhysics })
     graph.addNode({ x: 0, y: 0, z: 0 })
     expect(files.isDirty).toBe(true)
@@ -105,7 +106,7 @@ describe('files.js isDirty', () => {
   })
 
   it('applyPayload marks the map clean — Open never needs interaction.js to touch a revision', () => {
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const files = createFiles({ graph, view: fakeView, camera: fakeCamera(), physics: fakePhysics })
     graph.addNode({ x: 0, y: 0, z: 0 }) // dirty the graph before "opening" a file
     expect(files.isDirty).toBe(true)
@@ -118,7 +119,7 @@ describe('files.js isDirty', () => {
   })
 
   it('clearCredentials forgets password and filename — New map starts fresh', () => {
-    const graph = createGraph()
+    const graph = createGraph({ newId: sequentialIds() })
     const files = createFiles({ graph, view: fakeView, camera: fakeCamera(), physics: fakePhysics })
     files.setCredentials('secret', 'mymap')
     expect(files.hasCredentials).toBe(true)
@@ -131,7 +132,7 @@ describe('files.js isDirty', () => {
 
   it('names save as .plm, a legacy .atlasmap name included', () => {
     const files = createFiles({
-      graph: createGraph(),
+      graph: createGraph({ newId: sequentialIds() }),
       view: fakeView,
       camera: fakeCamera(),
       physics: fakePhysics,
@@ -146,5 +147,22 @@ describe('files.js isDirty', () => {
       files.setFilename(given)
       expect(files.filename).toBe(saved)
     }
+  })
+})
+
+describe('files.applyPayload into a live room', () => {
+  it('keepDoc loads the graph from the doc it was given and leaves that doc alone', async () => {
+    const { createMapDoc } = await import('../../src/mapDoc.js')
+    const { docToPayload } = await import('../../src/format/ydoc.js')
+    const mapDoc = createMapDoc()
+    mapDoc.replace({ nodes: [{ id: 'n-shared', x: 1, y: 2, z: 3 }], edges: [] })
+    const before = mapDoc.nodes.get('n-shared')
+    const graph = createGraph({ newId: sequentialIds() })
+    const files = createFiles({ graph, view: fakeView, camera: fakeCamera(), physics: fakePhysics, mapDoc })
+    files.applyPayload(docToPayload(mapDoc.doc), { keepDoc: true })
+    expect(graph.getNode('n-shared').x).toBe(1)
+    // The same Y.Map, not a fresh copy: a replace would have made new ones.
+    expect(mapDoc.nodes.get('n-shared')).toBe(before)
+    expect(files.isDirty).toBe(false)
   })
 })

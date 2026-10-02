@@ -961,3 +961,148 @@ kbd {
 .card.danger-zone h2 {
   color: var(--red);
 }
+
+/* Maps other accounts shared with you, under your own. */
+.shared-section {
+  margin-top: 28px;
+}
+
+.shared-section h2 {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.map .badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--panel);
+  font-size: 12px;
+  font-weight: 500;
+  vertical-align: 2px;
+}
+
+/* Who a map is shared with, opened under its row. */
+.map .sharing {
+  flex-basis: 100%;
+  margin: 2px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--row);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--soft);
+}
+
+.sharing p {
+  margin: 0;
+}
+
+.sharing .members {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.sharing .member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--row);
+}
+
+.sharing .member:first-child {
+  border-top: none;
+}
+
+.sharing .who {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sharing .add {
+  flex-wrap: wrap;
+}
+
+.sharing .add input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.sharing .note {
+  font-size: 13px;
+}
+
+.sharing-heading {
+  margin: 14px 0 6px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sharing-heading:first-child {
+  margin-top: 0;
+}
+
+/* Permissions: a name, then a control per column. */
+.perm-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  align-items: center;
+  width: 100%;
+}
+
+.perm-table {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  margin-bottom: 6px;
+}
+
+.perm-head {
+  color: var(--soft);
+  font-size: 13px;
+  text-align: center;
+}
+
+.perm-table input[type='checkbox'] {
+  justify-self: center;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.sharing .member.perms {
+  padding: 8px 0 10px 12px;
+  border-top: none;
+}
+
+.sharing .link-state {
+  margin-bottom: 8px;
+  color: var(--ink);
+}
+
+.sharing .link-form,
+.sharing .link-copy {
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.sharing .link-copy input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.sharing .dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}

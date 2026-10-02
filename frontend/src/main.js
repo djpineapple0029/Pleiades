@@ -12,6 +12,9 @@ import { createGraph } from './graph.js'
 import { createGraphView } from './graphView.js'
 import { createPhysics } from './physics.js'
 import { createFiles } from './files.js'
+import { createMapDoc } from './mapDoc.js'
+import { createDocBridge } from './docBridge.js'
+import { createUndo } from './undo.js'
 import { createRadialMenu } from './radialMenu.js'
 import { createEditor } from './editor.js'
 import { createOverview } from './overview.js'
@@ -27,9 +30,15 @@ import { APP_ROWS, SERVER_MAP_ROWS, renderKeyList, renderPromptHint, renderResum
 import { setRevealScale, setLabelTarget } from './labels.js'
 import { CONTEXT_LOST, NO_WEBGL, createCrashGuard, errorText } from './crashGuard.js'
 import { watchContextLoss } from './contextLoss.js'
-import { accountUrl, appUrl, request } from './api.js'
-import { TICK_MS, createServerMap, loadServerMap } from './serverMap.js'
-import { backupOffer, createBackupStore } from './localBackup.js'
+import { accountUrl, homeUrl, request, roomUrl } from './api.js'
+import { askGuestName, guestKey, rememberLink } from './room/guestPrompt.js'
+import { can } from './room/can.js'
+import { createRoomClient } from './room/roomClient.js'
+import { colourFor, hexToRgb, personName } from './room/authors.js'
+import { createPosePublisher } from './room/presence.js'
+import { createAvatars } from './room/avatars.js'
+import { createRoster } from './room/roster.js'
+import { docToPayload } from './format/ydoc.js'
 
 const MAX_FRAME_DELTA = 0.1 // seconds — clamps the jump after a backgrounded tab
 const STATUS_TICK_MS = 250 // the HUD's own clock once the frame loop has stopped
@@ -60,33 +69,98 @@ const halt = () => new Promise(() => {})
 const params = new URLSearchParams(location.search)
 const mapId = params.get('map')
 
+// The map as a Yjs doc (context/MOONSHOT.md): commands write it, the bridge
+// carries every change into the graph and the scene, undo walks back only
+// this tab's edits. A server map's doc is the one its live room shares:
+// it arrives by sync, everyone in the room edits it, and the room saves it.
+const mapDoc = createMapDoc()
+// The centred panel for prompts: the guest name below, then the file flows.
+const editor = createEditor(document.getElementById('editor'))
+
+// A share link (`/s/<token>` lands here as `?map=<id>#link=<token>`): signed
+// in, it makes you a member (Shared with me); signed out, you join as a guest
+// under a name you pick. A link that no longer works is the room's to refuse.
+const linkToken = mapId ? rememberLink(mapId) : null
+let guest = null
+if (linkToken) {
+  const me = await request('api/auth/me')
+  const user = me.ok ? me.data?.user : null
+  if (user && !user.must_change_password) {
+    await request(`api/maps/${encodeURIComponent(mapId)}/join`, { method: 'POST', body: { link: linkToken } })
+  } else if (!user) {
+    guest = { link: linkToken, name: await askGuestName(editor), key: guestKey() }
+  }
+}
+
+// Room events reach `interaction` once it exists; before that, only whether
+// the map opened at all matters (openRoom below).
+let onRoomState = () => {}
+let onRoomControl = () => {}
+const room = mapId
+  ? createRoomClient({
+      url: roomUrl(mapId, location, undefined, guest),
+      doc: mapDoc.doc,
+      onState: (state) => onRoomState(state),
+      onControl: (message) => onRoomControl(message),
+    })
+  : null
+const ROOM_ENDS = new Set(['closed', 'kicked', 'deleted', 'reload'])
+const OPEN_TIMEOUT_MS = 15_000
+
+/** 'synced', the message that ended the room before it opened, or 'timeout'. */
+function openRoom() {
+  return new Promise((resolve) => {
+    onRoomControl = (message) => {
+      if (ROOM_ENDS.has(message.type)) resolve(message)
+    }
+    room.whenSynced.then(() => resolve('synced'))
+    setTimeout(() => resolve('timeout'), OPEN_TIMEOUT_MS)
+  })
+}
+
 // Keybinds and settings from the server's config (/admin). Defaults if the
 // server can't be reached, so a failure here never stops the app starting.
-// A server map's unsaved edits this browser kept (localBackup.js), if any.
-const backups = mapId ? createBackupStore() : null
-const [settings, opened, keptLocally] = await Promise.all([
+const [settings, opening] = await Promise.all([
   fetchSettings(`${import.meta.env.BASE_URL}api/config`),
-  mapId ? loadServerMap(mapId) : null,
-  backups ? backups.get(mapId) : null,
+  room ? openRoom() : null,
 ])
-if (opened && !opened.ok) {
-  // Signed out: the shell signs in. Gone (or accounts off): the shell says so.
-  // A password the admin reset: the shell asks for a new one first.
-  const mustChange = opened.status === 403 && opened.data?.must_change_password
-  if (opened.status === 401 || opened.status === 404 || mustChange) {
-    location.replace(accountUrl(opened.status === 404 ? 'missing' : ''))
+if (opening && opening !== 'synced') {
+  if (opening === 'timeout') {
+    room.destroy()
+    guard.showFatal('This map could not be reached. Check your connection, then reload.')
     await halt()
   }
-  guard.showFatal(`This map could not be opened: ${opened.error}. Reload to try again.`)
+  if (opening.type === 'reload') {
+    location.reload()
+    await halt()
+  }
+  if (opening.type === 'closed' && opening.code === 4429) {
+    guard.showFatal('This map is full right now. Try again in a little while.')
+    await halt()
+  }
+  if (guest) {
+    guard.showFatal(
+      opening.type === 'closed' && opening.code === 4400
+        ? "That name can't be used. Reload to pick another."
+        : "This link doesn't work any more. Ask whoever shared it for a new one.",
+    )
+    await halt()
+  }
+  // Refused. Signed out: the shell signs in; a password the admin reset: the
+  // shell asks for a new one first; otherwise the map is gone or not shared
+  // with this account, which the shell says.
+  const me = await request('api/auth/me')
+  const user = me.ok ? me.data?.user : null
+  location.replace(accountUrl(user && !user.must_change_password ? 'missing' : ''))
   await halt()
 }
 const keymap = createKeymap(settings.keybinds)
 const { visuals } = settings
 setRevealScale(visuals.label_range)
 setLabelTarget(visuals.label_count)
-renderKeyList(keyList, keymap, opened ? SERVER_MAP_ROWS : APP_ROWS)
+renderKeyList(keyList, keymap, room ? SERVER_MAP_ROWS : APP_ROWS)
 renderPromptHint(overlay.querySelector('.prompt-hint'), keymap, {
-  helpHref: opened ? accountUrl('help') : null,
+  helpHref: room ? accountUrl('help') : null,
 })
 renderResumePill(resumePill, keymap)
 
@@ -136,30 +210,39 @@ const physics = createPhysics(graph, view, {
     inner: layoutParam.find((v) => ['force', 'rings', 'subgroups'].includes(v)),
   },
 })
-const files = createFiles({ graph, view, camera, physics, settings })
+const undo = createUndo({ mapDoc, graph })
+const files = createFiles({ graph, view, camera, physics, settings, mapDoc })
 
-// A map from the account's list: swapped in before anything can edit, then
-// saved back by `serverMap` from here on.
-let serverMap = null
-if (opened) {
+// A server map: the graph is read from the room's doc, which stays as it is.
+if (room) {
   try {
-    files.applyPayload(opened.map.payload)
+    files.applyPayload(docToPayload(mapDoc.doc), { keepDoc: true })
   } catch (error) {
+    room.destroy()
     guard.showFatal(`This map could not be opened: ${errorText(error)}.`)
     await halt()
   }
-  files.setFilename(opened.map.name)
-  serverMap = createServerMap({
-    map: opened.map,
-    graph,
-    physics,
-    toPayload: files.toPayload,
-    backup: backups,
-  })
+  files.setFilename(room.map.name)
 }
-// Offered once the scene is up (below); already on the server → just dropped.
-const backupKind = opened ? backupOffer(keptLocally, opened.map) : null
-if (backupKind === 'same') serverMap?.forgetBackup()
+// After the first content is in place (a synced room's, or the empty map a
+// local one starts as), so the bridge only ever sees changes to it. What
+// others did reaches `interaction` (below) once it exists.
+let onRemoved = () => {}
+createDocBridge({
+  mapDoc,
+  graph,
+  view,
+  physics,
+  onRemoved: (removal) => onRemoved(removal),
+  // Their edit glows in their colour for a moment (decision 11).
+  onRemoteChange: ({ nodeIds, authors }) => {
+    if (!room || !nodeIds.size) return
+    for (const author of authors) {
+      const colour = colourFor(author, room.roster)
+      if (colour) view.flash(nodeIds, hexToRgb(colour))
+    }
+  },
+})
 // Set once the user has chosen to go back to the list, so leaving doesn't
 // also ask "leave site?" about the save they already decided on.
 let leaving = false
@@ -233,12 +316,14 @@ const interaction = createInteraction({
   graph,
   view,
   physics,
+  mapDoc,
+  undo,
   files,
   overview,
   renderSettings,
   supernova,
   menu: createRadialMenu(document.getElementById('radial-menu')),
-  editor: createEditor(document.getElementById('editor')),
+  editor,
   titleEdit: createTitleEdit(),
   sidebar: createNotesSidebar(document.getElementById('notes-sidebar'), {
     writeKey: keymap.label('edit_notes'),
@@ -248,29 +333,120 @@ const interaction = createInteraction({
   hud,
   speedEl: speed,
   keymap,
-  serverMap,
-  leaveToMaps: () => {
-    leaving = true
-    location.assign(accountUrl())
-  },
-  // Another server map, or this one afresh, after a conflict was settled.
-  goToMap: (id) => {
-    leaving = true
-    location.assign(appUrl(id))
-  },
+  room,
+  leaveToMaps,
 })
-if (backupKind === 'restore' || backupKind === 'copy') interaction.offerBackup(keptLocally, backupKind)
 
-// Autosave runs on its own timer, not the frame loop, so it outlives a
-// rendering crash. Going out of sight or away flushes what's pending.
-const autosaveTimer = serverMap ? setInterval(serverMap.tick, TICK_MS) : null
-const flushServerMap = () => serverMap?.flush()
-const onVisibility = () => {
-  if (document.visibilityState === 'hidden') flushServerMap()
+function leaveToMaps() {
+  leaving = true
+  room?.destroy()
+  // A guest has no list of maps: back to the homepage.
+  location.assign(guest ? homeUrl() : accountUrl())
 }
-document.addEventListener('visibilitychange', onVisibility)
-window.addEventListener('pagehide', flushServerMap)
-const hasUnsaved = () => (serverMap ? serverMap.hasUnsaved : files.isDirty)
+
+// How long a "this map was deleted" (or similar) stays up before the list.
+const ENDED_MS = 2500
+
+/** Everything the room says once the map is open. */
+function onRoomMessage(message) {
+  if (message.type === 'reload') {
+    // Replaced outside the room (a restore, an upload): start again from it.
+    leaving = true
+    location.reload()
+  } else if (message.type === 'deleted') {
+    interaction.roomEnded('this map was deleted')
+    setTimeout(leaveToMaps, ENDED_MS)
+  } else if (message.type === 'kicked') {
+    interaction.roomEnded('you were removed from this map')
+    setTimeout(leaveToMaps, ENDED_MS)
+  } else if (message.type === 'closed') {
+    if (message.code === 4404) {
+      interaction.roomEnded('this map is no longer shared with you')
+      setTimeout(leaveToMaps, ENDED_MS)
+    } else if (message.code === 4400 || message.code === 4413) {
+      interaction.roomEnded('the server refused an edit from this tab · reload')
+    } else if (message.code === 4429) {
+      interaction.roomEnded('this map is full · reload to try again')
+    }
+  } else if (message.type === 'roster') {
+    showPeople()
+  } else if (message.type === 'access') {
+    showShareLink()
+  } else {
+    interaction.roomMessage(message)
+  }
+}
+
+// Presence (context/MOONSHOT.md): this camera out through awareness, everyone
+// else in as avatars and roster bubbles.
+const avatars = room ? createAvatars({ scene }) : null
+const publisher = room ? createPosePublisher({ awareness: room.awareness }) : null
+const BEHIND = 30 // how far back a roster click puts you, along their view
+const roster = room
+  ? createRoster(document.getElementById('roster'), {
+      onFly: (entry) => {
+        const now = performance.now()
+        const pose = entry.clientIds.map((id) => avatars.sampleOf(id, now)).find(Boolean)
+        if (!pose) return
+        const quaternion = new THREE.Quaternion().fromArray(pose.q)
+        const back = new THREE.Vector3(0, 0, BEHIND).applyQuaternion(quaternion)
+        interaction.flyToPose(new THREE.Vector3().fromArray(pose.p).add(back), quaternion)
+      },
+    })
+  : null
+
+/** The room's roster into avatars (by Yjs client id) and bubbles. */
+function showPeople() {
+  const me = room.you?.conn
+  const others = []
+  for (const person of room.roster) {
+    if (person.conn === me) continue
+    for (const clientId of person.clientIds ?? [])
+      others.push({ clientId, ...person, name: personName(person) })
+  }
+  avatars.sync(others)
+  roster.render(room.roster, room.you)
+}
+
+// The Esc screen's "Share this map…", for anyone with the Invite permission
+// (live: it follows `access` messages): My maps, with this map's sharing
+// open. Not for guests: they have no My maps.
+function showShareLink() {
+  if (!room) return
+  document.getElementById('share-link').href = accountUrl(`share=${mapId}`)
+  document.getElementById('share-hint').hidden = !(can(room, 'invite') && !room.you?.guest)
+}
+showShareLink()
+
+if (room) {
+  room.awareness.on('change', ({ added, updated }) => {
+    const states = room.awareness.getStates()
+    const now = performance.now()
+    for (const clientId of added.concat(updated)) {
+      if (clientId === mapDoc.doc.clientID) continue
+      avatars.push(clientId, states.get(clientId)?.pose, now)
+    }
+  })
+  showPeople()
+}
+// Someone else deleted it: whatever is open about it here closes (decision 10).
+onRemoved = (removal) => {
+  if (!removal.local) interaction.closeAbout(removal)
+}
+if (room) {
+  onRoomState = (state) => interaction.roomState(state)
+  onRoomControl = onRoomMessage
+  interaction.roomState(room.state)
+}
+
+// A room saves as it goes; only a local file can have unsaved changes.
+const hasUnsaved = () => (room ? false : files.isDirty)
+
+// The e2e suites' handle on the app (tests/e2e/multiplayer). Dev server only:
+// `npm run build` drops this block, so it never ships.
+if (import.meta.env.DEV) {
+  window.__pleiades = { graph, mapDoc, undo, room, interaction, avatars, commands: interaction.commands }
+}
 
 flight.controls.addEventListener('lock', () => {
   overlay.hidden = true
@@ -343,7 +519,7 @@ document.addEventListener('pointerlockerror', () => {
 // title is owned here, not in interaction.js or viewerInteraction.js.
 let lastTitle = null
 function updateTitle() {
-  const title = `${hasUnsaved() ? '• ' : ''}${serverMap ? serverMap.name : files.filename} — Pleiades`
+  const title = `${hasUnsaved() ? '• ' : ''}${room ? room.map.name : files.filename} — Pleiades`
   if (title === lastTitle) return
   lastTitle = title
   document.title = title
@@ -399,6 +575,15 @@ function frame() {
   // interaction, so the crosshair raycasts from where the camera now is.
   flyTo.update(delta)
   interaction.update()
+  if (room) {
+    publisher.publish({
+      p: camera.position.toArray(),
+      q: camera.quaternion.toArray(),
+      mode: interaction.presenceMode,
+      editing: interaction.editingId,
+    })
+    avatars.update(performance.now(), camera)
+  }
   // getDelta above has just advanced elapsedTime. Reduced motion freezes only
   // the pulse's reading of it: the stars stop breathing, but sizes, tints and
   // label fades still step (a frozen clock for all of it left new labels
@@ -435,9 +620,8 @@ if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     renderer.setAnimationLoop(null)
     clearInterval(statusTimer)
-    clearInterval(autosaveTimer)
-    document.removeEventListener('visibilitychange', onVisibility)
-    window.removeEventListener('pagehide', flushServerMap)
+    avatars?.dispose()
+    room?.destroy()
     removeGlobalHandlers()
     stopWatchingContext()
     physics.stop()
