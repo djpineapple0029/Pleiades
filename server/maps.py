@@ -34,6 +34,7 @@ from . import db as dbmod
 from .accounts import current_user, database, fail, finish, gate, json_body, signed_in, store
 from .atlasfile import FormatError, PasswordError, decode_any
 from .filenames import map_name
+from .permissions import effective
 
 maps = Blueprint("maps", __name__, url_prefix="/api/maps")
 maps.before_request(gate)
@@ -199,7 +200,8 @@ def list_maps() -> Response:
             "FROM maps WHERE user_id = ? ORDER BY updated_at DESC, created_at DESC",
             (user_id(),),
         ).fetchall()
-    return jsonify(maps=[dict(row) for row in rows])
+    owner = {"role": "owner", "perms": effective("owner", None, None)}
+    return jsonify(maps=[{**dict(row), **owner} for row in rows])
 
 
 @maps.post("")

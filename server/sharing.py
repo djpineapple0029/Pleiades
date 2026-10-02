@@ -45,12 +45,19 @@ def shared_with_me() -> Response:
     with database().connect() as conn:
         rows = conn.execute(
             "SELECT maps.id, maps.name, maps.updated_at, maps.node_count, users.username AS owner, "
-            "map_members.role, map_members.seen_at IS NULL AS new "
+            "map_members.role, map_members.perms_json, map_members.seen_at IS NULL AS new "
             "FROM map_members JOIN maps ON maps.id = map_members.map_id JOIN users ON users.id = maps.user_id "
             "WHERE map_members.user_id = ? ORDER BY maps.updated_at DESC, maps.created_at DESC",
             (user_id(),),
         ).fetchall()
-    return jsonify(maps=[{**dict(row), "new": bool(row["new"])} for row in rows])
+        out = []
+        for row in rows:
+            item = {key: row[key] for key in row.keys() if key != "perms_json"}  # noqa: SIM118 -- sqlite3.Row
+            defaults = access.role_defaults(conn, row["id"], row["role"])
+            item["perms"] = effective(row["role"], defaults, access.parse_perms(row["perms_json"]))
+            item["new"] = bool(row["new"])
+            out.append(item)
+    return jsonify(maps=out)
 
 
 @sharing.get("/<map_id>/sharing")

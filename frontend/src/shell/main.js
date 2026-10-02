@@ -364,8 +364,14 @@ function sharedRow(map, now) {
 
   const actions = document.createElement('div')
   actions.className = 'actions'
+  // Only what this person may do here (server/permissions.py): the server
+  // refuses the rest anyway, so offering it would only lead to an error.
+  const perms = map.perms ?? {}
   actions.append(
     button('Share', () => toggleShare(row, map)),
+    ...(perms.history ? [button('History', () => toggleHistory(row, map))] : []),
+    ...(perms.export ? [button('Download', () => toggleDownload(row, map))] : []),
+    ...(perms.export ? [button('Duplicate', () => duplicate(map))] : []),
     button('Leave', () => leave(row, map)),
   )
   const error = document.createElement('p')
@@ -551,8 +557,9 @@ function confirmRestore(row, map, snapshot, actions, cancel) {
       }
       await refreshList()
       // Stay on the history, which now also holds the version just replaced.
-      const again = $('maps').querySelector(`.map[data-id="${CSS.escape(map.id)}"]`)
-      const fresh = mapsById.get(map.id)
+      const selector = `.map[data-id="${CSS.escape(map.id)}"]`
+      const again = $('maps').querySelector(selector) ?? $('shared-maps').querySelector(selector)
+      const fresh = mapsById.get(map.id) ?? sharedById.get(map.id)
       if (again && fresh) {
         toggleHistory(again, fresh, `Restored the version from ${dateTime(snapshot.created_at)}.`)
       }

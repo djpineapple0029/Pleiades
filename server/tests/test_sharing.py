@@ -289,3 +289,14 @@ def test_permission_changes_reach_the_room(three, rooms):
     url = f"/api/maps/{three['map']}/members/{me(three['eddie'])}"
     three["owner"].patch(url, json={"perms": {"chat": True}}, headers=CSRF)
     assert rooms.events == [(three["map"], "access"), (three["map"], "access")]
+
+
+def test_list_rows_carry_role_and_perms(three):
+    share(three, "eddie", "editor")
+    own = three["owner"].get("/api/maps").json["maps"][0]
+    assert own["role"] == "owner" and all(own["perms"].values())
+    three["owner"].patch(
+        f"/api/maps/{three['map']}/members/{me(three['eddie'])}", json={"perms": {"export": False}}, headers=CSRF
+    )
+    shared = three["eddie"].get("/api/maps/shared").json["maps"][0]
+    assert shared["role"] == "editor" and shared["perms"]["export"] is False and shared["perms"]["invite"] is True

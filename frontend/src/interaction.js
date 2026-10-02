@@ -11,6 +11,7 @@ import { createKeymap } from './keymap.js'
 import { LOOKS } from './looks.js'
 import { nodeName } from './ids.js'
 import { personName } from './room/authors.js'
+import { can, denyText } from './room/can.js'
 
 const SPAWN_DISTANCE = 90 // world units ahead of the camera for a new node
 const DOUBLE_CLICK_MS = 320
@@ -204,6 +205,14 @@ export function createInteraction({
     }
     return false
   }
+  /** A permission (room/can.js), or the HUD says it's off for you here. */
+  function allowed(perm) {
+    if (can(room, perm)) return true
+    status.notice(denyText(perm))
+    return false
+  }
+  /** Balance, Orbit and a layout shape rearrange the whole map. */
+  const mayRearrange = () => canEdit() && allowed('balance')
   const commands = createCommands({ graph, view, physics, mapDoc, undo, canEdit })
   // What the HUD keeps saying about the room until it changes: reconnecting,
   // or saving failing on the server. Null when there's nothing to say.
@@ -719,6 +728,7 @@ export function createInteraction({
     // A server map saves itself; Save asks its room to do it now, and Save
     // As is still a file.
     if (room && !reprompt) return saveRoomNow()
+    if (!allowed('export')) return { ok: false }
     if (busy) {
       status.notice('a file operation is still in progress')
       return { ok: false }
@@ -892,12 +902,14 @@ export function createInteraction({
   /** Balance (B, the map menu, a shape from T). Stopping a run is instant. */
   async function balance() {
     if (physics.isLocalRun) return commands.toggleBalance()
+    if (!mayRearrange()) return null
     if (!(await rearrangeForEveryone('Balance'))) return null
     return commands.toggleBalance()
   }
 
   /** Orbit (O on a star): a whole-map layout like Balance, so it asks the same. */
   async function orbit(id, plane) {
+    if (!mayRearrange()) return
     if (!(await rearrangeForEveryone('Orbit'))) return
     if (graph.getNode(id) && commands.orbitAround(id, plane)) setFocus({ kind: 'orbit', id })
   }
@@ -1039,6 +1051,7 @@ export function createInteraction({
    * file opens in, starting on the one showing now; Enter takes that.
    */
   async function exportMap() {
+    if (!allowed('export')) return
     if (busy) {
       status.notice('a file operation is still in progress')
       return
@@ -1310,7 +1323,7 @@ export function createInteraction({
     // away — one undo entry, like B. Picking the current shape re-balances.
     if (target.kind === 'shape') {
       const shape = SHAPES.find((item) => item.id === key)
-      if (!shape) return
+      if (!shape || (!physics.isLocalRun && !mayRearrange())) return
       physics.treeShape = shape.id
       if (physics.isRunning) physics.stop()
       balance()

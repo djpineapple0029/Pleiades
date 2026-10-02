@@ -32,6 +32,7 @@ import { CONTEXT_LOST, NO_WEBGL, createCrashGuard, errorText } from './crashGuar
 import { watchContextLoss } from './contextLoss.js'
 import { accountUrl, homeUrl, request, roomUrl } from './api.js'
 import { askGuestName, guestKey, rememberLink } from './room/guestPrompt.js'
+import { can } from './room/can.js'
 import { createRoomClient } from './room/roomClient.js'
 import { colourFor, hexToRgb, personName } from './room/authors.js'
 import { createPosePublisher } from './room/presence.js'
@@ -369,6 +370,8 @@ function onRoomMessage(message) {
     }
   } else if (message.type === 'roster') {
     showPeople()
+  } else if (message.type === 'access') {
+    showShareLink()
   } else {
     interaction.roomMessage(message)
   }
@@ -405,12 +408,15 @@ function showPeople() {
   roster.render(room.roster, room.you)
 }
 
-// The Esc screen's "Share this map…", for anyone with the Invite permission:
-// My maps, with this map's sharing open. Not for guests: they have no My maps.
-if (room?.you?.perms?.invite && !room.you.guest) {
+// The Esc screen's "Share this map…", for anyone with the Invite permission
+// (live: it follows `access` messages): My maps, with this map's sharing
+// open. Not for guests: they have no My maps.
+function showShareLink() {
+  if (!room) return
   document.getElementById('share-link').href = accountUrl(`share=${mapId}`)
-  document.getElementById('share-hint').hidden = false
+  document.getElementById('share-hint').hidden = !(can(room, 'invite') && !room.you?.guest)
 }
+showShareLink()
 
 if (room) {
   room.awareness.on('change', ({ added, updated }) => {
