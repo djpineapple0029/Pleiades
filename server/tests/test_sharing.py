@@ -300,3 +300,21 @@ def test_list_rows_carry_role_and_perms(three):
     )
     shared = three["eddie"].get("/api/maps/shared").json["maps"][0]
     assert shared["role"] == "editor" and shared["perms"]["export"] is False and shared["perms"]["invite"] is True
+
+
+def test_list_rows_say_who_is_in_each_map(three, accounts_app):
+    class Online:
+        def notify(self, map_id, event):
+            pass
+
+        def online(self, map_ids):
+            return {map_id: [{"name": "eddie", "colour": "#fff"}] for map_id in map_ids}
+
+        def people(self, map_id):
+            return [{"conn": "c", "name": "eddie", "colour": "#fff", "role": "editor", "guest": False}]
+
+    accounts_app.extensions["pleiades_rooms"] = Online()
+    share(three, "eddie", "editor")
+    assert three["owner"].get("/api/maps").json["maps"][0]["online"] == [{"name": "eddie", "colour": "#fff"}]
+    assert three["eddie"].get("/api/maps/shared").json["maps"][0]["online"] == [{"name": "eddie", "colour": "#fff"}]
+    assert len(three["owner"].get(f"/api/maps/{three['map']}/sharing").json["online"]) == 1

@@ -579,6 +579,27 @@ class RoomRegistry:
             return
         self._loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self._handle(map_id, event)))
 
+    def disconnect_user(self, user_id: int, owned_map_ids: list[str] | tuple[str, ...] = ()) -> None:
+        """From any thread: an account was deleted, disabled or signed out by
+        the admin. Its connections leave every map ("account closed"); maps it
+        owned (`owned_map_ids`, gone with it in the database) close for
+        everyone with `deleted`."""
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            return
+        owned = list(owned_map_ids)
+
+        async def run() -> None:
+            for map_id in owned:
+                await self._handle(map_id, "deleted")
+            for map_id, room in list(self.rooms.items()):
+                for peer in [p for p in room.peers if p.user_id == user_id]:
+                    await room.kick(peer.conn, "account closed")
+                if not room.peers and not room.closed:
+                    loop.call_later(room.evict_delay, self._evict, map_id, room)
+
+        loop.call_soon_threadsafe(lambda: asyncio.ensure_future(run()))
+
     def notify_all(self, event: str) -> None:
         """From any thread: `notify` every open room (an admin switch changed)."""
         with self._guard:

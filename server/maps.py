@@ -99,6 +99,20 @@ def notify(map_id: str, event: str) -> None:
         rooms.notify(map_id, event)
 
 
+def who_is_in(map_ids: list[str]) -> dict[str, list[dict]]:
+    """`{map_id: [{name, colour}]}` for maps with people in their live room now."""
+    rooms = current_app.extensions.get("pleiades_rooms")
+    return rooms.online(map_ids) if rooms is not None and map_ids else {}
+
+
+def disconnect_user(user_id: int, owned_map_ids: list[str]) -> None:
+    """An account is going away (deleted, disabled, signed out by the admin):
+    its live connections end, and maps it owned close for everyone."""
+    rooms = current_app.extensions.get("pleiades_rooms")
+    if rooms is not None:
+        rooms.disconnect_user(user_id, owned_map_ids)
+
+
 def clean_name(raw: object) -> str | None:
     """A trimmed, printable name, or None when there's nothing usable."""
     if not isinstance(raw, str):
@@ -201,7 +215,8 @@ def list_maps() -> Response:
             (user_id(),),
         ).fetchall()
     owner = {"role": "owner", "perms": effective("owner", None, None)}
-    return jsonify(maps=[{**dict(row), **owner} for row in rows])
+    online = who_is_in([row["id"] for row in rows])
+    return jsonify(maps=[{**dict(row), **owner, "online": online.get(row["id"], [])} for row in rows])
 
 
 @maps.post("")

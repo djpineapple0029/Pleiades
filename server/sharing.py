@@ -18,7 +18,7 @@ from flask import Blueprint, Response, current_app, jsonify
 from . import access
 from . import db as dbmod
 from .accounts import cookie_path, database, fail, finish, gate, json_body, signed_in, token_hash
-from .maps import check_id, notify, require, switches, user_id
+from .maps import check_id, notify, require, switches, user_id, who_is_in
 from .permissions import PERMS, ROLE_RANK, can_grant, effective
 
 sharing = Blueprint("sharing", __name__, url_prefix="/api/maps")
@@ -63,7 +63,8 @@ def shared_with_me() -> Response:
             item["perms"] = effective(row["role"], defaults, access.parse_perms(row["perms_json"]))
             item["new"] = bool(row["new"])
             out.append(item)
-    return jsonify(maps=out)
+    online = who_is_in([item["id"] for item in out])
+    return jsonify(maps=[{**item, "online": online.get(item["id"], [])} for item in out])
 
 
 @sharing.get("/<map_id>/sharing")

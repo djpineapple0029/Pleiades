@@ -256,3 +256,43 @@ def test_revoking_the_link_sends_a_connected_guest_out(world):
         be(world, alice)
         assert world.delete(f"/api/maps/{map_id}/link", headers=CSRF).status_code == 200
         assert wait_for_close(ws) == 4403
+
+
+# --- Milestone 2: accounts that go away -------------------------------------
+
+
+def test_deleting_an_account_closes_its_maps_for_everyone_in_them(world):
+    bob = sign_up(world, "bobby")
+    alice = sign_up(world, "alice")
+    map_id = new_map(world)
+    world.post(f"/api/maps/{map_id}/members", json={"username": "bobby", "role": "editor"}, headers=CSRF)
+    be(world, bob)
+    with world.websocket_connect(f"/ws/maps/{map_id}", headers=ORIGIN) as ws:
+        first_texts(ws, 1)
+        be(world, alice)
+        r = world.request("DELETE", "/api/account", json={"password": "long enough pw"}, headers=CSRF)
+        assert r.status_code == 200
+        texts = []
+        while True:
+            message = ws.receive()
+            if message["type"] == "websocket.close":
+                break
+            if message.get("text"):
+                texts.append(json.loads(message["text"])["type"])
+        assert "deleted" in texts and message["code"] == 4404
+
+
+def test_a_member_whose_account_is_deleted_leaves_the_room(world):
+    bob = sign_up(world, "bobby")
+    alice = sign_up(world, "alice")
+    map_id = new_map(world)
+    world.post(f"/api/maps/{map_id}/members", json={"username": "bobby", "role": "editor"}, headers=CSRF)
+    be(world, alice)
+    with world.websocket_connect(f"/ws/maps/{map_id}", headers=ORIGIN) as owner_ws:
+        first_texts(owner_ws, 1)
+        be(world, bob)
+        with world.websocket_connect(f"/ws/maps/{map_id}", headers=ORIGIN) as ws:
+            first_texts(ws, 1)
+            r = world.request("DELETE", "/api/account", json={"password": "long enough pw"}, headers=CSRF)
+            assert r.status_code == 200
+            assert wait_for_close(ws) == 4403

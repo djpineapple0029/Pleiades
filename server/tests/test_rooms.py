@@ -577,3 +577,27 @@ async def test_review_focus_5_a_kicked_peers_in_flight_frame_is_not_applied(stor
     await room.on_binary(kicked, frame)
     assert room.doc.get("nodes", type=Map)["a"]["label"] == "A"
     assert not await room.kick("nobody", "kicked")
+
+
+@pytest.mark.anyio
+async def test_disconnect_user_sends_them_out_and_closes_maps_they_owned(store):
+    registry = RoomRegistry(store)
+    registry.bind_loop(asyncio.get_running_loop())
+    leaving = Peer(conn="l", name="leaving", role="editor", perms={}, guest=False, user_id=7, guest_key=None)
+    stays = Peer(conn="s", name="stays", role="editor", perms={}, guest=False, user_id=8, guest_key=None)
+    other_map_guest = peer("guest")
+    theirs = await registry.join("m", leaving, "")
+    await registry.join("m", stays, "")
+    owned = await registry.join("owned", other_map_guest, "")
+    for p in (leaving, stays, other_map_guest):
+        drain(p)
+
+    await asyncio.to_thread(registry.disconnect_user, 7, ["owned"])
+    await asyncio.sleep(0.05)
+
+    gone = drain(leaving)
+    assert {"type": "kicked", "reason": "account closed"} in [json.loads(r[0]) for k, *r in gone if k == "text"]
+    assert gone[-1][:2] == ("close", 4403)
+    assert [p.name for p in theirs.peers] == ["stays"]
+    assert {"type": "deleted"} in texts(other_map_guest)
+    assert owned.closed and "owned" not in registry.rooms

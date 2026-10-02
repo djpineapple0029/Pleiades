@@ -15,7 +15,14 @@ import { triggerDownload } from '../files.js'
 import { forgetKeptEdits } from '../localBackup.js'
 import { fetchSettings } from '../settings.js'
 import { createAccountPage } from './accountPage.js'
-import { dateTime, mapSummary, relativeTime, versionSummary } from './format.js'
+import {
+  dateTime,
+  deleteQuestion,
+  mapSummary,
+  relativeTime,
+  restoreQuestion,
+  versionSummary,
+} from './format.js'
 import { renderHelp } from './helpPage.js'
 import { ACCEPT, fileName, mapFileBlob, nameFromFile, probe, readMapFile, readsHere } from './mapFiles.js'
 import { createSettingsPage } from './settingsPage.js'
@@ -539,12 +546,25 @@ function versionRow(row, map, snapshot, now) {
   return item
 }
 
-function confirmRestore(row, map, snapshot, actions, cancel) {
+/**
+ * Who a change to this map reaches right now: `{ members, online }`. Fresh
+ * from the server, since the list may be minutes old; the list's own
+ * numbers if that fails.
+ */
+async function reach(map) {
+  const result = await request(`api/maps/${encodeURIComponent(map.id)}/sharing`)
+  if (!result.ok) return { members: 0, online: map.online?.length ?? 0 }
+  return { members: result.data.members.length, online: result.data.online.length }
+}
+
+async function confirmRestore(row, map, snapshot, actions, cancel) {
+  const { online } = await reach(map)
+  const ask = restoreQuestion(online)
   const question = document.createElement('span')
   question.className = 'confirm'
-  question.textContent = 'Make this the current version? The current one is kept here first.'
+  question.textContent = ask.text
   const yes = button(
-    'Restore',
+    ask.yes,
     async () => {
       yes.disabled = true
       const result = await request(
@@ -669,13 +689,15 @@ async function duplicate(map) {
   refreshList()
 }
 
-function confirmDelete(row, map) {
+async function confirmDelete(row, map) {
   const actions = row.querySelector('.actions')
+  const { members, online } = await reach(map)
+  const ask = deleteQuestion(members, online)
   const question = document.createElement('span')
   question.className = 'confirm'
-  question.textContent = "Delete it for good? This can't be undone."
+  question.textContent = ask.text
   const yes = button(
-    'Delete',
+    ask.yes,
     async () => {
       yes.disabled = true
       const result = await request(`api/maps/${encodeURIComponent(map.id)}`, { method: 'DELETE' })
