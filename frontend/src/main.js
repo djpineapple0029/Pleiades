@@ -40,6 +40,7 @@ import { createAvatars } from './room/avatars.js'
 import { createRoster } from './room/roster.js'
 import { createChat, createChatLog } from './room/chat.js'
 import { createEmotes } from './room/emotes.js'
+import { createFollow, yieldsInCircle } from './room/follow.js'
 import { createRoomPanel } from './room/roomPanel.js'
 import { docToPayload } from './format/ydoc.js'
 
@@ -326,8 +327,36 @@ const chat = room
     })
   : null
 const emotes = room ? createEmotes({ room, avatars, corner: document.getElementById('my-emote') }) : null
+// F: the camera trails someone (room/follow.js), from their smoothed pose.
+const follow = room
+  ? createFollow({ camera, presence: avatars, onStop: (reason) => interaction.followStopped(reason) })
+  : null
+/** Everyone else drawn now, where they're drawn: who F can pick from. */
+function followables() {
+  const now = performance.now()
+  const people = []
+  for (const person of room.roster) {
+    if (person.conn === room.you?.conn) continue
+    for (const clientId of person.clientIds ?? []) {
+      const pose = avatars.sampleOf(clientId, now)
+      const following = room.awareness.getStates().get(clientId)?.following ?? null
+      if (pose) people.push({ clientId, p: pose.p, name: personName(person), following })
+    }
+  }
+  return people
+}
 const roomPanel = room
-  ? createRoomPanel(document.getElementById('room-panel'), { onSend: (text) => chat.send(text) })
+  ? createRoomPanel(document.getElementById('room-panel'), {
+      onSend: (text) => chat.send(text),
+      // The Esc screen's Follow: start trailing them, and fly (a click may lock).
+      onFollow: (person) => {
+        const people = followables()
+        const target = people.find((p) => person.clientIds.includes(p.clientId))
+        if (!target) return
+        interaction.followPerson(target.clientId, target.name, target.following)
+        requestLock()
+      },
+    })
   : null
 if (room) {
   roomPanel.element.hidden = false
@@ -362,6 +391,8 @@ const interaction = createInteraction({
   room,
   chat,
   emotes,
+  follow,
+  followables,
   leaveToMaps,
 })
 
@@ -489,6 +520,7 @@ if (import.meta.env.DEV) {
     chat,
     chatLog,
     emotes,
+    follow,
     commands: interaction.commands,
   }
 }
@@ -610,6 +642,14 @@ renderer.setAnimationLoop(guard.guardFrame(renderer, frame, onRenderCrash))
 function frame() {
   const delta = Math.min(clock.getDelta(), MAX_FRAME_DELTA)
   flight.update(delta)
+  // After flight: following someone has the last word on where the camera
+  // is (any movement key ends it, in interaction.js).
+  if (follow?.active) {
+    // They started following this tab too: one of the two gives way.
+    const theirTarget = room.awareness.getStates().get(follow.target)?.following ?? null
+    if (yieldsInCircle({ me: mapDoc.doc.clientID, target: follow.target, theirTarget })) follow.stop('mutual')
+    follow.update()
+  }
   // After flight: the flight out to the overview owns the camera outright, and
   // pointer lock takes a moment to actually go.
   overview.update(delta)

@@ -27,7 +27,7 @@ const el = (tag, className, text) => {
   return node
 }
 
-export function createRoomPanel(element, { onSend = () => {} } = {}) {
+export function createRoomPanel(element, { onSend = () => {}, onFollow = null } = {}) {
   const people = el('ul', 'room-people')
   const log = el('div', 'room-chat-log')
   log.setAttribute('role', 'log')
@@ -72,6 +72,13 @@ export function createRoomPanel(element, { onSend = () => {} } = {}) {
         const name = el('span', 'room-name', person.you ? `${person.name} (you)` : person.name)
         name.style.color = person.colour
         row.append(dot, name, el('span', 'room-role', person.role))
+        if (onFollow && !person.you) {
+          const button = el('button', 'room-follow', 'Follow')
+          button.type = 'button'
+          button.setAttribute('aria-label', `Follow ${person.name}`)
+          button.addEventListener('click', () => onFollow(person))
+          row.append(button)
+        }
         return row
       }),
     )

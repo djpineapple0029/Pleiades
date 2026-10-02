@@ -13,6 +13,7 @@ import { nodeName } from './ids.js'
 import { personName } from './room/authors.js'
 import { can, denyText } from './room/can.js'
 import { EMOTE_MENU } from './room/emotes.js'
+import { pickTarget } from './room/follow.js'
 
 const SPAWN_DISTANCE = 90 // world units ahead of the camera for a new node
 const DOUBLE_CLICK_MS = 320
@@ -184,6 +185,10 @@ export function createInteraction({
   chat = null,
   // room/emotes.js in a live map: G holds its ring open.
   emotes = null,
+  // room/follow.js in a live map (F), and who could be followed:
+  // `[{ clientId, p, name }]` for everyone else drawn now.
+  follow = null,
+  followables = () => [],
   leaveToMaps = () => {},
 }) {
   const raycaster = new THREE.Raycaster()
@@ -294,7 +299,9 @@ export function createInteraction({
     if (mode === 'flying') return ''
 
     let text = ''
-    if (overview.isActive) {
+    if (follow?.active) {
+      text = `following ${followingName} — move to stop`
+    } else if (overview.isActive) {
       // The overview hides the overlay, so the HUD is the only thing left
       // saying how to get out of it.
       const back = keymap.label('overview')
@@ -857,6 +864,55 @@ export function createInteraction({
     }
   }
 
+  // Who F is following, by name, for the HUD.
+  let followingName = ''
+  const MOVEMENT = ['move_forward', 'move_back', 'move_left', 'move_right', 'move_up', 'move_down']
+
+  /** F: whoever is on the crosshair, or the nearest one ahead. */
+  function followKey() {
+    if (follow.active) {
+      follow.stop('key')
+      return
+    }
+    forward.set(0, 0, -1).applyQuaternion(camera.quaternion)
+    const people = followables()
+    const id = pickTarget({ p: camera.position.toArray(), forward: forward.toArray() }, people)
+    if (id === null) {
+      status.notice(
+        people.length ? 'nobody ahead to follow · aim at their ship' : 'nobody else is here to follow',
+      )
+      return
+    }
+    const person = people.find((p) => p.clientId === id)
+    followPerson(id, person?.name, person?.following)
+  }
+
+  /** Trails this person's camera until a move, Tab, Backspace or / (decision 15). */
+  function followPerson(clientId, name, theirTarget = null) {
+    if (!follow || (mode !== 'idle' && mode !== 'flying')) return
+    // Each behind the other would chase round for ever.
+    if (theirTarget === mapDoc.doc.clientID) {
+      status.notice(`${name || 'they'} ${name ? 'is' : 'are'} following you`)
+      return
+    }
+    if (mode === 'flying') {
+      flyTo.cancel() // cancel doesn't call its `done`, so end the flight here
+      view.setEmphasis(null)
+      endModal()
+    }
+    followingName = name || 'someone'
+    follow.start(clientId)
+    room?.awareness.setLocalStateField('following', clientId)
+  }
+
+  /** follow.js says it ended: by a key here, or because they left. */
+  function followStopped(reason) {
+    room?.awareness.setLocalStateField('following', null)
+    if (reason === 'left') status.notice(`${followingName} left`)
+    else if (reason === 'mutual') status.notice(`${followingName} started following you`)
+    else status.info(`stopped following ${followingName}`)
+  }
+
   /** Y: the chat line, with the pointer free until it closes (like notes). */
   async function openChat() {
     if (!allowed('chat')) return
@@ -1266,6 +1322,7 @@ export function createInteraction({
   /** A roster bubble: fly to a camera pose (behind someone, looking where they look). */
   function flyToPose(position, quaternion) {
     if (mode !== 'idle' && mode !== 'flying') return
+    follow?.stop('moved')
     jumps.push({ position: camera.position.clone(), quaternion: camera.quaternion.clone() })
     mode = 'flying'
     beginModal()
@@ -1471,6 +1528,10 @@ export function createInteraction({
     if (mode === 'editing' || mode === 'searching' || mode === 'flying') return
     const is = (id) => keymap.is(event, id)
 
+    // Moving, the overview, a jump back or a search take the camera back
+    // from whoever it's following; the key then does what it always does.
+    if (follow?.active && [...MOVEMENT, 'overview', 'jump_back', 'search'].some(is)) follow.stop('moved')
+
     // File chords and undo first, and always with preventDefault, so the
     // browser's own save-page and open-file dialogs never see the chord.
     if (mode !== 'menu') {
@@ -1563,6 +1624,12 @@ export function createInteraction({
       }
     }
 
+    if (follow && is('follow') && !event.repeat && controls.isLocked && mode === 'idle') {
+      event.preventDefault()
+      followKey()
+      return
+    }
+
     if (chat && is('chat') && !event.repeat && (controls.isLocked || overview.isActive) && mode === 'idle') {
       // Or the Y would land in the field that's about to take focus.
       event.preventDefault()
@@ -1641,6 +1708,8 @@ export function createInteraction({
     roomEnded,
     closeAbout,
     flyToPose,
+    followPerson,
+    followStopped,
     /** What this tab is doing, for presence: 'fly', 'overview', 'menu' or 'editing'. */
     get presenceMode() {
       if (overview.isActive) return 'overview'

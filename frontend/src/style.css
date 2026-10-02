@@ -422,6 +422,23 @@ kbd {
   font-size: 11px;
 }
 
+.room-follow {
+  padding: 1px 8px;
+  border: 1px solid #2a3140;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.room-follow:hover,
+.room-follow:focus-visible {
+  border-color: var(--ink-dim);
+  outline: none;
+}
+
 .room-chat-log {
   flex-shrink: 0;
   max-height: 40vh;

@@ -34,7 +34,8 @@
     { "id": "export", "group": "File", "label": "Export a view-only .html", "default": ["Mod+E"], "contexts": ["flight", "free", "overview"], "scope": ["app"], "user": true },
 
     { "id": "chat", "group": "Multiplayer", "label": "Chat to everyone in a shared map: type, Enter sends, Esc closes", "default": ["Y"], "contexts": ["flight", "overview"], "scope": ["app"], "user": true },
-    { "id": "emote", "group": "Multiplayer", "label": "Hold, move the mouse onto an emote, let go: everyone sees it over your ship", "default": ["G"], "contexts": ["flight", "overview"], "scope": ["app"], "user": true }
+    { "id": "emote", "group": "Multiplayer", "label": "Hold, move the mouse onto an emote, let go: everyone sees it over your ship", "default": ["G"], "contexts": ["flight", "overview"], "scope": ["app"], "user": true },
+    { "id": "follow", "group": "Multiplayer", "label": "Follow the person on the crosshair (or the nearest ahead); moving stops it", "default": ["F"], "contexts": ["flight"], "scope": ["app"], "user": true }
   ],
   "settings": [
     { "section": "flight", "key": "mouse_sensitivity", "label": "Mouse sensitivity", "type": "number", "min": 0.1, "max": 5, "step": 0.05, "default": 1.0, "scope": "client", "help": "How far the view turns per mouse movement. 1 is the original feel.", "user": true },

@@ -143,4 +143,97 @@ test.describe('social', () => {
     await bob.screenshot({ path: 'artifacts/e2e-multiplayer/emote.png' })
     expect(await t(alice, 'locked()')).toBe(true)
   })
+
+  /** Where `page`'s camera is, from what it publishes in awareness. */
+  const published = (page) =>
+    page.evaluate(() => {
+      const { room, mapDoc } = window.__pleiades
+      return room.awareness.getStates().get(mapDoc.doc.clientID)?.pose ?? null
+    })
+
+  test('Bob follows Alice: F, she flies, his camera trails hers; moving stops it', async () => {
+    // Alice moves out ahead of Bob, inside his view.
+    await alice.keyboard.down('w')
+    await alice.waitForTimeout(1500)
+    await alice.keyboard.up('w')
+    await expect.poll(() => bob.evaluate(() => window.__pleiades.avatars.drawn)).toBe(1)
+    await bob.keyboard.press('f')
+    await expect(bob.locator('#hud')).toContainText(/following alice.* — move to stop/)
+    await expect
+      .poll(() => bob.evaluate(() => window.__pleiades.room.awareness.getLocalState().following))
+      .not.toBeNull()
+    // Alice flies on and turns; Bob ends up 30 behind and 6 above her.
+    await alice.evaluate(() => window.__t.look(400, 0))
+    await alice.keyboard.down('w')
+    await alice.waitForTimeout(1500)
+    await alice.keyboard.up('w')
+    const gap = async () => {
+      const [a, b] = await Promise.all([published(alice), published(bob)])
+      if (!a || !b) return Infinity
+      return Math.hypot(a.p[0] - b.p[0], a.p[1] - b.p[1], a.p[2] - b.p[2])
+    }
+    await expect.poll(gap, { timeout: 20_000 }).toBeLessThan(40)
+    await expect.poll(gap, { timeout: 20_000 }).toBeGreaterThan(25)
+    await bob.screenshot({ path: 'artifacts/e2e-multiplayer/follow.png' })
+    // Bob moves: he's flying himself again.
+    await bob.keyboard.press('s')
+    // Quietly: the "following" line goes, and the trace says why.
+    await expect(bob.locator('#hud')).toHaveAttribute('data-trace', /stopped following/)
+    await expect(bob.locator('#hud')).not.toContainText(/following/)
+    expect(await bob.evaluate(() => window.__pleiades.follow.active)).toBe(false)
+    await expect
+      .poll(() => bob.evaluate(() => window.__pleiades.room.awareness.getLocalState().following))
+      .toBeNull()
+  })
+
+  test('two people cannot follow each other round in a circle', async () => {
+    await alice.keyboard.down('w')
+    await alice.waitForTimeout(1500)
+    await alice.keyboard.up('w')
+    await expect.poll(() => bob.evaluate(() => window.__pleiades.avatars.drawn)).toBe(1)
+    await bob.keyboard.press('f')
+    await expect(bob.locator('#hud')).toContainText(/following/)
+    // Alice turns round to face Bob and tries to follow him back.
+    await alice.evaluate(() => window.__t.look(1600, 0))
+    await expect.poll(() => alice.evaluate(() => window.__pleiades.avatars.drawn)).toBe(1)
+    // Once Alice knows Bob is following her:
+    await expect
+      .poll(() =>
+        alice.evaluate(() => {
+          const { room } = window.__pleiades
+          const bob = room.roster.find((p) => p.conn !== room.you.conn)
+          return room.awareness.getStates().get(bob?.clientIds[0])?.following ?? null
+        }),
+      )
+      .not.toBeNull()
+    await alice.evaluate(() => {
+      const { room } = window.__pleiades
+      const bob = room.roster.find((p) => p.conn !== room.you.conn)
+      window.__pleiades.interaction.followPerson(
+        bob.clientIds[0],
+        bob.name,
+        room.awareness.getStates().get(bob.clientIds[0])?.following,
+      )
+    })
+    await expect(alice.locator('#hud')).toContainText(/is following you/)
+    expect(await alice.evaluate(() => window.__pleiades.follow.active)).toBe(false)
+  })
+
+  test('both follow each other at the same moment: exactly one keeps following', async () => {
+    // Neither knows about the other yet, as when both press F at once.
+    const followOther = (page) =>
+      page.evaluate(() => {
+        const { room, interaction } = window.__pleiades
+        const other = room.roster.find((p) => p.conn !== room.you.conn)
+        interaction.followPerson(other.clientIds[0], other.name, null)
+      })
+    await expect.poll(() => bob.evaluate(() => window.__pleiades.room.roster[0]?.clientIds.length)).toBe(1)
+    await expect.poll(() => alice.evaluate(() => window.__pleiades.room.roster[1]?.clientIds.length)).toBe(1)
+    await Promise.all([followOther(alice), followOther(bob)])
+    const following = () =>
+      Promise.all([alice, bob].map((page) => page.evaluate(() => window.__pleiades.follow.active)))
+    await expect.poll(async () => (await following()).filter(Boolean).length).toBe(1)
+    await alice.waitForTimeout(1000)
+    expect((await following()).filter(Boolean)).toHaveLength(1)
+  })
 })
