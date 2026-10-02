@@ -84,3 +84,30 @@ def test_accounts_off_never_creates_the_file(isolated_config):
 def test_data_dir_follows_the_environment(isolated_config, tmp_path, monkeypatch):
     monkeypatch.setenv("PLEIADES_DATA", str(tmp_path / "elsewhere"))
     assert create_app().extensions["pleiades_db"].path == tmp_path / "elsewhere" / "pleiades.db"
+
+
+def test_a_fresh_database_is_schema_3_with_the_sharing_tables(database):
+    with database.connect() as conn:
+        assert schema_version(conn) == 3
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(maps)")}
+    assert {"map_members", "map_roles", "map_links", "map_bans"} <= tables
+    assert {"ydoc", "ydoc_epoch", "default_look"} <= columns
+
+
+def test_a_version_2_database_migrates_to_3_keeping_its_maps(database, monkeypatch):
+    # Build a version-2 file the way an older server would have.
+    monkeypatch.setattr("server.db.MIGRATIONS", MIGRATIONS[:2])
+    with database.transaction() as conn:
+        conn.execute("INSERT INTO users (id, username, password_hash, created_at) VALUES (1, 'old', 'x', 0)")
+        conn.execute(
+            "INSERT INTO maps (id, user_id, name, payload, revision, size_bytes, node_count, created_at, updated_at) "
+            "VALUES ('m', 1, 'Kept', x'', 4, 0, 0, 0, 0)"
+        )
+    with database.connect() as conn:
+        assert schema_version(conn) == 2
+    monkeypatch.undo()
+    with Database(database.path).connect() as conn:
+        assert schema_version(conn) == 3
+        row = conn.execute("SELECT name, revision, ydoc, ydoc_epoch, default_look FROM maps").fetchone()
+    assert tuple(row) == ("Kept", 4, None, None, None)

@@ -289,6 +289,6 @@ def test_migration_2_adds_sizes_to_existing_snapshots(tmp_path, monkeypatch):
 
     database = Database(path)
     with database.connect() as conn:
-        assert schema_version(conn) == 2
+        assert schema_version(conn) >= 2  # and on through any later migration
         [row] = history.listing(conn, "m")
     assert (row["size_bytes"], row["node_count"]) == (2, 0)

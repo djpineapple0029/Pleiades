@@ -79,6 +79,46 @@ MIGRATIONS: list[list[str]] = [
         "DROP INDEX snapshots_map",
         "CREATE INDEX snapshots_map ON snapshots(map_id, created_at)",
     ],
+    # 3: multiplayer (context/MOONSHOT.md): the live doc, sharing, links, bans.
+    [
+        "ALTER TABLE maps ADD COLUMN ydoc BLOB",
+        "ALTER TABLE maps ADD COLUMN ydoc_epoch TEXT",
+        "ALTER TABLE maps ADD COLUMN default_look TEXT",
+        """CREATE TABLE map_members (
+            map_id TEXT NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role TEXT NOT NULL CHECK (role IN ('editor', 'viewer')),
+            perms_json TEXT,
+            added_by INTEGER,
+            added_at INTEGER NOT NULL,
+            seen_at INTEGER,
+            PRIMARY KEY (map_id, user_id)
+        )""",
+        "CREATE INDEX map_members_user ON map_members(user_id)",
+        """CREATE TABLE map_roles (
+            map_id TEXT NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
+            role TEXT NOT NULL CHECK (role IN ('editor', 'viewer')),
+            perms_json TEXT NOT NULL,
+            PRIMARY KEY (map_id, role)
+        )""",
+        """CREATE TABLE map_links (
+            map_id TEXT PRIMARY KEY REFERENCES maps(id) ON DELETE CASCADE,
+            token_hash TEXT NOT NULL UNIQUE,
+            role TEXT NOT NULL CHECK (role IN ('editor', 'viewer')),
+            expires_at INTEGER,
+            created_by INTEGER,
+            created_at INTEGER NOT NULL
+        )""",
+        """CREATE TABLE map_bans (
+            id INTEGER PRIMARY KEY,
+            map_id TEXT NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            guest_key TEXT,
+            name TEXT NOT NULL,
+            banned_at INTEGER NOT NULL
+        )""",
+        "CREATE INDEX map_bans_map ON map_bans(map_id)",
+    ],
 ]
 
 
