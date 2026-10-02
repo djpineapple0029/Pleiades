@@ -51,6 +51,8 @@ test.describe('sharing', () => {
     await expect(alice.locator('#roster .roster-bubble')).toHaveAttribute('title', /^Ari \(guest\) · viewer$/)
     // The token left the address bar for this tab's storage.
     expect(guest.url()).not.toContain('link=')
+    // A guest has no My maps: Home is the homepage.
+    await expect(guest.locator('#map-home')).toHaveAttribute('href', /home\.html$/)
   })
 
   test('an edit link: the guest’s star appears for the owner', async ({ browser }) => {

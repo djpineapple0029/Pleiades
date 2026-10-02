@@ -326,7 +326,8 @@ async function refreshList() {
   openShareFromHash()
 }
 
-/** `#share=<id>` (the app's Esc menu "Share…"): that map's sharing, open. */
+/** `#share=<id>`: that map's sharing, open. (The app's Esc screen linked here
+ *  until its "Share this map…" was taken off; a link still works.) */
 function openShareFromHash() {
   const match = /^share=([\w-]{16})$/.exec(location.hash.slice(1))
   if (!match) return

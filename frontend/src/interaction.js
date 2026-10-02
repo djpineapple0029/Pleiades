@@ -1748,6 +1748,8 @@ export function createInteraction({
     roomState,
     roomMessage,
     roomEnded,
+    /** The map menu's "My maps" on a server map: saved first, then the list. */
+    backToMaps,
     closeAbout,
     flyToPose,
     followPerson,
