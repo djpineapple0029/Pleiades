@@ -2,8 +2,13 @@
 // follow, other people's cursors in notes. Runs against a server of its own
 // (playwright.multiplayer.config.js).
 import { test, expect } from '@playwright/test'
-import { createMap, freshName, openMap, shareWith, signUp } from '../helpers/multiplayer.js'
+import { createMap, freshName, hasNode, openMap, shareWith, signUp } from '../helpers/multiplayer.js'
 import { settle, t } from '../helpers/gestures.js'
+
+const hexToRgbText = (hex) => {
+  const n = Number.parseInt(hex.slice(1), 16)
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`
+}
 
 /** Esc: the pointer goes, the Esc screen (and its room panel) shows. */
 const escape = async (page) => {
@@ -335,5 +340,29 @@ test.describe('social', () => {
     await expect(line).toContainText('Everyone opens this map in their own Look.')
     await openMap(bob, mapId)
     expect(await bob.evaluate(() => window.__pleiades.looks.current.id)).toBe('deep-space')
+  })
+
+  test("Bob sees a caret in Alice's colour where she types in a star's notes", async () => {
+    const id = await alice.evaluate(() => window.__pleiades.commands.spawn({ x: 0, y: 0, z: 0 }).id)
+    await expect.poll(() => hasNode(bob, id)).toBe(true)
+    await bob.evaluate((nodeId) => window.__pleiades.interaction.editNotesFor(nodeId), id)
+    await alice.evaluate((nodeId) => window.__pleiades.interaction.editNotesFor(nodeId), id)
+    await expect(alice.locator('.notes-textarea')).toBeFocused()
+    await alice.keyboard.type('first line\nsecond')
+    const caret = bob.locator('#notes-sidebar .notes-caret')
+    await expect(caret).toHaveCount(1)
+    const aliceColour = await alice.evaluate(() => window.__pleiades.room.you.colour)
+    await expect(caret).toHaveCSS('background-color', hexToRgbText(aliceColour))
+    const aliceName = await alice.evaluate(() => window.__pleiades.room.you.name)
+    await expect(caret.locator('.notes-caret-name')).toHaveText(aliceName)
+    // On her second line: below Bob's view of her first.
+    const lineTop = await caret.evaluate((el) => el.offsetTop)
+    await alice.keyboard.press('Home')
+    await alice.keyboard.press('ArrowUp')
+    await expect.poll(() => caret.evaluate((el) => el.offsetTop)).toBeLessThan(lineTop)
+    await bob.screenshot({ path: 'artifacts/e2e-multiplayer/notes-cursor.png' })
+    // She closes her editor: her caret goes.
+    await alice.keyboard.press('Escape')
+    await expect(caret).toHaveCount(0)
   })
 })

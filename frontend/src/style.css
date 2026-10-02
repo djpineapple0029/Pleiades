@@ -902,6 +902,58 @@ kbd {
   color: var(--ink-dim);
 }
 
+/* The textarea and, over it, other people's carets (room/notesCursors.js). */
+.notes-field {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 120px;
+}
+
+.notes-cursors {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.notes-mirror {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.notes-caret {
+  position: absolute;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--person, #fff);
+}
+
+/* On the first line the flag hangs below the caret, inside the box. */
+.notes-caret--low .notes-caret-name {
+  top: 100%;
+  bottom: auto;
+  border-radius: 0 3px 3px 3px;
+}
+
+.notes-caret-name {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  padding: 0 4px;
+  border-radius: 3px 3px 3px 0;
+  background: var(--person, #fff);
+  color: #05060a;
+  font:
+    600 10px/1.4 system-ui,
+    sans-serif;
+  white-space: nowrap;
+}
+
 .notes-textarea {
   flex: 1;
   min-height: 120px;

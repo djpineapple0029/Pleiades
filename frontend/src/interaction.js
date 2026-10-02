@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { NODE_RADIUS } from './graphView.js'
 import { createStatus } from './status.js'
 import { bindTextarea, trimText } from './room/notesBinding.js'
+import { createCursorOverlay, cursorsFor } from './room/notesCursors.js'
 import { createCommands } from './commands.js'
 import { rankNodes } from './search.js'
 import { focusSetOf } from './heat.js'
@@ -690,12 +691,19 @@ export function createInteraction({
     beginModal()
     editingAbout = { kind: 'node', id: node.id }
     let binding = null
+    let carets = null
     try {
       const kept = await sidebar.edit(nodeName(node), (textarea) => {
-        binding = bindTextarea(textarea, session.text, { origin: mapDoc.LOCAL })
+        binding = bindTextarea(textarea, session.text, {
+          origin: mapDoc.LOCAL,
+          cursor: room ? { awareness: room.awareness, node: node.id } : null,
+        })
         notesArea = textarea
         notesArea.readOnly = !canTypeNotes()
+        if (room) carets = showCarets(node.id, textarea, session.text)
       })
+      carets?.destroy()
+      carets = null
       binding?.destroy()
       binding = null
       endModal()
@@ -706,6 +714,7 @@ export function createInteraction({
         session.end()
       } else session.discard()
     } finally {
+      carets?.destroy()
       binding?.destroy()
       if (notesArea) notesArea.readOnly = false
       notesArea = null
@@ -713,6 +722,37 @@ export function createInteraction({
       if (mode === 'editing') endModal()
       sidebarKey = null // view mode redraws from scratch
       lock.resume()
+    }
+  }
+
+  /**
+   * Everyone else's caret in this star's notes, in their colour (decision 8),
+   * redrawn as they move, as anyone types, and as the box scrolls or resizes.
+   */
+  function showCarets(nodeId, textarea, ytext) {
+    const overlay = createCursorOverlay({ textarea, layer: sidebar.cursorLayer })
+    const redraw = () => {
+      const cursors = cursorsFor(nodeId, room.awareness.getStates(), mapDoc.doc, {
+        exclude: mapDoc.doc.clientID,
+      })
+      overlay.render(
+        cursors.flatMap((cursor) => {
+          const person = room.roster.find((p) => p.clientIds?.includes(cursor.clientId))
+          return person ? [{ ...cursor, colour: person.colour, name: personName(person) }] : []
+        }),
+      )
+    }
+    // After the binding has put their text in the textarea.
+    const onText = () => queueMicrotask(redraw)
+    room.awareness.on('change', redraw)
+    ytext.observe(onText)
+    redraw()
+    return {
+      destroy() {
+        room.awareness.off('change', redraw)
+        ytext.unobserve(onText)
+        overlay.destroy()
+      },
     }
   }
 
