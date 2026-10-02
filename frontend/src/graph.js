@@ -277,9 +277,40 @@ export function createGraph({ newId = randomId } = {}) {
         recoloured = true
       }
     }
-    clusterCount = count
+    // Undefined from the doc bridge, which applies colours someone's Balance
+    // chose: recount them the way `load` does.
+    clusterCount =
+      count === undefined
+        ? new Set([...nodes.values()].map((node) => node.cluster_color_id).filter(Boolean)).size
+        : count
     if (recoloured) changed()
     else touchContent()
+  }
+
+  /**
+   * Links and fields this build doesn't own (pass-through), from the doc
+   * (`docBridge.js`). Never the owned ones: those change through their own
+   * setters, which keep sizes and tints right.
+   */
+  function setNodeFields(id, fields) {
+    const node = nodes.get(id)
+    if (!node) return false
+    let changedAny = false
+    for (const [key, value] of Object.entries(fields)) {
+      if (NODE_KEYS.has(key) && key !== 'links') continue
+      if (key === 'links') {
+        if (!Array.isArray(value)) continue
+        const links = value.filter((link) => typeof link === 'string')
+        if (links.length === node.links.length && links.every((link, i) => link === node.links[i])) continue
+        node.links = links
+      } else {
+        if (node[key] === value) continue
+        node[key] = value
+      }
+      changedAny = true
+    }
+    if (changedAny) touchContent()
+    return true
   }
 
   /** Assigns label/notes in place (labels.js polls `node.label`, so it must
@@ -541,6 +572,7 @@ export function createGraph({ newId = randomId } = {}) {
     setCore,
     setNexus,
     setNodeText,
+    setNodeFields,
     setEdgeLabel,
     touchContent,
     sizeOf,

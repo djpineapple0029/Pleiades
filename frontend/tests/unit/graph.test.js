@@ -404,3 +404,45 @@ describe('nexus flag', () => {
     expect(h.addEdge(p.id, q.id, { directed: true }).directed).toBe(true)
   })
 })
+
+describe('setNodeFields', () => {
+  it('sets links and unknown fields, never the owned ones', () => {
+    const graph = createGraph({ newId: sequentialIds() })
+    const n = graph.addNode({ x: 0, y: 0, z: 0 })
+    graph.setNodeFields(n.id, { links: ['https://a', 5], colourway: 'teal', x: 99, label: 'no' })
+    expect(n.links).toEqual(['https://a'])
+    expect(n.colourway).toBe('teal')
+    expect(n.x).toBe(0)
+    expect(n.label).toBe('')
+  })
+
+  it('an unchanged value is not a change worth saving', () => {
+    const graph = createGraph({ newId: sequentialIds() })
+    const n = graph.addNode({ x: 0, y: 0, z: 0 })
+    const token = graph.contentRevision
+    graph.setNodeFields(n.id, { links: [] })
+    expect(graph.contentRevision).toBe(token)
+    expect(graph.setNodeFields('missing', {})).toBe(false)
+  })
+})
+
+describe('applyLayout without a cluster count', () => {
+  it('recounts the colours in use', () => {
+    const graph = createGraph({ newId: sequentialIds() })
+    const a = graph.addNode({ x: 0, y: 0, z: 0 })
+    const b = graph.addNode({ x: 1, y: 0, z: 0 })
+    graph.applyLayout({
+      positions: new Map([
+        [a.id, [0, 0, 0]],
+        [b.id, [1, 0, 0]],
+      ]),
+      colors: new Map([
+        [a.id, 2],
+        [b.id, 5],
+      ]),
+      blends: new Map(),
+      clusterCount: undefined,
+    })
+    expect(graph.clusterCount).toBe(2)
+  })
+})
