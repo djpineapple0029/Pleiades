@@ -253,3 +253,70 @@ def test_only_the_owner_can_put_a_version_into_history(three):
         f"/api/maps/{three['map']}/snapshots", json={"payload": {"nodes": [], "edges": []}}, headers=CSRF
     )
     assert planted.status_code == 403
+
+
+# --- Milestone 2: role defaults and per-person overrides -------------------
+
+
+def test_owner_sets_role_defaults_and_they_apply(three):
+    share(three, "eddie", "editor")
+    r = three["owner"].put(
+        f"/api/maps/{three['map']}/roles/editor", json={"perms": {"history": True, "fly": True}}, headers=CSRF
+    )
+    assert r.status_code == 200
+    sharing = three["eddie"].get(f"/api/maps/{three['map']}/sharing").json
+    assert sharing["you"]["perms"]["history"] is True and "fly" not in sharing["you"]["perms"]
+    assert sharing["role_defaults"]["editor"]["history"] is True
+    assert three["eddie"].get(f"/api/maps/{three['map']}/snapshots").status_code == 200
+
+
+def test_role_defaults_keep_only_known_boolean_perms(three):
+    url = f"/api/maps/{three['map']}/roles/viewer"
+    assert three["owner"].put(url, json={"perms": {"chat": "yes", "export": True}}, headers=CSRF).status_code == 200
+    defaults = three["owner"].get(f"/api/maps/{three['map']}/sharing").json["role_defaults"]["viewer"]
+    assert defaults["export"] is True and defaults["chat"] is False
+
+
+def test_role_defaults_need_a_known_role_and_perms_object(three):
+    url = f"/api/maps/{three['map']}/roles"
+    assert three["owner"].put(f"{url}/owner", json={"perms": {}}, headers=CSRF).status_code == 400
+    assert three["owner"].put(f"{url}/editor", json={"perms": []}, headers=CSRF).status_code == 400
+
+
+def test_per_person_override_beats_role_default(three):
+    share(three, "eddie", "editor")
+    eddie = me(three["eddie"])
+    url = f"/api/maps/{three['map']}/members/{eddie}"
+    assert three["owner"].patch(url, json={"perms": {"export": False}}, headers=CSRF).status_code == 200
+    assert three["eddie"].get(f"/api/maps/{three['map']}").status_code == 403
+    member = three["owner"].get(f"/api/maps/{three['map']}/sharing").json["members"][0]
+    assert member["perms_override"] == {"export": False} and member["effective"]["export"] is False
+    assert three["owner"].patch(url, json={"perms": None}, headers=CSRF).status_code == 200
+    assert three["eddie"].get(f"/api/maps/{three['map']}").status_code == 200
+
+
+def test_patch_member_may_change_role_and_perms_together_or_alone(three):
+    share(three, "eddie", "editor")
+    url = f"/api/maps/{three['map']}/members/{me(three['eddie'])}"
+    r = three["owner"].patch(url, json={"role": "viewer", "perms": {"chat": True}}, headers=CSRF)
+    assert r.status_code == 200
+    you = three["eddie"].get(f"/api/maps/{three['map']}/sharing").json["you"]
+    assert you["role"] == "viewer" and you["perms"]["chat"] is True
+    assert three["owner"].patch(url, json={}, headers=CSRF).status_code == 400
+
+
+def test_only_owner_edits_permissions(three):
+    share(three, "eddie", "editor")
+    r = three["eddie"].put(f"/api/maps/{three['map']}/roles/viewer", json={"perms": {"chat": True}}, headers=CSRF)
+    assert r.status_code == 403
+    url = f"/api/maps/{three['map']}/members/{me(three['eddie'])}"
+    assert three["eddie"].patch(url, json={"perms": {"history": True}}, headers=CSRF).status_code == 403
+
+
+def test_permission_changes_reach_the_room(three, rooms):
+    share(three, "eddie", "editor")
+    rooms.events.clear()
+    three["owner"].put(f"/api/maps/{three['map']}/roles/editor", json={"perms": {"chat": False}}, headers=CSRF)
+    url = f"/api/maps/{three['map']}/members/{me(three['eddie'])}"
+    three["owner"].patch(url, json={"perms": {"chat": True}}, headers=CSRF)
+    assert rooms.events == [(three["map"], "access"), (three["map"], "access")]

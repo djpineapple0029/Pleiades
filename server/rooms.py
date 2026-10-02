@@ -96,6 +96,8 @@ class Peer:
     guest: bool
     user_id: int | None
     guest_key: str | None
+    # The share link a guest came in on, so a re-check can ask about it again.
+    link_token: str | None = None
     colour: str = ""
     client_ids: set[int] = field(default_factory=set)
     outbox: asyncio.Queue = field(default_factory=asyncio.Queue)
@@ -235,7 +237,8 @@ class Room:
     # --- messages ----------------------------------------------------------
 
     async def on_binary(self, peer: Peer, data: bytes) -> None:
-        if not data or self.closed or peer.closing:
+        # Review Focus 5: a removed peer's late frames are never acted on.
+        if not data or self.closed or peer.closing or peer not in self.peers:
             return
         kind = data[0]
         if kind == YMessageType.SYNC and len(data) > 1:
@@ -300,7 +303,7 @@ class Room:
         """`flush`: save now and say whether it worked (Ctrl+S, and leaving
         for the map list, which then shows what was just done). Chat and
         emotes join in milestone 3. Unknown types are ignored."""
-        if peer.closing or self.closed:
+        if peer.closing or self.closed or peer not in self.peers:
             return
         if message.get("type") == "flush":
             ok = await self.persist()
@@ -437,27 +440,23 @@ class Room:
             self._failures = 0
             return True
 
-    async def reaccess(self, resolve: Callable[[str, int], Any]) -> None:
-        """Someone's access to this map changed (a member removed or re-roled,
-        sharing switched off): asks again for everyone signed in. Gone →
-        `kicked` and closed; a new role → `access`, and edits follow it at
-        once (a viewer's next update is refused). Milestone 2 adds links,
-        bans and per-person permissions to what `resolve` knows."""
-        changed = False
+    async def reaccess(self, resolve: Callable[[str, Peer], Any]) -> None:
+        """Someone's access to this map changed (members, roles, permissions,
+        the link, bans, the admin switches): asks again for everyone in it.
+        Gone → `kicked` and closed; a new role or permissions → `access`, and
+        edits follow at once (a viewer's next update is refused)."""
         for peer in list(self.peers):
-            if peer.user_id is None:
-                continue
-            found = await to_thread.run_sync(resolve, self.map_id, peer.user_id)
+            found = await to_thread.run_sync(resolve, self.map_id, peer)
+            if peer not in self.peers:
+                continue  # left while we asked
             if found is None:
-                peer.send_text({"type": "kicked", "reason": "access"})
-                peer.close(4403, "access")
+                peer.send_text({"type": "kicked", "reason": "access removed"})
+                peer.close(4403, "access removed")
                 await self.leave(peer)  # their avatar and bubble go now, not when the socket does
             elif found.role != peer.role or found.perms != peer.perms:
-                peer.role, peer.perms = found.role, found.perms
-                peer.send_text({"type": "access", "role": found.role, "perms": found.perms})
-                changed = True
-        if changed:
-            self._broadcast_roster()
+                peer.role, peer.perms = found.role, dict(found.perms)
+                peer.send_text({"type": "access", "role": peer.role, "perms": peer.perms})
+        self._broadcast_roster()
 
     def _close_all(self, message: dict[str, Any], code: int, reason: str) -> None:
         self.closed = True
@@ -518,11 +517,11 @@ class RoomRegistry:
         store: RoomStore,
         *,
         max_people: int = 10,
-        resolve: Callable[[str, int], Any] | None = None,
+        resolve: Callable[[str, Peer], Any] | None = None,
     ) -> None:
         self.store = store
         self.max_people = max_people
-        # (map_id, user_id) -> access.Access | None, from a worker thread.
+        # (map_id, peer) -> access.Access | None, from a worker thread.
         self.resolve = resolve
         self.rooms: dict[str, Room] = {}
         self._loop: asyncio.AbstractEventLoop | None = None

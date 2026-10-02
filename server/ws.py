@@ -40,15 +40,37 @@ def origin_ok(websocket: WebSocket) -> bool:
     return urlsplit(origin).netloc == websocket.headers.get("host", "")
 
 
+def switches_of(flask_app: Any) -> accessmod.Switches:
+    store = flask_app.extensions["pleiades_config"]
+    return accessmod.Switches(
+        sharing=bool(store.get("sharing", "enabled")), guest_links=bool(store.get("sharing", "guest_links"))
+    )
+
+
+def resolve_peer(flask_app: Any, map_id: str, peer: Peer) -> accessmod.Access | None:
+    """Someone already in a room, asked again (a room's re-check after a
+    sharing change): by account, or by the link and guest key they came in
+    with. Runs in a worker thread."""
+    if not flask_app.extensions["pleiades_config"].get("accounts", "enabled"):
+        return None
+    with flask_app.extensions["pleiades_db"].connect() as conn:
+        return accessmod.resolve(
+            conn,
+            map_id,
+            user_id=peer.user_id,
+            link_token=peer.link_token,
+            guest_key=peer.guest_key,
+            switches=switches_of(flask_app),
+        )
+
+
 def identify(flask_app: Any, websocket: WebSocket, map_id: str) -> tuple[accessmod.Access, str] | None:
     """(access, display name), or None. Runs in a worker thread (SQLite)."""
     store = flask_app.extensions["pleiades_config"]
     if not store.get("accounts", "enabled"):
         return None
     database = flask_app.extensions["pleiades_db"]
-    switches = accessmod.Switches(
-        sharing=bool(store.get("sharing", "enabled")), guest_links=bool(store.get("sharing", "guest_links"))
-    )
+    switches = switches_of(flask_app)
     token = websocket.cookies.get(COOKIE)
     with database.connect() as conn:
         if token:

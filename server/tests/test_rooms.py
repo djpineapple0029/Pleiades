@@ -495,9 +495,9 @@ async def test_access_changes_reach_people_already_in_the_room(store):
 
     roles = {1: "editor", 2: "editor"}
 
-    def resolve(map_id, user_id):
-        role = roles.get(user_id)
-        return Access(role, {"invite": role == "editor"}, 99, user_id=user_id) if role else None
+    def resolve(map_id, p):
+        role = roles.get(p.user_id)
+        return Access(role, {"invite": role == "editor"}, 99, user_id=p.user_id) if role else None
 
     registry = RoomRegistry(store, resolve=resolve)
     registry.bind_loop(asyncio.get_running_loop())
@@ -519,3 +519,44 @@ async def test_access_changes_reach_people_already_in_the_room(store):
     assert any(kind == "text" and json.loads(rest[0])["type"] == "kicked" for kind, *rest in gone)
     assert gone[-1][:2] == ("close", 4403)
     assert [p.name for p in room.peers] == ["stays"]
+
+
+# --- Milestone 2: re-checking everyone, guests included ---------------------
+
+
+@pytest.mark.anyio
+async def test_reaccess_demotes_and_kicks(store):
+    from server.access import Access
+
+    room = Room("m", store)
+    await room.open()
+    keep, demote, drop = peer("keep"), peer("demote"), peer("drop")
+    drop.guest, drop.guest_key, drop.link_token = True, "k" * 22, "tok"
+    for p in (keep, demote, drop):
+        await room.join(p, "")
+        drain(p)
+
+    def resolver(map_id, p):
+        if p is drop:
+            return None
+        if p is demote:
+            return Access("viewer", {"chat": False}, owner_id=1)
+        return Access("editor", {"chat": True}, owner_id=1)
+
+    await room.reaccess(resolver)
+    assert {"type": "access", "role": "viewer", "perms": {"chat": False}} in texts(demote)
+    kicked = drain(drop)
+    assert any(k == "text" and json.loads(r[0])["type"] == "kicked" for k, *r in kicked)
+    assert drop not in room.peers and demote.role == "viewer"
+
+
+@pytest.mark.anyio
+async def test_review_focus_5_a_removed_peers_late_frames_are_ignored(store):
+    room = Room("m", store)
+    await room.open()
+    gone = peer("gone")
+    client = await joined(room, gone)
+    await room.leave(gone)
+    gone.closing = False  # a frame that was already in flight when they were removed
+    await room.on_binary(gone, edit_message(client, set_label("late")))
+    assert room.doc.get("nodes", type=Map)["a"]["label"] == "A"

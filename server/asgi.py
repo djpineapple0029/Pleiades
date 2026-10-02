@@ -19,29 +19,22 @@ from starlette.applications import Starlette
 from starlette.routing import Mount, WebSocketRoute
 
 from . import create_app
-from .access import Access, Switches
-from .access import resolve as access_resolve
-from .rooms import DbStore, RoomRegistry
-from .ws import map_socket
+from .access import Access
+from .rooms import DbStore, Peer, RoomRegistry
+from .ws import map_socket, resolve_peer
 
 
 def create_asgi(config_path: Path | str | None = None) -> Starlette:
     flask_app = create_app(config_path)
     # Read once: changing it in /admin applies after a restart (its help says so).
     max_people = int(flask_app.extensions["pleiades_config"].get("sharing", "max_people_per_map"))
-    database = flask_app.extensions["pleiades_db"]
 
-    def resolve(map_id: str, user_id: int) -> Access | None:
+    def resolve(map_id: str, peer: Peer) -> Access | None:
         """Someone's access now, for a room re-checking who may stay (sharing.py
         changes; maps.notify). Runs in a worker thread."""
-        store = flask_app.extensions["pleiades_config"]
-        switches = Switches(
-            sharing=bool(store.get("sharing", "enabled")), guest_links=bool(store.get("sharing", "guest_links"))
-        )
-        with database.connect() as conn:
-            return access_resolve(conn, map_id, user_id=user_id, switches=switches)
+        return resolve_peer(flask_app, map_id, peer)
 
-    registry = RoomRegistry(DbStore(database), max_people=max_people, resolve=resolve)
+    registry = RoomRegistry(DbStore(flask_app.extensions["pleiades_db"]), max_people=max_people, resolve=resolve)
     flask_app.extensions["pleiades_rooms"] = registry
 
     @asynccontextmanager

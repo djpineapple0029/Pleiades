@@ -3,12 +3,14 @@ Editor or Viewer, plus the "Shared with me" list.
 
 Granting follows permissions.can_grant: nobody gives a role above their own,
 and only people with the Invite permission give one at all. Only the owner
-changes someone's role or removes them; anyone can remove themselves
-("Leave"). Every change tells the map's live room, which re-checks who may
-stay (milestone 2).
+changes someone's role, permissions or the role defaults, or removes
+someone; anyone can remove themselves ("Leave"). Every change tells the
+map's live room, which re-checks everyone in it at once.
 """
 
 from __future__ import annotations
+
+import json
 
 from flask import Blueprint, Response, jsonify
 
@@ -16,13 +18,20 @@ from . import access
 from . import db as dbmod
 from .accounts import database, fail, finish, gate, json_body, signed_in
 from .maps import check_id, notify, require, switches, user_id
-from .permissions import DEFAULTS, can_grant
+from .permissions import PERMS, can_grant, effective
 
 sharing = Blueprint("sharing", __name__, url_prefix="/api/maps")
 sharing.before_request(gate)
 sharing.after_request(finish)
 
 ROLES = ("editor", "viewer")
+
+
+def clean_perms(raw: object) -> dict[str, bool] | None:
+    """Only known permissions with true/false values; None when it isn't an object."""
+    if not isinstance(raw, dict):
+        return None
+    return {key: value for key, value in raw.items() if key in PERMS and isinstance(value, bool)}
 
 
 @sharing.get("/shared")
@@ -56,7 +65,8 @@ def sharing_info(map_id: str) -> Response:
             "WHERE map_members.map_id = ? ORDER BY map_members.added_at, users.username",
             (map_id,),
         ).fetchall()
-        role_defaults = {role: {**DEFAULTS[role], **(access.role_defaults(conn, map_id, role) or {})} for role in ROLES}
+        stored = {role: access.role_defaults(conn, map_id, role) for role in ROLES}
+    role_defaults = {role: effective(role, stored[role], None) for role in ROLES}
     return jsonify(
         you={"user_id": found.user_id, "role": found.role, "perms": found.perms},
         owner={"id": owner["id"], "username": owner["username"]},
@@ -66,6 +76,7 @@ def sharing_info(map_id: str) -> Response:
                 "username": row["username"],
                 "role": row["role"],
                 "perms_override": access.parse_perms(row["perms_json"]),
+                "effective": effective(row["role"], stored[row["role"]], access.parse_perms(row["perms_json"])),
             }
             for row in members
         ],
@@ -109,18 +120,56 @@ def add_member(map_id: str) -> Response | tuple[Response, int]:
 @sharing.patch("/<map_id>/members/<int:member_id>")
 @signed_in
 def change_member(map_id: str, member_id: int) -> Response | tuple[Response, int]:
+    """Owner only: `role`, and/or `perms` (an override; null clears it)."""
     require(map_id, owner=True)
-    role = json_body().get("role")
-    if role not in ROLES:
-        return fail("The role must be editor or viewer.", 400)
+    body = json_body()
+    if "role" not in body and "perms" not in body:
+        return fail("Say what to change: role or perms.", 400)
+    sets, values = [], []
+    if "role" in body:
+        if body["role"] not in ROLES:
+            return fail("The role must be editor or viewer.", 400)
+        sets.append("role = ?")
+        values.append(body["role"])
+    if "perms" in body:
+        perms = None if body["perms"] is None else clean_perms(body["perms"])
+        if body["perms"] is not None and perms is None:
+            return fail("Permissions must be an object of true/false values.", 400)
+        sets.append("perms_json = ?")
+        values.append(json.dumps(perms) if perms else None)
     with database().connect() as conn:
         changed = conn.execute(
-            "UPDATE map_members SET role = ? WHERE map_id = ? AND user_id = ?", (role, map_id, member_id)
+            f"UPDATE map_members SET {', '.join(sets)} WHERE map_id = ? AND user_id = ?",  # noqa: S608 -- fixed column names
+            (*values, map_id, member_id),
         ).rowcount
+        row = conn.execute(
+            "SELECT role, perms_json FROM map_members WHERE map_id = ? AND user_id = ?", (map_id, member_id)
+        ).fetchone()
     if not changed:
         return fail("That person isn't in this map's list.", 404)
     notify(map_id, "access")
-    return jsonify(user_id=member_id, role=role)
+    return jsonify(user_id=member_id, role=row["role"], perms_override=access.parse_perms(row["perms_json"]))
+
+
+@sharing.put("/<map_id>/roles/<role>")
+@signed_in
+def set_role_defaults(map_id: str, role: str) -> Response | tuple[Response, int]:
+    """Owner only: what everyone with this role may do here, unless overridden."""
+    require(map_id, owner=True)
+    if role not in ROLES:
+        return fail("The role must be editor or viewer.", 400)
+    perms = clean_perms(json_body().get("perms"))
+    if perms is None:
+        return fail("Permissions must be an object of true/false values.", 400)
+    with database().connect() as conn:
+        conn.execute(
+            "INSERT INTO map_roles (map_id, role, perms_json) VALUES (?, ?, ?) "
+            "ON CONFLICT (map_id, role) DO UPDATE SET perms_json = excluded.perms_json",
+            (map_id, role, json.dumps(perms)),
+        )
+        stored = access.role_defaults(conn, map_id, role)
+    notify(map_id, "access")
+    return jsonify(role=role, perms=effective(role, stored, None))
 
 
 @sharing.delete("/<map_id>/members/<int:member_id>")
