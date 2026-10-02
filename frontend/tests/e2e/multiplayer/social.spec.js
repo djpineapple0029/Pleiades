@@ -365,4 +365,30 @@ test.describe('social', () => {
     await alice.keyboard.press('Escape')
     await expect(caret).toHaveCount(0)
   })
+
+  test('Help and the ? list cover the multiplayer keys and what sharing means', async () => {
+    // In the map: Esc, then ? — the list has Y, G and F.
+    await escape(alice)
+    await alice.keyboard.press('?')
+    const keys = alice.locator('#overlay .keys')
+    await expect(keys).toBeVisible()
+    for (const text of [
+      'chat to everyone here',
+      'hold, point at an emote',
+      'follow the person on the crosshair',
+    ])
+      await expect(keys).toContainText(text)
+    // The Help page: the Multiplayer keys and the Shared maps section.
+    const help = await alice.context().newPage()
+    await help.setViewportSize({ width: 1000, height: 1400 })
+    await help.goto('/account.html#help')
+    await expect(help.locator('#help-view [data-action="chat"] kbd')).toHaveText(['Y'])
+    await expect(help.locator('#help-view [data-action="emote"] kbd')).toHaveText(['G'])
+    await expect(help.locator('#help-view [data-action="follow"] kbd')).toHaveText(['F'])
+    const prose = help.locator('#help-view .help-prose')
+    await expect(prose).toContainText('Undo only takes back your own changes')
+    await expect(prose).toContainText('per browser tab')
+    await prose.screenshot({ path: 'artifacts/e2e-multiplayer/help-shared-maps.png' })
+    await help.close()
+  })
 })

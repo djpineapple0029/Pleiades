@@ -37,10 +37,17 @@ export const APP_ROWS = [
   { ids: ['help'], text: 'show or hide this list while the pointer is free' },
 ]
 
-// A map from the account's list saves itself, and opens no files.
-export const SERVER_MAP_ROWS = APP_ROWS.filter((row) => !row.ids?.includes('open')).map((row) =>
-  row.ids?.includes('save') ? { ...row, text: 'save now (it also saves by itself)' } : row,
-)
+// A map from the account's list saves itself, opens no files, and is live:
+// other people can be in it, so the multiplayer keys come before Esc.
+const ROOM_ROWS = [
+  { ids: ['chat'], text: 'chat to everyone here; Enter sends, Esc closes' },
+  { ids: ['emote'], text: 'hold, point at an emote, let go' },
+  { ids: ['follow'], text: 'follow the person on the crosshair; moving stops it' },
+]
+const esc = APP_ROWS.findIndex((row) => row.caps?.includes('Esc'))
+export const SERVER_MAP_ROWS = [...APP_ROWS.slice(0, esc), ...ROOM_ROWS, ...APP_ROWS.slice(esc)]
+  .filter((row) => !row.ids?.includes('open'))
+  .map((row) => (row.ids?.includes('save') ? { ...row, text: 'save now (it also saves by itself)' } : row))
 
 export const VIEWER_ROWS = [
   { ids: ['move_forward', 'move_left', 'move_back', 'move_right'], text: 'move' },
