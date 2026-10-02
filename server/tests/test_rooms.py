@@ -641,3 +641,71 @@ async def test_the_registry_rechecks_a_link_guest_when_their_link_expires(store)
     await asyncio.sleep(0.3)
     assert expired == ["guest"]
     assert ("close", 4403, "access removed") in drain(guest)
+
+
+# --- chat (Task 3.1) ---------------------------------------------------------
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("text", "sent"),
+    [
+        ("hi", "hi"),
+        ("<img src=x onerror=alert(1)>", "<img src=x onerror=alert(1)>"),  # text, never markup
+        ("👩‍🚀 مرحبا", "👩‍🚀 مرحبا"),
+        ("a\u0007b", "ab"),
+        ("two\nlines", "two\nlines"),
+        ("  padded  ", "padded"),
+        ("é", "é"),  # NFC
+        ("x" * 500, "x" * 500),
+        ("x" * 501, None),
+        ("   ", None),
+        ("\u0007", None),
+        (42, None),
+        (None, None),
+    ],
+)
+async def test_review_focus_4_chat_text(store, text, sent):
+    room = Room("m", store)
+    await room.open()
+    a = Peer(conn="a", name="a", role="editor", perms={"chat": True}, guest=False, user_id=1, guest_key=None)
+    b = peer("b")
+    await room.join(a, "")
+    await room.join(b, "")
+    drain(a), drain(b)
+    await room.on_text(a, {"type": "chat", "text": text})
+    got = [t for t in texts(b) if t["type"] == "chat"]
+    assert ([m["text"] for m in got] or [None]) == [sent]
+
+
+@pytest.mark.anyio
+async def test_chat_reaches_everyone_including_the_sender_with_who_sent_it(store):
+    room = Room("m", store)
+    await room.open()
+    a = Peer(conn="a", name="Ari", role="editor", perms={"chat": True}, guest=False, user_id=1, guest_key=None)
+    g = Peer(conn="g", name="Sam", role="viewer", perms={"chat": False}, guest=True, user_id=None, guest_key="k")
+    await room.join(a, "")
+    await room.join(g, "")
+    drain(a), drain(g)
+    await room.on_text(a, {"type": "chat", "text": "hello"})
+    mine, theirs = texts(a), texts(g)
+    assert mine == theirs
+    (message,) = mine
+    assert message["type"] == "chat" and message["conn"] == "a" and message["name"] == "Ari"
+    assert message["colour"] == a.colour and message["guest"] is False and message["text"] == "hello"
+    assert isinstance(message["at"], int) and message["at"] > 1_700_000_000_000
+    assert store.saves == []  # never stored
+
+
+@pytest.mark.anyio
+async def test_chat_needs_the_permission(store):
+    room = Room("m", store)
+    await room.open()
+    v = Peer(conn="v", name="v", role="viewer", perms={"chat": False}, guest=False, user_id=2, guest_key=None)
+    other = peer("o")
+    await room.join(v, "")
+    await room.join(other, "")
+    drain(v), drain(other)
+    await room.on_text(v, {"type": "chat", "text": "hi"})
+    assert texts(v) == [{"type": "error", "code": "no_chat"}]
+    assert texts(other) == []

@@ -38,6 +38,8 @@ import { colourFor, hexToRgb, personName } from './room/authors.js'
 import { createPosePublisher } from './room/presence.js'
 import { createAvatars } from './room/avatars.js'
 import { createRoster } from './room/roster.js'
+import { createChat, createChatLog } from './room/chat.js'
+import { createRoomPanel } from './room/roomPanel.js'
 import { docToPayload } from './format/ydoc.js'
 
 const MAX_FRAME_DELTA = 0.1 // seconds — clamps the jump after a backgrounded tab
@@ -308,6 +310,28 @@ const renderSettings = {
   looks,
 }
 
+// Presence and chat (context/MOONSHOT.md): everyone else as avatars, what
+// they say over them, in a feed over the HUD and in the Esc screen's panel.
+const avatars = room ? createAvatars({ scene }) : null
+const chatLog = room ? createChatLog() : null
+const chat = room
+  ? createChat({
+      room,
+      log: chatLog,
+      feed: document.getElementById('chat-feed'),
+      form: document.getElementById('chat-form'),
+      avatars,
+      personName,
+    })
+  : null
+const roomPanel = room
+  ? createRoomPanel(document.getElementById('room-panel'), { onSend: (text) => chat.send(text) })
+  : null
+if (room) {
+  roomPanel.element.hidden = false
+  chatLog.onAdd(() => roomPanel.renderChat(chatLog.messages))
+}
+
 const interaction = createInteraction({
   camera,
   controls: flight.controls,
@@ -334,6 +358,7 @@ const interaction = createInteraction({
   speedEl: speed,
   keymap,
   room,
+  chat,
   leaveToMaps,
 })
 
@@ -372,14 +397,16 @@ function onRoomMessage(message) {
     showPeople()
   } else if (message.type === 'access') {
     showShareLink()
+    roomPanel.setCanChat(can(room, 'chat'))
+  } else if (message.type === 'chat') {
+    chat.receive(message)
   } else {
     interaction.roomMessage(message)
   }
 }
 
-// Presence (context/MOONSHOT.md): this camera out through awareness, everyone
-// else in as avatars and roster bubbles.
-const avatars = room ? createAvatars({ scene }) : null
+// Presence: this camera out through awareness, everyone else in as avatars
+// (above) and roster bubbles.
 const publisher = room ? createPosePublisher({ awareness: room.awareness }) : null
 const BEHIND = 30 // how far back a roster click puts you, along their view
 const roster = room
@@ -406,6 +433,7 @@ function showPeople() {
   }
   avatars.sync(others)
   roster.render(room.roster, room.you)
+  roomPanel.renderPeople(room.roster, room.you)
 }
 
 // The Esc screen's "Share this map…", for anyone with the Invite permission
@@ -428,6 +456,7 @@ if (room) {
     }
   })
   showPeople()
+  roomPanel.setCanChat(can(room, 'chat'))
 }
 // Someone else deleted it: whatever is open about it here closes (decision 10).
 onRemoved = (removal) => {
@@ -445,7 +474,17 @@ const hasUnsaved = () => (room ? false : files.isDirty)
 // The e2e suites' handle on the app (tests/e2e/multiplayer). Dev server only:
 // `npm run build` drops this block, so it never ships.
 if (import.meta.env.DEV) {
-  window.__pleiades = { graph, mapDoc, undo, room, interaction, avatars, commands: interaction.commands }
+  window.__pleiades = {
+    graph,
+    mapDoc,
+    undo,
+    room,
+    interaction,
+    avatars,
+    chat,
+    chatLog,
+    commands: interaction.commands,
+  }
 }
 
 flight.controls.addEventListener('lock', () => {

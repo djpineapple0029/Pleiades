@@ -178,6 +178,8 @@ export function createInteraction({
   speedEl,
   keymap = createKeymap(),
   room = null,
+  // room/chat.js in a live map: Y opens its line.
+  chat = null,
   leaveToMaps = () => {},
 }) {
   const raycaster = new THREE.Raycaster()
@@ -844,8 +846,24 @@ export function createInteraction({
     } else if (message.type === 'saved' && roomProblem?.startsWith('not saved')) {
       roomProblem = null
       status.notice('saved again')
+    } else if (message.type === 'error' && message.code === 'no_chat') {
+      status.notice(denyText('chat'))
     } else if (message.type === 'error' && message.code === 'bad_update') {
       roomProblem = 'the server refused an edit from this tab · reload'
+    }
+  }
+
+  /** Y: the chat line, with the pointer free until it closes (like notes). */
+  async function openChat() {
+    if (!allowed('chat')) return
+    await lock.release('panel')
+    mode = 'editing'
+    beginModal()
+    try {
+      await chat.prompt()
+    } finally {
+      if (mode === 'editing') endModal()
+      lock.resume()
     }
   }
 
@@ -1528,6 +1546,13 @@ export function createInteraction({
         openKeyMenu(action)
         return
       }
+    }
+
+    if (chat && is('chat') && !event.repeat && (controls.isLocked || overview.isActive) && mode === 'idle') {
+      // Or the Y would land in the field that's about to take focus.
+      event.preventDefault()
+      openChat()
+      return
     }
 
     if (is('heat') && !event.repeat && (controls.isLocked || overview.isActive) && mode !== 'menu') {

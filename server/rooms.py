@@ -24,6 +24,7 @@ import logging
 import secrets
 import threading
 import time
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple, Protocol
@@ -61,6 +62,7 @@ PLAYER_COLOURS = [
     "#e9ecef",
 ]
 FAILURES_BEFORE_WARNING = 3
+CHAT_MAX = 500  # characters, after cleaning (MOONSHOT-BUILD.md limits)
 # The only roots a map's doc has (server/ydoc.py). Clients write `nodes` and
 # `edges`; `meta` (camera, envelope, pass-through keys) is the server's alone
 # until a later milestone gives a client something to put there.
@@ -311,19 +313,43 @@ class Room:
 
     async def on_text(self, peer: Peer, message: dict[str, Any]) -> None:
         """`flush`: save now and say whether it worked (Ctrl+S, and leaving
-        for the map list, which then shows what was just done). Chat and
-        emotes join in milestone 3. Unknown types are ignored."""
+        for the map list, which then shows what was just done). `chat`: a
+        line to everyone. Unknown types are ignored."""
         if peer.closing or self.closed or peer not in self.peers:
             return
         if peer.link_expired:
             await self._remove(peer)
             return
-        if message.get("type") == "flush":
+        kind = message.get("type")
+        if kind == "flush":
             ok = await self.persist()
             async with self._lock:
                 pass  # a save already under way when this came in has finished too
             # Its own save, not whether anyone has edited since.
             peer.send_text({"type": "flushed", "ok": ok and self._last_save_ok})
+        elif kind == "chat":
+            self._chat(peer, message.get("text"))
+
+    def _chat(self, peer: Peer, text: Any) -> None:
+        """To everyone, the sender too, so every log is in the room's order.
+        Never stored. Clients show it as text, never markup (Review Focus 4)."""
+        if not peer.perms.get("chat"):
+            peer.send_text({"type": "error", "code": "no_chat"})
+            return
+        cleaned = clean_chat(text)
+        if cleaned is None:
+            return
+        message = {
+            "type": "chat",
+            "conn": peer.conn,
+            "name": peer.name,
+            "colour": peer.colour,
+            "guest": peer.guest,
+            "text": cleaned,
+            "at": int(time.time() * 1000),
+        }
+        for p in self.peers:
+            p.send_text(message)
 
     # --- validation --------------------------------------------------------
 
@@ -524,6 +550,18 @@ class Room:
         message = {"type": "roster", "people": self.roster()}
         for p in self.peers:
             p.send_text(message)
+
+
+def clean_chat(text: Any) -> str | None:
+    """A chat line as it is sent on: NFC, control characters gone (line breaks
+    stay), trimmed; None if that leaves nothing or more than CHAT_MAX."""
+    if not isinstance(text, str):
+        return None
+    text = unicodedata.normalize("NFC", text)
+    text = "".join(ch for ch in text if ch == "\n" or unicodedata.category(ch) != "Cc").strip()
+    if not text or len(text) > CHAT_MAX:
+        return None
+    return text
 
 
 def _awareness_client_ids(update: bytes) -> set[int]:
