@@ -1,8 +1,10 @@
 """Who may open a map, with which role and permissions (context/MOONSHOT.md).
 
 The one place every map route and every room connection asks. Owner first,
-then members; links, bans and the admin switches join in later. A map you
-can't reach is None — callers answer 404, never 403.
+then members, then the map's share link (for a signed-in person who hasn't
+joined yet, or a guest). With sharing switched off only owners get in;
+with guest links off, only guests are refused. A map you can't reach is
+None — callers answer 404, never 403.
 """
 
 from __future__ import annotations
@@ -11,6 +13,8 @@ import json
 import sqlite3
 from dataclasses import dataclass, field
 
+from . import db as dbmod
+from .accounts import token_hash
 from .permissions import effective
 
 
@@ -52,6 +56,16 @@ def role_defaults(conn: sqlite3.Connection, map_id: str, role: str) -> dict | No
 DEFAULT_SWITCHES = Switches()
 
 
+def link_role(conn: sqlite3.Connection, map_id: str, link_token: str) -> str | None:
+    """The role the map's link gives, if `link_token` is its live, unexpired token."""
+    link = conn.execute(
+        "SELECT role, expires_at FROM map_links WHERE map_id = ? AND token_hash = ?", (map_id, token_hash(link_token))
+    ).fetchone()
+    if link is None or (link["expires_at"] is not None and link["expires_at"] <= dbmod.now()):
+        return None
+    return link["role"]
+
+
 def resolve(
     conn: sqlite3.Connection,
     map_id: str,
@@ -61,7 +75,8 @@ def resolve(
     guest_key: str | None = None,
     switches: Switches = DEFAULT_SWITCHES,
 ) -> Access | None:
-    """`link_token`/`guest_key` are for share links (milestone 2); unused yet."""
+    """`link_token` is a share link's token; `guest_key` marks a signed-out
+    guest (one per browser tab) on it."""
     row = conn.execute("SELECT user_id FROM maps WHERE id = ?", (map_id,)).fetchone()
     if row is None:
         return None
@@ -78,4 +93,12 @@ def resolve(
             role = member["role"]
             perms = effective(role, role_defaults(conn, map_id, role), parse_perms(member["perms_json"]))
             return Access(role, perms, owner_id, user_id=user_id)
+    if link_token:
+        if user_id is None and not switches.guest_links:
+            return None
+        role = link_role(conn, map_id, link_token)
+        if role is None:
+            return None
+        perms = effective(role, role_defaults(conn, map_id, role), None)
+        return Access(role, perms, owner_id, user_id=user_id, guest_key=guest_key, via_link=True)
     return None

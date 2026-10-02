@@ -10,6 +10,7 @@ import { FLY_DURATION } from './flyTo.js'
 import { createKeymap } from './keymap.js'
 import { LOOKS } from './looks.js'
 import { nodeName } from './ids.js'
+import { personName } from './room/authors.js'
 
 const SPAWN_DISTANCE = 90 // world units ahead of the camera for a new node
 const DOUBLE_CLICK_MS = 320
@@ -864,7 +865,8 @@ export function createInteraction({
     const me = room.you?.conn
     const names = new Set()
     for (const person of room.roster) {
-      if (person.conn !== me && (person.role === 'editor' || person.role === 'owner')) names.add(person.name)
+      if (person.conn !== me && (person.role === 'editor' || person.role === 'owner'))
+        names.add(personName(person))
     }
     return [...names]
   }

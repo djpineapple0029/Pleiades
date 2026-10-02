@@ -56,6 +56,9 @@ export default defineConfig({
       '/admin': API,
       // Live map rooms (context/MOONSHOT.md): WebSockets to the same backend.
       '/ws': { target: API, ws: true },
+      // Share links land on Flask, which sends them on into the app. The
+      // slash matters: a bare '/s' would also catch '/src/…'.
+      '/s/': API,
     },
   },
 })

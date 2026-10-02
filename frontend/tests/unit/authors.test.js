@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as Y from 'yjs'
-import { authorsOf, colourFor, hexToRgb } from '../../src/room/authors.js'
+import { authorsOf, colourFor, hexToRgb, personName } from '../../src/room/authors.js'
 
 describe('authors', () => {
   it('is the client whose edit the transaction applied', () => {
@@ -35,5 +35,13 @@ describe('authors', () => {
 
   it('hex to 0..1 channels', () => {
     expect(hexToRgb('#ff0080')).toEqual([1, 0, 128 / 255])
+  })
+})
+
+describe('personName', () => {
+  it('is the name, with "(guest)" for a guest on a link', () => {
+    expect(personName({ name: 'sam', guest: false })).toBe('sam')
+    expect(personName({ name: 'Ari', guest: true })).toBe('Ari (guest)')
+    expect(personName({})).toBe('someone')
   })
 })

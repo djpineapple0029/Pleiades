@@ -11,20 +11,23 @@ map's live room, which re-checks everyone in it at once.
 from __future__ import annotations
 
 import json
+import secrets
 
 from flask import Blueprint, Response, jsonify
 
 from . import access
 from . import db as dbmod
-from .accounts import database, fail, finish, gate, json_body, signed_in
+from .accounts import cookie_path, database, fail, finish, gate, json_body, signed_in, token_hash
 from .maps import check_id, notify, require, switches, user_id
-from .permissions import PERMS, can_grant, effective
+from .permissions import PERMS, ROLE_RANK, can_grant, effective
 
 sharing = Blueprint("sharing", __name__, url_prefix="/api/maps")
 sharing.before_request(gate)
 sharing.after_request(finish)
 
 ROLES = ("editor", "viewer")
+LINK_DAYS = (None, 1, 7, 30)
+DAY = 86_400
 
 
 def clean_perms(raw: object) -> dict[str, bool] | None:
@@ -66,6 +69,11 @@ def sharing_info(map_id: str) -> Response:
             (map_id,),
         ).fetchall()
         stored = {role: access.role_defaults(conn, map_id, role) for role in ROLES}
+        link = conn.execute(
+            "SELECT role, expires_at, created_at FROM map_links "
+            "WHERE map_id = ? AND (expires_at IS NULL OR expires_at > ?)",
+            (map_id, dbmod.now()),
+        ).fetchone()
     role_defaults = {role: effective(role, stored[role], None) for role in ROLES}
     return jsonify(
         you={"user_id": found.user_id, "role": found.role, "perms": found.perms},
@@ -81,7 +89,8 @@ def sharing_info(map_id: str) -> Response:
             for row in members
         ],
         role_defaults=role_defaults,
-        link=None,
+        # Never the token: it's shown once, when made (context/MOONSHOT.md).
+        link=dict(link) if link else None,
     )
 
 
@@ -184,3 +193,81 @@ def remove_member(map_id: str, member_id: int) -> Response | tuple[Response, int
         return fail("That person isn't in this map's list.", 404)
     notify(map_id, "access")
     return jsonify(ok=True)
+
+
+# --- Share links (context/MOONSHOT.md): one live link per map ---------------
+
+
+@sharing.post("/<map_id>/link")
+@signed_in
+def make_link(map_id: str) -> Response | tuple[Response, int]:
+    """A new link, replacing any old one (whose token stops working at once).
+    The URL is the only time the token is shown."""
+    found = require(map_id, "invite")
+    body = json_body()
+    role = body.get("role")
+    if role not in ROLES:
+        return fail("The role must be editor or viewer.", 400)
+    if not can_grant(found.role, found.perms, role):
+        return fail(
+            f"You can't make a link that lets people {'edit' if role == 'editor' else 'view'}.",
+            403,
+            permission="invite",
+        )
+    days = body.get("expires_in_days")
+    if days not in LINK_DAYS or isinstance(days, bool):
+        return fail("A link lasts for ever, or 1, 7 or 30 days.", 400)
+    token = secrets.token_urlsafe(32)
+    now = dbmod.now()
+    expires_at = None if days is None else now + days * DAY
+    with database().transaction() as conn:
+        conn.execute("DELETE FROM map_links WHERE map_id = ?", (map_id,))
+        conn.execute(
+            "INSERT INTO map_links (map_id, token_hash, role, expires_at, created_by, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (map_id, token_hash(token), role, expires_at, found.user_id, now),
+        )
+    notify(map_id, "access")  # anyone in on the old link is sent out
+    return jsonify(url=f"{cookie_path()}s/{token}", role=role, expires_at=expires_at), 201
+
+
+@sharing.delete("/<map_id>/link")
+@signed_in
+def revoke_link(map_id: str) -> Response:
+    require(map_id, "invite")
+    with database().connect() as conn:
+        conn.execute("DELETE FROM map_links WHERE map_id = ?", (map_id,))
+    notify(map_id, "access")
+    return jsonify(ok=True)
+
+
+@sharing.post("/<map_id>/join")
+@signed_in
+def join_by_link(map_id: str) -> Response | tuple[Response, int]:
+    """A signed-in person opened a share link: they become a member with the
+    link's role (or keep a higher one they had), so the map is in their
+    Shared with me from now on."""
+    check_id(map_id)
+    token = json_body().get("link")
+    if not isinstance(token, str) or not token:
+        return fail("That link doesn't work any more.", 404)
+    me = user_id()
+    with database().transaction() as conn:
+        found = access.resolve(conn, map_id, user_id=me, link_token=token, switches=switches())
+        link_role = access.link_role(conn, map_id, token) if found is not None else None
+        if found is None or link_role is None:
+            return fail("That link doesn't work any more.", 404)
+        role = found.role
+        if found.via_link:
+            conn.execute(
+                "INSERT INTO map_members (map_id, user_id, role, added_by, added_at) VALUES (?, ?, ?, NULL, ?)",
+                (map_id, me, link_role, dbmod.now()),
+            )
+            role = link_role
+        elif role != "owner" and ROLE_RANK[link_role] > ROLE_RANK[role]:
+            conn.execute("UPDATE map_members SET role = ? WHERE map_id = ? AND user_id = ?", (link_role, map_id, me))
+            role = link_role
+        else:
+            return jsonify(role=role)
+    notify(map_id, "access")
+    return jsonify(role=role)

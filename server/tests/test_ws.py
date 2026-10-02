@@ -215,3 +215,64 @@ def test_a_removed_member_is_sent_out_of_the_open_map(world):
         be(world, alice)
         assert world.delete(f"/api/maps/{map_id}/members/{bob_id}", headers=CSRF).status_code == 200
         assert wait_for_close(ws) == 4403
+
+
+# --- Milestone 2: guests on a share link ------------------------------------
+
+GUEST_KEY = "g" * 22
+
+
+def guest_link(world, role="viewer"):
+    """Signs alice up, makes a map and a link to it; returns (map id, token).
+    The client is signed out afterwards."""
+    sign_up(world, "alice")
+    map_id = new_map(world)
+    url = world.post(f"/api/maps/{map_id}/link", json={"role": role}, headers=CSRF).json()["url"]
+    world.cookies.clear()
+    return map_id, url.rsplit("/s/", 1)[1]
+
+
+def guest_url(map_id, token, name="Ari", key=GUEST_KEY):
+    from urllib.parse import urlencode
+
+    return f"/ws/maps/{map_id}?{urlencode({'link': token, 'name': name, 'guest': key})}"
+
+
+def test_a_guest_joins_by_link_with_a_name(world):
+    map_id, token = guest_link(world)
+    with world.websocket_connect(guest_url(map_id, token, name="  Ari "), headers=ORIGIN) as ws:
+        you = first_texts(ws, 1)[0]["you"]
+        assert you["role"] == "viewer" and you["guest"] is True and you["name"] == "Ari"
+        assert you["user_id"] is None
+
+
+def test_a_guest_on_an_edit_link_can_edit(world):
+    map_id, token = guest_link(world, role="editor")
+    with world.websocket_connect(guest_url(map_id, token), headers=ORIGIN) as ws:
+        assert first_texts(ws, 1)[0]["you"]["role"] == "editor"
+
+
+@pytest.mark.parametrize(("name", "key"), [("", GUEST_KEY), ("‮", GUEST_KEY), ("Ari", "short"), ("Ari", "!" * 22)])
+def test_a_bad_guest_name_or_key_is_closed_4400(world, name, key):
+    map_id, token = guest_link(world)
+    with world.websocket_connect(guest_url(map_id, token, name=name, key=key), headers=ORIGIN) as ws:
+        assert wait_for_close(ws) == 4400
+
+
+def test_a_revoked_link_lets_no_guest_in(world):
+    map_id, token = guest_link(world)
+    with world.websocket_connect(guest_url(map_id, "x" + token), headers=ORIGIN) as ws:
+        assert wait_for_close(ws) == 4404
+
+
+def test_revoking_the_link_sends_a_connected_guest_out(world):
+    sign_up(world, "alice")
+    alice = world.cookies.get("atlas_session")
+    map_id = new_map(world)
+    token = world.post(f"/api/maps/{map_id}/link", json={"role": "viewer"}, headers=CSRF).json()["url"].rsplit("/s/")[1]
+    world.cookies.clear()
+    with world.websocket_connect(guest_url(map_id, token), headers=ORIGIN) as ws:
+        first_texts(ws, 1)
+        be(world, alice)
+        assert world.delete(f"/api/maps/{map_id}/link", headers=CSRF).status_code == 200
+        assert wait_for_close(ws) == 4403

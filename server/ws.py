@@ -1,6 +1,6 @@
 """The live-map WebSocket (context/MOONSHOT.md; wire protocol in
-MOONSHOT-BUILD.md). Works out who is connecting — a session cookie, or (in
-milestone 2) a share link with a guest name — and with what access, then
+MOONSHOT-BUILD.md). Works out who is connecting — a session cookie, or a
+share link with a guest name — and with what access, then
 hands frames to the map's room.
 
 Cross-site WebSocket hijacking: browsers send cookies on a cross-site
@@ -13,8 +13,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import re
 import secrets
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
 from anyio import to_thread
@@ -23,6 +24,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 from . import access as accessmod
 from . import db as dbmod
 from .accounts import COOKIE, session_row, token_hash
+from .guests import clean_guest_name
 from .maps import MAP_ID_RE
 from .rooms import Peer, RoomRegistry
 
@@ -31,6 +33,8 @@ from .rooms import Peer, RoomRegistry
 # production (docker_serve.py); the TestClient doesn't, hence the check here.
 MAX_FRAME = 2 * 1024 * 1024
 MAX_TEXT_FRAME = 4096
+# A guest's key: 16 random bytes, url-safe base64, made once per browser tab.
+GUEST_KEY_RE = re.compile(r"[A-Za-z0-9_-]{22}")
 
 
 def origin_ok(websocket: WebSocket) -> bool:
@@ -64,11 +68,18 @@ def resolve_peer(flask_app: Any, map_id: str, peer: Peer) -> accessmod.Access | 
         )
 
 
-def identify(flask_app: Any, websocket: WebSocket, map_id: str) -> tuple[accessmod.Access, str] | None:
-    """(access, display name), or None. Runs in a worker thread (SQLite)."""
-    store = flask_app.extensions["pleiades_config"]
-    if not store.get("accounts", "enabled"):
-        return None
+class Who(NamedTuple):
+    access: accessmod.Access
+    name: str
+    link_token: str | None = None
+
+
+def identify(flask_app: Any, websocket: WebSocket, map_id: str) -> Who | int:
+    """Who is connecting, or the close code that refuses them: 4404 for no
+    access (a map you can't see), 4400 for a malformed guest name or key.
+    Runs in a worker thread (SQLite)."""
+    if not flask_app.extensions["pleiades_config"].get("accounts", "enabled"):
+        return 4404
     database = flask_app.extensions["pleiades_db"]
     switches = switches_of(flask_app)
     token = websocket.cookies.get(COOKIE)
@@ -83,9 +94,17 @@ def identify(flask_app: Any, websocket: WebSocket, map_id: str) -> tuple[accessm
                         "UPDATE map_members SET seen_at = ? WHERE map_id = ? AND user_id = ?",
                         (dbmod.now(), map_id, user["id"]),
                     )
-                    return found, user["username"]
-        # Link guests: milestone 2.
-    return None
+                    return Who(found, user["username"])
+        # A guest on a share link: the link, a display name, and this tab's key.
+        link = websocket.query_params.get("link")
+        if not link:
+            return 4404
+        name = clean_guest_name(websocket.query_params.get("name"))
+        guest_key = websocket.query_params.get("guest", "")
+        if name is None or not GUEST_KEY_RE.fullmatch(guest_key):
+            return 4400
+        found = accessmod.resolve(conn, map_id, link_token=link, guest_key=guest_key, switches=switches)
+        return 4404 if found is None else Who(found, name, link)
 
 
 async def map_socket(websocket: WebSocket) -> None:
@@ -99,11 +118,11 @@ async def map_socket(websocket: WebSocket) -> None:
     if not MAP_ID_RE.fullmatch(map_id):
         await websocket.close(4404, "no such map")
         return
-    found = await to_thread.run_sync(identify, flask_app, websocket, map_id)
-    if found is None:
-        await websocket.close(4404, "no such map")
+    who = await to_thread.run_sync(identify, flask_app, websocket, map_id)
+    if isinstance(who, int):
+        await websocket.close(who, "no such map" if who == 4404 else "bad guest name")
         return
-    access, name = found
+    access, name = who.access, who.name
     peer = Peer(
         conn=secrets.token_urlsafe(6),
         name=name,
@@ -112,6 +131,7 @@ async def map_socket(websocket: WebSocket) -> None:
         guest=access.via_link and access.user_id is None,
         user_id=access.user_id,
         guest_key=access.guest_key,
+        link_token=who.link_token,
     )
     writer = asyncio.create_task(_write(websocket, peer))
     room = await registry.join(map_id, peer, websocket.query_params.get("epoch", ""))

@@ -4,6 +4,7 @@
  * them. Joining and leaving show only as bubbles coming and going. Names are
  * only ever set as text (Review Focus 4).
  */
+import { personName } from './authors.js'
 
 /** The bubbles to draw: everyone but you, in the room's order. Pure. */
 export function rosterEntries(people, you) {
@@ -13,7 +14,7 @@ export function rosterEntries(people, you) {
       conn: person.conn,
       initial: ([...(person.name ?? '').trim()][0] ?? '?').toUpperCase(),
       colour: person.colour,
-      title: `${person.name} · ${person.role}`,
+      title: `${personName(person)} · ${person.role}`,
       clientIds: person.clientIds ?? [],
     }))
 }

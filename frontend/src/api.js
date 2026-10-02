@@ -84,8 +84,14 @@ export async function request(
   return { ok: true, status: response.status, data }
 }
 
-/** The live room of a server map (context/MOONSHOT.md): a WebSocket on this host. */
-export function roomUrl(mapId, where = globalThis.location, base = BASE) {
+/**
+ * The live room of a server map (context/MOONSHOT.md): a WebSocket on this
+ * host. A signed-out guest on a share link adds `guest: { link, name, key }`.
+ */
+export function roomUrl(mapId, where = globalThis.location, base = BASE, guest = null) {
   const scheme = where.protocol === 'https:' ? 'wss' : 'ws'
-  return `${scheme}://${where.host}${base}ws/maps/${encodeURIComponent(mapId)}`
+  const url = `${scheme}://${where.host}${base}ws/maps/${encodeURIComponent(mapId)}`
+  if (!guest) return url
+  const query = new URLSearchParams({ link: guest.link, name: guest.name, guest: guest.key })
+  return `${url}?${query}`
 }

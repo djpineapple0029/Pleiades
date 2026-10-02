@@ -14,3 +14,19 @@ describe('roomUrl', () => {
     )
   })
 })
+
+describe('roomUrl for a guest on a share link', () => {
+  it('carries the link, the name and this tab’s guest key', () => {
+    const url = new URL(
+      roomUrl('m', { protocol: 'https:', host: 'h' }, '/', {
+        link: 'T/K',
+        name: 'Ari & Sam',
+        key: 'k'.repeat(22),
+      }),
+    )
+    expect(url.pathname).toBe('/ws/maps/m')
+    expect(url.searchParams.get('link')).toBe('T/K')
+    expect(url.searchParams.get('name')).toBe('Ari & Sam')
+    expect(url.searchParams.get('guest')).toBe('k'.repeat(22))
+  })
+})

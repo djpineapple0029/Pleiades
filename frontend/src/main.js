@@ -30,9 +30,10 @@ import { APP_ROWS, SERVER_MAP_ROWS, renderKeyList, renderPromptHint, renderResum
 import { setRevealScale, setLabelTarget } from './labels.js'
 import { CONTEXT_LOST, NO_WEBGL, createCrashGuard, errorText } from './crashGuard.js'
 import { watchContextLoss } from './contextLoss.js'
-import { accountUrl, request, roomUrl } from './api.js'
+import { accountUrl, homeUrl, request, roomUrl } from './api.js'
+import { askGuestName, guestKey, rememberLink } from './room/guestPrompt.js'
 import { createRoomClient } from './room/roomClient.js'
-import { colourFor, hexToRgb } from './room/authors.js'
+import { colourFor, hexToRgb, personName } from './room/authors.js'
 import { createPosePublisher } from './room/presence.js'
 import { createAvatars } from './room/avatars.js'
 import { createRoster } from './room/roster.js'
@@ -72,13 +73,31 @@ const mapId = params.get('map')
 // this tab's edits. A server map's doc is the one its live room shares:
 // it arrives by sync, everyone in the room edits it, and the room saves it.
 const mapDoc = createMapDoc()
+// The centred panel for prompts: the guest name below, then the file flows.
+const editor = createEditor(document.getElementById('editor'))
+
+// A share link (`/s/<token>` lands here as `?map=<id>#link=<token>`): signed
+// in, it makes you a member (Shared with me); signed out, you join as a guest
+// under a name you pick. A link that no longer works is the room's to refuse.
+const linkToken = mapId ? rememberLink(mapId) : null
+let guest = null
+if (linkToken) {
+  const me = await request('api/auth/me')
+  const user = me.ok ? me.data?.user : null
+  if (user && !user.must_change_password) {
+    await request(`api/maps/${encodeURIComponent(mapId)}/join`, { method: 'POST', body: { link: linkToken } })
+  } else if (!user) {
+    guest = { link: linkToken, name: await askGuestName(editor), key: guestKey() }
+  }
+}
+
 // Room events reach `interaction` once it exists; before that, only whether
 // the map opened at all matters (openRoom below).
 let onRoomState = () => {}
 let onRoomControl = () => {}
 const room = mapId
   ? createRoomClient({
-      url: roomUrl(mapId),
+      url: roomUrl(mapId, location, undefined, guest),
       doc: mapDoc.doc,
       onState: (state) => onRoomState(state),
       onControl: (message) => onRoomControl(message),
@@ -116,6 +135,14 @@ if (opening && opening !== 'synced') {
   }
   if (opening.type === 'closed' && opening.code === 4429) {
     guard.showFatal('This map is full right now. Try again in a little while.')
+    await halt()
+  }
+  if (guest) {
+    guard.showFatal(
+      opening.type === 'closed' && opening.code === 4400
+        ? "That name can't be used. Reload to pick another."
+        : "This link doesn't work any more. Ask whoever shared it for a new one.",
+    )
     await halt()
   }
   // Refused. Signed out: the shell signs in; a password the admin reset: the
@@ -295,7 +322,7 @@ const interaction = createInteraction({
   renderSettings,
   supernova,
   menu: createRadialMenu(document.getElementById('radial-menu')),
-  editor: createEditor(document.getElementById('editor')),
+  editor,
   titleEdit: createTitleEdit(),
   sidebar: createNotesSidebar(document.getElementById('notes-sidebar'), {
     writeKey: keymap.label('edit_notes'),
@@ -312,7 +339,8 @@ const interaction = createInteraction({
 function leaveToMaps() {
   leaving = true
   room?.destroy()
-  location.assign(accountUrl())
+  // A guest has no list of maps: back to the homepage.
+  location.assign(guest ? homeUrl() : accountUrl())
 }
 
 // How long a "this map was deleted" (or similar) stays up before the list.
@@ -370,15 +398,16 @@ function showPeople() {
   const others = []
   for (const person of room.roster) {
     if (person.conn === me) continue
-    for (const clientId of person.clientIds ?? []) others.push({ clientId, ...person })
+    for (const clientId of person.clientIds ?? [])
+      others.push({ clientId, ...person, name: personName(person) })
   }
   avatars.sync(others)
   roster.render(room.roster, room.you)
 }
 
 // The Esc screen's "Share this map…", for anyone with the Invite permission:
-// My maps, with this map's sharing open.
-if (room?.you?.perms?.invite) {
+// My maps, with this map's sharing open. Not for guests: they have no My maps.
+if (room?.you?.perms?.invite && !room.you.guest) {
   document.getElementById('share-link').href = accountUrl(`share=${mapId}`)
   document.getElementById('share-hint').hidden = false
 }

@@ -25,3 +25,9 @@ export function hexToRgb(hex) {
   const n = Number.parseInt(hex.slice(1), 16)
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]
 }
+
+/** How a person in the room is named on screen: a guest on a link says so. */
+export function personName(person) {
+  const name = person?.name || 'someone'
+  return person?.guest ? `${name} (guest)` : name
+}

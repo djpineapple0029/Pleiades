@@ -3,24 +3,8 @@ through the map routes (server/maps.py asking server/access.py)."""
 
 from __future__ import annotations
 
-import pytest
-
 ACCOUNT_PASSWORD = "long enough pw"  # conftest.py's signup fixture uses the same
 CSRF = {"X-Pleiades": "1"}
-
-
-@pytest.fixture
-def three(accounts_app, signup):
-    """owner, eddie, vicky — each a signed-in test client; owner has one map."""
-    clients = {}
-    for name in ("owner", "eddie", "vicky"):
-        client = accounts_app.test_client()
-        signup(client, name)
-        clients[name] = client
-    created = clients["owner"].post("/api/maps", json={"name": "Galaxy"}, headers=CSRF)
-    assert created.status_code == 201
-    clients["map"] = created.json["id"]
-    return clients
 
 
 def share(clients, who, role, by="owner"):
@@ -177,21 +161,6 @@ def test_deleting_the_owner_account_removes_access(three):
     share(three, "eddie", "editor")
     three["owner"].delete("/api/account", json={"password": ACCOUNT_PASSWORD}, headers=CSRF)
     assert three["eddie"].get("/api/maps/shared").json["maps"] == []
-
-
-class FakeRooms:
-    def __init__(self):
-        self.events = []
-
-    def notify(self, map_id, event):
-        self.events.append((map_id, event))
-
-
-@pytest.fixture
-def rooms(accounts_app):
-    fake = FakeRooms()
-    accounts_app.extensions["pleiades_rooms"] = fake
-    return fake
 
 
 def stored_ydoc(accounts_app, map_id):
