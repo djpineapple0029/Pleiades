@@ -30,7 +30,7 @@ import { APP_ROWS, SERVER_MAP_ROWS, renderKeyList, renderPromptHint, renderResum
 import { setRevealScale, setLabelTarget } from './labels.js'
 import { CONTEXT_LOST, NO_WEBGL, createCrashGuard, errorText } from './crashGuard.js'
 import { watchContextLoss } from './contextLoss.js'
-import { accountUrl, homeUrl, request, roomUrl } from './api.js'
+import { BASE, accountUrl, homeUrl, request, roomUrl } from './api.js'
 import { askGuestName, guestKey, rememberLink } from './room/guestPrompt.js'
 import { can } from './room/can.js'
 import { createRoomClient } from './room/roomClient.js'
@@ -537,6 +537,19 @@ function showShareLink() {
   document.getElementById('share-hint').hidden = !(can(room, 'invite') && !room.you?.guest)
 }
 showShareLink()
+
+// Home: a server map saves and goes back to My maps (a guest's is the
+// homepage), like the map menu's "My maps". Without an account it's plain `/`,
+// which is the homepage signed out and My maps signed in; leaving a file with
+// unsaved changes asks first (the beforeunload below). A modified click still
+// opens the href in a new tab, the map left as it is.
+const homeLink = document.getElementById('map-home')
+homeLink.href = room ? (guest ? homeUrl() : accountUrl()) : BASE
+homeLink.addEventListener('click', (event) => {
+  if (!room || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+  event.preventDefault()
+  interaction.backToMaps()
+})
 
 if (room) {
   room.awareness.on('change', ({ added, updated }) => {

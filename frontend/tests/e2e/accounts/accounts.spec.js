@@ -110,6 +110,22 @@ test('Ctrl+S saves at once, and My maps goes back to the list', async ({ page })
   await expect(page.locator('.map .meta')).toContainText('2 stars')
 })
 
+test('Esc, then Home: saved first, back to My maps', async ({ page }) => {
+  await signUp(page)
+  const id = await newMap(page, 'Vega')
+  await t(page, 'doubleClick()')
+  await settle(page)
+  await expect(page.locator('#map-home')).toBeHidden()
+  await t(page, 'escape()')
+  await expect(page.locator('#map-home')).toBeVisible()
+  await expect(page.locator('#map-home')).toHaveAttribute('href', /account\.html$/)
+  await page.locator('#map-home').click()
+  await expect(page).toHaveURL(/account\.html$/)
+  // The new star, there well before the room's own 3 s wait would have saved it.
+  expect((await serverMap(page, id)).payload.nodes).toHaveLength(1)
+  await expect(page.locator('.map .meta')).toContainText('1 star')
+})
+
 test("a second tab on the same map sees the first one's edits as they happen", async ({ page }) => {
   await signUp(page)
   const id = await newMap(page, 'Twins')
@@ -275,6 +291,8 @@ test('?local is the classic app, even with accounts on', async ({ page }) => {
   expect(await hud(page)).toContain('map.plm')
   const menu = await pickMenu(page, 0, -60)
   expect(menu.labels[0]).toBe('New')
+  // No account to go back to: Home is `/`, the homepage or My maps.
+  await expect(page.locator('#map-home')).toHaveAttribute('href', '/')
 })
 
 test('signed out, / is the homepage: Get started opens the app, Sign in the shell', async ({ page }) => {

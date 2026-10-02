@@ -141,6 +141,26 @@ body {
   pointer-events: auto;
 }
 
+/* The way out of a map without the right-button menu (main.js). A button,
+   not a hint: the one thing on the overlay that leaves the map. */
+#overlay .prompt-home {
+  margin-top: 8px;
+  padding: 6px 16px;
+  border: 1px solid #2a3140;
+  border-radius: 999px;
+  background: rgba(9, 11, 17, 0.85);
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  pointer-events: auto;
+}
+
+#overlay .prompt-home:hover,
+#overlay .prompt-home:focus-visible {
+  border-color: var(--ink-dim);
+}
+
 #overlay .keys {
   margin: 0;
   padding: 0;
