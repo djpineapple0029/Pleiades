@@ -458,6 +458,17 @@ class Room:
                 peer.send_text({"type": "access", "role": peer.role, "perms": peer.perms})
         self._broadcast_roster()
 
+    async def kick(self, conn: str, reason: str) -> bool:
+        """Sends one connection out (the owner's Kick): removed first, so
+        nothing it still has in flight is applied (Review Focus 5)."""
+        peer = next((p for p in self.peers if p.conn == conn), None)
+        if peer is None:
+            return False
+        peer.send_text({"type": "kicked", "reason": reason})
+        peer.close(4403, reason)
+        await self.leave(peer)
+        return True
+
     def _close_all(self, message: dict[str, Any], code: int, reason: str) -> None:
         self.closed = True
         if self._persist_handle:
@@ -582,6 +593,44 @@ class RoomRegistry:
             with self._guard:
                 if self.rooms.get(map_id) is room:
                     del self.rooms[map_id]
+
+    def people(self, map_id: str) -> list[dict[str, Any]]:
+        """From any thread: who is in a map now, with what kick needs."""
+        with self._guard:
+            room = self.rooms.get(map_id)
+        if room is None or room.closed:
+            return []
+        return [
+            {
+                "conn": p.conn,
+                "name": p.name,
+                "colour": p.colour,
+                "role": p.role,
+                "guest": p.guest,
+                "user_id": p.user_id,
+                "guest_key": p.guest_key,
+            }
+            for p in list(room.peers)
+        ]
+
+    def peer_info(self, map_id: str, conn: str) -> dict[str, Any] | None:
+        """From any thread: one person in a map's room, by connection."""
+        return next((p for p in self.people(map_id) if p["conn"] == conn), None)
+
+    def kick(self, map_id: str, conn: str, reason: str = "kicked") -> None:
+        """From any thread: sends that connection out of the map."""
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            return
+
+        async def run() -> None:
+            room = self.rooms.get(map_id)
+            if room is not None:
+                await room.kick(conn, reason)
+                if not room.peers:
+                    loop.call_later(room.evict_delay, self._evict, map_id, room)
+
+        loop.call_soon_threadsafe(lambda: asyncio.ensure_future(run()))
 
     def online(self, map_ids: list[str]) -> dict[str, list[dict[str, str]]]:
         with self._guard:

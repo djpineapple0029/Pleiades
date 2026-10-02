@@ -560,3 +560,20 @@ async def test_review_focus_5_a_removed_peers_late_frames_are_ignored(store):
     gone.closing = False  # a frame that was already in flight when they were removed
     await room.on_binary(gone, edit_message(client, set_label("late")))
     assert room.doc.get("nodes", type=Map)["a"]["label"] == "A"
+
+
+@pytest.mark.anyio
+async def test_review_focus_5_a_kicked_peers_in_flight_frame_is_not_applied(store):
+    room = Room("m", store)
+    await room.open()
+    owner, kicked = peer("owner", role="owner"), peer("kicked")
+    await joined(room, owner)
+    client = await joined(room, kicked)
+    frame = edit_message(client, set_label("after the kick"))
+    assert await room.kick("kicked", "kicked")
+    assert kicked not in room.peers and [p.name for p in room.peers] == ["owner"]
+    sent = drain(kicked)
+    assert ("close", 4403, "kicked") in sent
+    await room.on_binary(kicked, frame)
+    assert room.doc.get("nodes", type=Map)["a"]["label"] == "A"
+    assert not await room.kick("nobody", "kicked")

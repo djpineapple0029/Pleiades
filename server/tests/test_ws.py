@@ -6,29 +6,9 @@ import json
 
 import pytest
 from pycrdt import Doc, Map, Text, create_sync_message, create_update_message, handle_sync_message
-from starlette.testclient import TestClient
 
 CSRF = {"X-Pleiades": "1"}
 ORIGIN = {"origin": "http://testserver"}
-
-
-@pytest.fixture
-def asgi(isolated_config, fast_scrypt):
-    from server.asgi import create_asgi
-
-    app = create_asgi()
-    config = app.state.flask.extensions["pleiades_config"]
-    values = config.all_values()
-    values["accounts"]["enabled"] = True
-    values["accounts"]["signup_open"] = True
-    config.save(values)
-    return app
-
-
-@pytest.fixture
-def world(asgi):
-    with TestClient(asgi, base_url="http://testserver") as client:
-        yield client
 
 
 def sign_up(client, name):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from starlette.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
@@ -96,9 +97,34 @@ class FakeRooms:
     def notify(self, map_id, event):
         self.events.append((map_id, event))
 
+    def people(self, map_id):
+        return []
+
 
 @pytest.fixture
 def rooms(accounts_app):
     fake = FakeRooms()
     accounts_app.extensions["pleiades_rooms"] = fake
     return fake
+
+
+# --- The ASGI app with accounts on (test_ws.py, test_bans.py) -----------------
+
+
+@pytest.fixture
+def asgi(isolated_config, fast_scrypt):
+    from server.asgi import create_asgi
+
+    app = create_asgi()
+    config = app.state.flask.extensions["pleiades_config"]
+    values = config.all_values()
+    values["accounts"]["enabled"] = True
+    values["accounts"]["signup_open"] = True
+    config.save(values)
+    return app
+
+
+@pytest.fixture
+def world(asgi):
+    with TestClient(asgi, base_url="http://testserver") as client:
+        yield client

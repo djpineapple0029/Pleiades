@@ -2,7 +2,8 @@
 
 The one place every map route and every room connection asks. Owner first,
 then members, then the map's share link (for a signed-in person who hasn't
-joined yet, or a guest). With sharing switched off only owners get in;
+joined yet, or a guest); someone the owner banned gets nothing but the
+owner never is. With sharing switched off only owners get in;
 with guest links off, only guests are refused. A map you can't reach is
 None — callers answer 404, never 403.
 """
@@ -56,6 +57,19 @@ def role_defaults(conn: sqlite3.Connection, map_id: str, role: str) -> dict | No
 DEFAULT_SWITCHES = Switches()
 
 
+def banned(conn: sqlite3.Connection, map_id: str, *, user_id: int | None, guest_key: str | None) -> bool:
+    """Banned from this map by the owner: an account, or a guest's tab key."""
+    if user_id is not None:
+        hit = conn.execute("SELECT 1 FROM map_bans WHERE map_id = ? AND user_id = ?", (map_id, user_id)).fetchone()
+        if hit:
+            return True
+    if guest_key:
+        hit = conn.execute("SELECT 1 FROM map_bans WHERE map_id = ? AND guest_key = ?", (map_id, guest_key)).fetchone()
+        if hit:
+            return True
+    return False
+
+
 def link_role(conn: sqlite3.Connection, map_id: str, link_token: str) -> str | None:
     """The role the map's link gives, if `link_token` is its live, unexpired token."""
     link = conn.execute(
@@ -84,6 +98,8 @@ def resolve(
     if user_id is not None and user_id == owner_id:
         return Access("owner", effective("owner", None, None), owner_id, user_id=user_id)
     if not switches.sharing:
+        return None
+    if banned(conn, map_id, user_id=user_id, guest_key=guest_key):
         return None
     if user_id is not None:
         member = conn.execute(

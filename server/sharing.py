@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import secrets
 
-from flask import Blueprint, Response, jsonify
+from flask import Blueprint, Response, current_app, jsonify
 
 from . import access
 from . import db as dbmod
@@ -28,6 +28,12 @@ sharing.after_request(finish)
 ROLES = ("editor", "viewer")
 LINK_DAYS = (None, 1, 7, 30)
 DAY = 86_400
+
+
+def room_people(map_id: str) -> list[dict]:
+    """Who is in the map's live room now (none without rooms, e.g. under plain Flask)."""
+    rooms = current_app.extensions.get("pleiades_rooms")
+    return rooms.people(map_id) if rooms is not None else []
 
 
 def clean_perms(raw: object) -> dict[str, bool] | None:
@@ -76,6 +82,11 @@ def sharing_info(map_id: str) -> Response:
             (map_id,),
         ).fetchall()
         stored = {role: access.role_defaults(conn, map_id, role) for role in ROLES}
+        bans = conn.execute(
+            "SELECT id, name, guest_key IS NOT NULL AS guest, banned_at FROM map_bans "
+            "WHERE map_id = ? ORDER BY banned_at",
+            (map_id,),
+        ).fetchall()
         link = conn.execute(
             "SELECT role, expires_at, created_at FROM map_links "
             "WHERE map_id = ? AND (expires_at IS NULL OR expires_at > ?)",
@@ -98,6 +109,10 @@ def sharing_info(map_id: str) -> Response:
         role_defaults=role_defaults,
         # Never the token: it's shown once, when made (context/MOONSHOT.md).
         link=dict(link) if link else None,
+        online=[
+            {key: person[key] for key in ("conn", "name", "colour", "role", "guest")} for person in room_people(map_id)
+        ],
+        bans=[{**dict(row), "guest": bool(row["guest"])} for row in bans] if found.role == "owner" else [],
     )
 
 
@@ -125,6 +140,11 @@ def add_member(map_id: str) -> Response | tuple[Response, int]:
         )
         if has_access:
             return fail(f"{user['username']} already has access to this map.", 409)
+        if access.banned(conn, map_id, user_id=user["id"], guest_key=None):
+            if found.role != "owner":
+                return fail(f"The map's owner removed {user['username']} from it.", 409)
+            # The owner adding someone back is an unban.
+            conn.execute("DELETE FROM map_bans WHERE map_id = ? AND user_id = ?", (map_id, user["id"]))
         conn.execute(
             "INSERT INTO map_members (map_id, user_id, role, added_by, added_at) VALUES (?, ?, ?, ?, ?)",
             (map_id, user["id"], role, user_id(), dbmod.now()),
@@ -278,3 +298,50 @@ def join_by_link(map_id: str) -> Response | tuple[Response, int]:
             return jsonify(role=role)
     notify(map_id, "access")
     return jsonify(role=role)
+
+
+# --- Kick, ban, unban (owner only) --------------------------------------------
+
+
+@sharing.post("/<map_id>/kick")
+@signed_in
+def kick(map_id: str) -> Response | tuple[Response, int]:
+    """Sends someone in the map's live room out; with `ban`, they stay out
+    (an account, or a guest's tab — see the Help page on what that holds)."""
+    found = require(map_id, owner=True)
+    body = json_body()
+    conn_id = body.get("conn")
+    person = next((p for p in room_people(map_id) if p["conn"] == conn_id), None) if isinstance(conn_id, str) else None
+    if person is None:
+        return fail("They aren't in this map now.", 404)
+    if person["user_id"] == found.owner_id:
+        return fail("The owner can't be sent out of their own map.", 400)
+    if body.get("ban") is True:
+        with database().transaction() as conn:
+            conn.execute(
+                "INSERT INTO map_bans (map_id, user_id, guest_key, name, banned_at) VALUES (?, ?, ?, ?, ?)",
+                (
+                    map_id,
+                    person["user_id"],
+                    None if person["user_id"] else person["guest_key"],
+                    person["name"],
+                    dbmod.now(),
+                ),
+            )
+            if person["user_id"] is not None:
+                conn.execute("DELETE FROM map_members WHERE map_id = ? AND user_id = ?", (map_id, person["user_id"]))
+    current_app.extensions["pleiades_rooms"].kick(map_id, conn_id, "kicked")
+    if body.get("ban") is True:
+        notify(map_id, "access")  # their other tabs, if any
+    return jsonify(ok=True)
+
+
+@sharing.delete("/<map_id>/bans/<int:ban_id>")
+@signed_in
+def unban(map_id: str, ban_id: int) -> Response | tuple[Response, int]:
+    require(map_id, owner=True)
+    with database().connect() as conn:
+        gone = conn.execute("DELETE FROM map_bans WHERE map_id = ? AND id = ?", (map_id, ban_id)).rowcount
+    if not gone:
+        return fail("No such ban on this map.", 404)
+    return jsonify(ok=True)
