@@ -20,6 +20,22 @@ export function panelPeople(roster, you) {
   return [...people.filter((p) => p.you), ...people.filter((p) => !p.you)]
 }
 
+/**
+ * The owner's line about the map's default Look (decision 19): what it is,
+ * the Look they're in as the one to make it, and whether there's one to
+ * clear. Pure.
+ */
+export function defaultLookLine({ saved, current, looks }) {
+  const nameOf = (id) => looks.find((look) => look.id === id)?.name ?? id
+  return {
+    note: saved
+      ? `This map opens in ${nameOf(saved)} for everyone.`
+      : 'Everyone opens this map in their own Look.',
+    make: current && current !== saved ? `Make ${nameOf(current)} this map's Look` : null,
+    clear: Boolean(saved),
+  }
+}
+
 const el = (tag, className, text) => {
   const node = document.createElement(tag)
   if (className) node.className = className
@@ -29,7 +45,13 @@ const el = (tag, className, text) => {
 
 export function createRoomPanel(
   element,
-  { onSend = () => {}, onFollow = null, shown = { editors: true, viewers: true }, onShow = () => {} } = {},
+  {
+    onSend = () => {},
+    onFollow = null,
+    shown = { editors: true, viewers: true },
+    onShow = () => {},
+    onSetLook = () => {},
+  } = {},
 ) {
   const people = el('ul', 'room-people')
   const log = el('div', 'room-chat-log')
@@ -60,10 +82,14 @@ export function createRoomPanel(
   }
   const toggles = el('div', 'room-toggles')
   toggles.append(toggle('editors', 'Show editors'), toggle('viewers', 'Show viewers'))
+  // The owner's default Look (decision 19); empty for everyone else.
+  const lookLine = el('div', 'room-look')
+  lookLine.hidden = true
   element.replaceChildren(
     el('h2', 'room-heading', 'In this map'),
     people,
     toggles,
+    lookLine,
     el('h2', 'room-heading', 'Chat'),
     log,
     form,
@@ -111,10 +137,34 @@ export function createRoomPanel(
     if (atBottom) log.scrollTop = log.scrollHeight
   }
 
+  /** `canSet`: you own the map. `saved`: its default Look id or null; `current`: yours now. */
+  function renderLook({ canSet, saved, current, looks }) {
+    lookLine.hidden = !canSet
+    if (!canSet) return
+    const line = defaultLookLine({ saved, current, looks })
+    const parts = [el('p', 'room-note', `${line.note} Anyone can still switch with V.`)]
+    const buttons = el('div', 'room-look-buttons')
+    if (line.make) {
+      const make = el('button', 'room-follow', line.make)
+      make.type = 'button'
+      make.addEventListener('click', () => onSetLook(current))
+      buttons.append(make)
+    }
+    if (line.clear) {
+      const clear = el('button', 'room-follow', 'Clear')
+      clear.type = 'button'
+      clear.setAttribute('aria-label', "Clear this map's Look")
+      clear.addEventListener('click', () => onSetLook(null))
+      buttons.append(clear)
+    }
+    if (buttons.childElementCount) parts.push(buttons)
+    lookLine.replaceChildren(...parts)
+  }
+
   function setCanChat(allowed) {
     form.hidden = !allowed
     chatOff.hidden = allowed
   }
 
-  return { renderPeople, renderChat, setCanChat, element }
+  return { renderPeople, renderChat, renderLook, setCanChat, element }
 }

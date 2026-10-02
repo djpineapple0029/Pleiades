@@ -683,6 +683,20 @@ class RoomRegistry:
 
         loop.call_soon_threadsafe(lambda: asyncio.ensure_future(run()))
 
+    def set_meta(self, map_id: str, *, name: str, default_look: str | None) -> None:
+        """From any thread: the map was renamed or given a default Look. An
+        open room tells whoever joins next; nobody already in is moved."""
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            return
+
+        def apply() -> None:
+            room = self.rooms.get(map_id)
+            if room is not None:
+                room.name, room.default_look = name, default_look
+
+        loop.call_soon_threadsafe(apply)
+
     def notify_all(self, event: str) -> None:
         """From any thread: `notify` every open room (an admin switch changed)."""
         with self._guard:

@@ -97,6 +97,9 @@ class FakeRooms:
     def notify(self, map_id, event):
         self.events.append((map_id, event))
 
+    def set_meta(self, map_id, **fields):
+        pass
+
     def people(self, map_id):
         return []
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { panelPeople } from '../../src/room/roomPanel.js'
+import { defaultLookLine, panelPeople } from '../../src/room/roomPanel.js'
 
 const roster = [
   { conn: 'b', name: 'bob', colour: '#ffd166', role: 'editor', guest: false, clientIds: [2] },
@@ -18,5 +18,34 @@ describe("the Esc screen's people list", () => {
 
   it('before the welcome, nobody is you', () => {
     expect(panelPeople(roster, null).every((p) => !p.you)).toBe(true)
+  })
+})
+
+describe("the owner's default Look line", () => {
+  const looks = [
+    { id: 'deep-space', name: 'Deep Space' },
+    { id: 'deep-sea', name: 'Deep Sea' },
+  ]
+
+  it('none set: offer the Look you are in', () => {
+    expect(defaultLookLine({ saved: null, current: 'deep-sea', looks })).toEqual({
+      note: 'Everyone opens this map in their own Look.',
+      make: "Make Deep Sea this map's Look",
+      clear: false,
+    })
+  })
+
+  it('set, and you are in it: say so, offer to clear', () => {
+    expect(defaultLookLine({ saved: 'deep-sea', current: 'deep-sea', looks })).toEqual({
+      note: 'This map opens in Deep Sea for everyone.',
+      make: null,
+      clear: true,
+    })
+  })
+
+  it('set, and you switched: offer the one you are in instead', () => {
+    expect(defaultLookLine({ saved: 'deep-sea', current: 'deep-space', looks }).make).toBe(
+      "Make Deep Space this map's Look",
+    )
   })
 })

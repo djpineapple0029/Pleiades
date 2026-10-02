@@ -163,3 +163,65 @@ def test_oversized_saves_are_413(accounts_app, alice):
     response = save(alice, map_id, 1, big)
     assert response.status_code == 413
     assert "error" in response.json
+
+
+# --- the owner's default Look (Task 3.6) -------------------------------------
+
+
+def default_look(accounts_app, map_id):
+    with accounts_app.extensions["pleiades_db"].connect() as conn:
+        return conn.execute("SELECT default_look FROM maps WHERE id = ?", (map_id,)).fetchone()[0]
+
+
+def test_the_owner_sets_and_clears_the_default_look(accounts_app, alice):
+    map_id = create(alice)
+    response = alice.patch(f"/api/maps/{map_id}", json={"default_look": "deep-sea"}, headers=CSRF)
+    assert response.status_code == 200
+    assert response.json["default_look"] == "deep-sea"
+    assert default_look(accounts_app, map_id) == "deep-sea"
+    assert alice.patch(f"/api/maps/{map_id}", json={"default_look": None}, headers=CSRF).status_code == 200
+    assert default_look(accounts_app, map_id) is None
+
+
+def test_setting_the_look_leaves_the_name_alone(accounts_app, alice):
+    map_id = create(alice, name="Andromeda")
+    response = alice.patch(f"/api/maps/{map_id}", json={"default_look": "terminal"}, headers=CSRF)
+    assert response.json["name"] == "Andromeda"
+    renamed = alice.patch(f"/api/maps/{map_id}", json={"name": "Nebula"}, headers=CSRF)
+    assert renamed.json == {"id": map_id, "name": "Nebula", "default_look": "terminal"}
+
+
+@pytest.mark.parametrize("look", ["neon", "", 3, ["deep-sea"], "Deep-Sea"])
+def test_an_unknown_look_is_400(accounts_app, alice, look):
+    map_id = create(alice)
+    assert alice.patch(f"/api/maps/{map_id}", json={"default_look": look}, headers=CSRF).status_code == 400
+    assert default_look(accounts_app, map_id) is None
+
+
+def test_an_editor_cannot_set_the_default_look(accounts_app, alice, bob):
+    map_id = create(alice)
+    shared = alice.post(f"/api/maps/{map_id}/members", json={"username": "bob", "role": "editor"}, headers=CSRF)
+    assert shared.status_code in (200, 201)
+    assert bob.patch(f"/api/maps/{map_id}", json={"default_look": "deep-sea"}, headers=CSRF).status_code == 403
+    assert default_look(accounts_app, map_id) is None
+
+
+def test_an_open_room_learns_the_new_name_and_look(accounts_app, alice):
+    class Rooms:
+        def __init__(self):
+            self.meta = []
+
+        def notify(self, map_id, event):
+            pass
+
+        def set_meta(self, map_id, **fields):
+            self.meta.append((map_id, fields))
+
+    rooms = accounts_app.extensions["pleiades_rooms"] = Rooms()
+    map_id = create(alice)
+    alice.patch(f"/api/maps/{map_id}", json={"default_look": "minimal"}, headers=CSRF)
+    alice.patch(f"/api/maps/{map_id}", json={"name": "Renamed"}, headers=CSRF)
+    assert rooms.meta == [
+        (map_id, {"name": "Galaxy", "default_look": "minimal"}),
+        (map_id, {"name": "Renamed", "default_look": "minimal"}),
+    ]

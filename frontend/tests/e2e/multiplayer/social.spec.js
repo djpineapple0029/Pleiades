@@ -312,4 +312,28 @@ test.describe('social', () => {
     await expect(row.locator('.sharing')).toBeVisible()
     await shell.close()
   })
+
+  test("the owner makes Deep Sea the map's Look: Bob opens in it; cleared, he's back to his own", async () => {
+    await alice.evaluate(() => window.__pleiades.looks.set('deep-sea', { instant: true, remember: false }))
+    await escape(alice)
+    const line = alice.locator('#room-panel .room-look')
+    await expect(line).toContainText('Everyone opens this map in their own Look.')
+    await line.getByRole('button', { name: "Make Deep Sea this map's Look" }).click()
+    await expect(line).toContainText('This map opens in Deep Sea for everyone.')
+    await alice.screenshot({ path: 'artifacts/e2e-multiplayer/default-look.png' })
+    // Bob, an editor, sees no such line, and opens the map in Deep Sea.
+    await escape(bob)
+    await expect(bob.locator('#room-panel .room-look')).toBeHidden()
+    await openMap(bob, mapId)
+    expect(await bob.evaluate(() => window.__pleiades.looks.current.id)).toBe('deep-sea')
+    // His own account's look is untouched.
+    const own = await (await bob.request.get('/api/account/settings')).json()
+    expect(own.overrides?.visuals?.look).toBeUndefined()
+    // Cleared: the next open is his own Look again.
+    await escape(alice)
+    await line.getByRole('button', { name: "Clear this map's Look" }).click()
+    await expect(line).toContainText('Everyone opens this map in their own Look.')
+    await openMap(bob, mapId)
+    expect(await bob.evaluate(() => window.__pleiades.looks.current.id)).toBe('deep-space')
+  })
 })

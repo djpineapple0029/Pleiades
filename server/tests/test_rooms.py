@@ -809,3 +809,20 @@ def test_the_emote_list_matches_the_clients():
     source = (Path(__file__).parents[2] / "frontend/src/room/emotes.js").read_text()
     listed = source.split("export const EMOTES = [", 1)[1].split("]", 1)[0]
     assert {part.strip().strip("'\"") for part in listed.split(",") if part.strip()} == EMOTE_IDS
+
+
+@pytest.mark.anyio
+async def test_set_meta_reaches_whoever_joins_next(store):
+    registry = RoomRegistry(store)
+    registry.bind_loop(asyncio.get_running_loop())
+    first = peer("a")
+    await registry.join("m", first, "")
+    drain(first)
+    await asyncio.to_thread(registry.set_meta, "m", name="Renamed", default_look="deep-sea")
+    await asyncio.sleep(0.01)
+    later = peer("b")
+    await registry.join("m", later, "")
+    welcome = texts(later)[0]
+    assert welcome["map"] == {"id": "m", "name": "Renamed", "default_look": "deep-sea"}
+    # Nobody already in is told to switch.
+    assert not [t for t in texts(first) if t["type"] not in ("roster",)]

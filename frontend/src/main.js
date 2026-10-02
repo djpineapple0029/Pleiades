@@ -4,7 +4,7 @@ import { createScene } from './scene.js'
 import { createFlight } from './flight.js'
 import { createSkybox } from './skybox.js'
 import { createDust } from './dust.js'
-import { createLooks, storedLook } from './looks.js'
+import { LOOKS, createLooks, storedLook } from './looks.js'
 import { createDustRivers } from './dustRivers.js'
 import { createSupernova } from './supernova.js'
 import { createBloom } from './bloom.js'
@@ -262,8 +262,9 @@ const clock = new THREE.Clock()
 // whether anything moves. A look without motion freezes the star-pulse clock
 // read by the frame loop below; the others carry on from where it stopped.
 let frozenElapsed = 0
-// Other people are drawn in the look's style; the avatars arrive below.
-let lookForAvatars = () => {}
+// Other people are drawn in the look's style, and the owner's default-Look
+// line names the one they're in; both arrive below.
+let lookForRoom = () => {}
 const looks = createLooks({
   renderer,
   skybox,
@@ -276,13 +277,16 @@ const looks = createLooks({
   bloomStrength: visuals.bloom_strength,
   onChange: (look) => {
     if (!look.motion) frozenElapsed = clock.elapsedTime
-    lookForAvatars(look)
+    lookForRoom(look)
   },
   // Signed in, a V pick is kept in the account, not this browser, and the
   // account's look (the config's, for them) is where every map starts.
   ...(settings.account ? { store: keepLookInAccount } : {}),
 })
-looks.set(settings.account ? visuals.look : (storedLook() ?? visuals.look), {
+// A shared map can name the Look it opens in (decision 19); anyone can
+// still switch with V.
+const ownLook = settings.account ? visuals.look : (storedLook() ?? visuals.look)
+looks.set(room?.map?.default_look ?? ownLook, {
   instant: true,
   remember: false,
 })
@@ -319,8 +323,11 @@ const renderSettings = {
 // they say over them, in a feed over the HUD and in the Esc screen's panel.
 const avatars = room ? createAvatars({ scene }) : null
 if (avatars) {
-  lookForAvatars = (look) => avatars.setLook(look)
-  lookForAvatars(looks.current)
+  lookForRoom = (look) => {
+    avatars.setLook(look)
+    showLookLine()
+  }
+  avatars.setLook(looks.current)
 }
 // Show editors / Show viewers (decision 14a): the account's settings, and
 // the Esc screen's switches, which keep a change in the account too.
@@ -373,6 +380,7 @@ const roomPanel = room
       onSend: (text) => chat.send(text),
       shown,
       onShow: keepShown,
+      onSetLook: setMapLook,
       // The Esc screen's Follow: start trailing them, and fly (a click may lock).
       onFollow: (person) => {
         const people = followables()
@@ -497,6 +505,29 @@ function showPeople() {
   roomPanel.renderPeople(room.roster, room.you)
 }
 
+// The owner's default Look (decision 19), set from the Esc screen.
+let mapLook = room?.map?.default_look ?? null
+function showLookLine() {
+  roomPanel?.renderLook({
+    canSet: room.you?.role === 'owner',
+    saved: mapLook,
+    current: looks.current.id,
+    looks: LOOKS,
+  })
+}
+async function setMapLook(id) {
+  const result = await request(`api/maps/${encodeURIComponent(mapId)}`, {
+    method: 'PATCH',
+    body: { default_look: id },
+  })
+  if (!result.ok) {
+    interaction.reportError(`the map's Look was not saved: ${result.error}`)
+    return
+  }
+  mapLook = result.data.default_look
+  showLookLine()
+}
+
 // The Esc screen's "Share this map…", for anyone with the Invite permission
 // (live: it follows `access` messages): My maps, with this map's sharing
 // open. Not for guests: they have no My maps.
@@ -518,6 +549,7 @@ if (room) {
   })
   showPeople()
   roomPanel.setCanChat(can(room, 'chat'))
+  showLookLine()
 }
 // Someone else deleted it: whatever is open about it here closes (decision 10).
 onRemoved = (removal) => {

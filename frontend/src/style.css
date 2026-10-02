@@ -458,6 +458,18 @@ kbd {
   outline: none;
 }
 
+.room-look {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.room-look-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .room-chat-log {
   flex-shrink: 0;
   max-height: 40vh;
