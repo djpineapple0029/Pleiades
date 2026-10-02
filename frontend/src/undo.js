@@ -78,11 +78,26 @@ export function createUndo({ mapDoc, graph, limit = 200 }) {
   /** Where the stack stands now, for a later `step(…, { at })`. */
   const mark = () => ({ depth: manager.undoStack.length, trimmed })
 
-  /** Every local transaction until `end()` is one undo step called `name`. */
+  /**
+   * Every local transaction until `end()` is one undo step called `name`.
+   * `discard()` ends it instead by taking that step straight back (only this
+   * tab's part of it, as any undo), leaving nothing to undo or redo: a notes
+   * session cancelled with Esc.
+   */
   function group(name) {
     manager.stopCapturing()
     pending = { label: name, before: graph.contentRevision }
-    return { end: () => closeGroup(name) }
+    const top = manager.undoStack.at(-1)
+    return {
+      end: () => closeGroup(name),
+      discard() {
+        const added = manager.undoStack.at(-1)
+        closeGroup(name)
+        if (!added || added === top || added.meta.get('label') !== name) return
+        undo()
+        manager.redoStack.pop()
+      },
+    }
   }
 
   function undo() {

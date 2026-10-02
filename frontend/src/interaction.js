@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { NODE_RADIUS } from './graphView.js'
 import { createStatus } from './status.js'
+import { bindTextarea } from './room/notesBinding.js'
 import { createCommands } from './commands.js'
 import { rankNodes } from './search.js'
 import { focusSetOf } from './heat.js'
@@ -648,20 +649,31 @@ export function createInteraction({
 
   /**
    * Ctrl/Cmd+Enter on a targeted star: full notes editing in the sidebar, with a
-   * real cursor. Pointer lock comes back by itself on Save or Esc — the app
-   * released it, so re-locking needs no click.
+   * real cursor, live — typing goes straight into the star's shared text
+   * (decision 8), so losing the lock or the connection never loses it. Done
+   * keeps it as one undo step; Esc takes this session's typing back out.
+   * Pointer lock comes back by itself either way — the app released it, so
+   * re-locking needs no click.
    */
   async function editNotes(node) {
+    const session = commands.editNotes(node.id)
+    if (!session) return // read-only: canEdit has said why
     await lock.release('panel')
     mode = 'editing'
     beginModal()
     editingAbout = { kind: 'node', id: node.id }
+    let binding = null
     try {
-      const notes = await sidebar.edit(nodeName(node), node.notes)
+      const kept = await sidebar.edit(nodeName(node), (textarea) => {
+        binding = bindTextarea(textarea, session.text, { origin: mapDoc.LOCAL })
+      })
+      binding?.destroy()
+      binding = null
       endModal()
-      const current = graph.getNode(node.id)
-      if (notes !== null && current) commands.setNodeText(current.id, current.label, notes)
+      if (kept) session.end()
+      else session.discard()
     } finally {
+      binding?.destroy()
       editingAbout = null
       if (mode === 'editing') endModal()
       sidebarKey = null // view mode redraws from scratch

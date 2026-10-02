@@ -120,15 +120,16 @@ export function createCommands({ graph, physics, mapDoc, undo, newId = randomId,
 
   /**
    * A live notes session: typing goes straight into the shared text, and
-   * the whole session is one undo step. `{ text, end() }`, or null. Each
-   * keystroke must go in through `mapDoc.transact` (origin LOCAL): an edit
-   * made outside one is nobody's, and undo never sees it.
+   * the whole session is one undo step. `{ text, end(), discard() }`, or
+   * null; `discard` takes this tab's typing back out (Esc). Each keystroke
+   * must go in through `mapDoc.transact` (origin LOCAL): an edit made outside
+   * one is nobody's, and undo never sees it.
    */
   function editNotes(id) {
     const node = graph.getNode(id)
     if (!canEdit() || !node) return null
     const session = undo.group(`edit node ${nodeName(node)}`)
-    return { text: yNodes.get(id).get('notes'), end: () => session.end() }
+    return { text: yNodes.get(id).get('notes'), end: () => session.end(), discard: () => session.discard() }
   }
 
   function setEdgeLabel(id, label) {

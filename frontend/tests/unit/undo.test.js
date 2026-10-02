@@ -83,6 +83,32 @@ describe('undo', () => {
     expect(graph.getNode('a').notes).toBe('')
   })
 
+  it('discarding a group takes back only my typing in it, and leaves no undo or redo', () => {
+    const { mapDoc, graph, undo } = setup()
+    const text = mapDoc.nodes.get('a').get('notes')
+    mapDoc.transact(() => text.insert(0, 'kept'))
+    undo.clear()
+    const g = undo.group('edit node a')
+    for (const ch of ' gone') mapDoc.transact(() => text.insert(text.length, ch))
+    // Someone else types meanwhile: theirs stays.
+    const other = new Y.Doc()
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(mapDoc.doc))
+    other.getMap('nodes').get('a').get('notes').insert(0, '>')
+    Y.applyUpdate(mapDoc.doc, Y.encodeStateAsUpdate(other, Y.encodeStateVector(mapDoc.doc)), 'room')
+    g.discard()
+    expect(graph.getNode('a').notes).toBe('>kept')
+    expect(undo.canUndo).toBe(false)
+    expect(undo.canRedo).toBe(false)
+  })
+
+  it('discarding a group I never typed in changes nothing', () => {
+    const { undo } = setup()
+    undo.step('label', () => {})
+    const before = undo.size
+    undo.group('edit node a').discard()
+    expect(undo.size).toBe(before)
+  })
+
   it('a step after a group is a step of its own', () => {
     const { mapDoc, undo } = setup()
     const g = undo.group('edit node a')
