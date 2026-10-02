@@ -1199,6 +1199,16 @@ export function createInteraction({
     flyTo.toPose(pose.position, pose.quaternion, renderSettings.reducedMotion ? 0 : FLY_DURATION, endModal)
   }
 
+  /** A roster bubble: fly to a camera pose (behind someone, looking where they look). */
+  function flyToPose(position, quaternion) {
+    if (mode !== 'idle' && mode !== 'flying') return
+    jumps.push({ position: camera.position.clone(), quaternion: camera.quaternion.clone() })
+    mode = 'flying'
+    beginModal()
+    clearHover()
+    flyTo.toPose(position, quaternion, renderSettings.reducedMotion ? 0 : FLY_DURATION, endModal)
+  }
+
   /** Poses and a focus from one map mean nothing in another. */
   function forgetJumps() {
     jumps.length = 0
@@ -1548,6 +1558,18 @@ export function createInteraction({
     roomMessage,
     roomEnded,
     closeAbout,
+    flyToPose,
+    /** What this tab is doing, for presence: 'fly', 'overview', 'menu' or 'editing'. */
+    get presenceMode() {
+      if (overview.isActive) return 'overview'
+      if (mode === 'editing') return 'editing'
+      if (mode === 'menu' || !controls.isLocked) return 'menu'
+      return 'fly'
+    },
+    /** The star a label or notes editor is open on, or null. */
+    get editingId() {
+      return editingAbout?.kind === 'node' ? editingAbout.id : null
+    },
     /** The edit commands (the dev-only test seam in main.js reaches them here). */
     commands,
     /** Test seam: the radial menu on a star, as a right-click on it would open it. */

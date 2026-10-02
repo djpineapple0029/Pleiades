@@ -222,6 +222,41 @@ kbd {
 /* Flight speed is a permanent readout, not a status message — it must never
    share the HUD's message channel, or a scroll-wheel change would stomp
    whatever result/error text is showing there. */
+/* Who else is in the map (room/roster.js): coloured initials, top right. */
+#roster {
+  position: fixed;
+  z-index: 3;
+  top: 12px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+}
+
+#roster[hidden] {
+  display: none;
+}
+
+.roster-bubble {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid var(--person, #fff);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 55%);
+  color: var(--person, #fff);
+  font:
+    600 13px/1 system-ui,
+    sans-serif;
+  cursor: pointer;
+}
+
+.roster-bubble:hover,
+.roster-bubble:focus-visible {
+  background: rgb(0 0 0 / 80%);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--person, #fff);
+}
+
 #speed {
   position: fixed;
   z-index: 2;

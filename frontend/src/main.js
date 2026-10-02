@@ -33,6 +33,9 @@ import { watchContextLoss } from './contextLoss.js'
 import { accountUrl, request, roomUrl } from './api.js'
 import { createRoomClient } from './room/roomClient.js'
 import { colourFor, hexToRgb } from './room/authors.js'
+import { createPosePublisher } from './room/presence.js'
+import { createAvatars } from './room/avatars.js'
+import { createRoster } from './room/roster.js'
 import { docToPayload } from './format/ydoc.js'
 
 const MAX_FRAME_DELTA = 0.1 // seconds — clamps the jump after a backgrounded tab
@@ -336,9 +339,53 @@ function onRoomMessage(message) {
     } else if (message.code === 4429) {
       interaction.roomEnded('this map is full · reload to try again')
     }
+  } else if (message.type === 'roster') {
+    showPeople()
   } else {
     interaction.roomMessage(message)
   }
+}
+
+// Presence (context/MOONSHOT.md): this camera out through awareness, everyone
+// else in as avatars and roster bubbles.
+const avatars = room ? createAvatars({ scene }) : null
+const publisher = room ? createPosePublisher({ awareness: room.awareness }) : null
+const BEHIND = 30 // how far back a roster click puts you, along their view
+const roster = room
+  ? createRoster(document.getElementById('roster'), {
+      onFly: (entry) => {
+        const now = performance.now()
+        const pose = entry.clientIds.map((id) => avatars.sampleOf(id, now)).find(Boolean)
+        if (!pose) return
+        const quaternion = new THREE.Quaternion().fromArray(pose.q)
+        const back = new THREE.Vector3(0, 0, BEHIND).applyQuaternion(quaternion)
+        interaction.flyToPose(new THREE.Vector3().fromArray(pose.p).add(back), quaternion)
+      },
+    })
+  : null
+
+/** The room's roster into avatars (by Yjs client id) and bubbles. */
+function showPeople() {
+  const me = room.you?.conn
+  const others = []
+  for (const person of room.roster) {
+    if (person.conn === me) continue
+    for (const clientId of person.clientIds ?? []) others.push({ clientId, ...person })
+  }
+  avatars.sync(others)
+  roster.render(room.roster, room.you)
+}
+
+if (room) {
+  room.awareness.on('change', ({ added, updated }) => {
+    const states = room.awareness.getStates()
+    const now = performance.now()
+    for (const clientId of added.concat(updated)) {
+      if (clientId === mapDoc.doc.clientID) continue
+      avatars.push(clientId, states.get(clientId)?.pose, now)
+    }
+  })
+  showPeople()
 }
 // Someone else deleted it: whatever is open about it here closes (decision 10).
 onRemoved = (removal) => {
@@ -356,7 +403,7 @@ const hasUnsaved = () => (room ? false : files.isDirty)
 // The e2e suites' handle on the app (tests/e2e/multiplayer). Dev server only:
 // `npm run build` drops this block, so it never ships.
 if (import.meta.env.DEV) {
-  window.__pleiades = { graph, mapDoc, undo, room, interaction, commands: interaction.commands }
+  window.__pleiades = { graph, mapDoc, undo, room, interaction, avatars, commands: interaction.commands }
 }
 
 flight.controls.addEventListener('lock', () => {
@@ -486,6 +533,15 @@ function frame() {
   // interaction, so the crosshair raycasts from where the camera now is.
   flyTo.update(delta)
   interaction.update()
+  if (room) {
+    publisher.publish({
+      p: camera.position.toArray(),
+      q: camera.quaternion.toArray(),
+      mode: interaction.presenceMode,
+      editing: interaction.editingId,
+    })
+    avatars.update(performance.now(), camera)
+  }
   // getDelta above has just advanced elapsedTime. Reduced motion freezes only
   // the pulse's reading of it: the stars stop breathing, but sizes, tints and
   // label fades still step (a frozen clock for all of it left new labels
@@ -522,6 +578,7 @@ if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     renderer.setAnimationLoop(null)
     clearInterval(statusTimer)
+    avatars?.dispose()
     room?.destroy()
     removeGlobalHandlers()
     stopWatchingContext()
