@@ -66,8 +66,8 @@ test.describe('social', () => {
 
   test('chat from the Esc screen; the feed fades, the log keeps it', async () => {
     await escape(alice)
-    await alice.locator('#room-panel input').fill('hello there')
-    await alice.locator('#room-panel input').press('Enter')
+    await alice.getByRole('textbox', { name: 'Chat message' }).fill('hello there')
+    await alice.getByRole('textbox', { name: 'Chat message' }).press('Enter')
     await expect(bob.locator('#chat-feed .chat-text')).toHaveText('hello there')
     await expect(bob.locator('#chat-feed .chat-line')).toHaveCount(0, { timeout: 12_000 })
     await escape(bob)
@@ -84,7 +84,7 @@ test.describe('social', () => {
     await openMap(vicky, mapId)
     await escape(vicky)
     await expect(vicky.locator('#room-panel .room-note')).toHaveText('Chat is off for you on this map')
-    await expect(vicky.locator('#room-panel form')).toBeHidden()
+    await expect(vicky.locator('#room-panel .room-chat-form')).toBeHidden()
     // Even sent by hand, the room refuses it and nobody sees it.
     await vicky.evaluate(() => window.__pleiades.room.send({ type: 'chat', text: 'sneaky' }))
     await expect(vicky.locator('#hud')).toContainText(/chat is off/i)
@@ -136,15 +136,23 @@ test.describe('social', () => {
     await expect(alice.locator('#my-emote')).toHaveText('👋')
     await bob.screenshot({ path: 'artifacts/e2e-multiplayer/emote-wave.png' })
     await alice.screenshot({ path: 'artifacts/e2e-multiplayer/emote-mine.png' })
-    // Straight away again: the ring opens, but nothing is sent.
-    await emoteRing(alice, 80, 0)
-    await bob.waitForTimeout(400)
-    expect(await emotesSeen(bob)).toEqual(['wave'])
-    // A second later, it goes.
+    // Twice at once — through the ring's own cooldown, and straight to the
+    // room past it: one goes, from each, and the room drops the extra.
+    await alice.waitForTimeout(1100)
+    const sent = await alice.evaluate(() => {
+      const { emotes, room } = window.__pleiades
+      const viaRing = [emotes.send('yes'), emotes.send('no')]
+      room.send({ type: 'emote', id: 'look' }) // too soon after 'yes' for the room
+      return viaRing
+    })
+    expect(sent).toEqual([true, false])
+    await bob.waitForTimeout(500)
+    expect(await emotesSeen(bob)).toEqual(['wave', 'yes'])
+    // A second later, the ring sends again.
     await alice.waitForTimeout(1100)
     const down = await emoteRing(alice, 0, 80) // straight down: the fifth of eight
     expect(down.armed).toBe('💡')
-    await expect.poll(() => emotesSeen(bob)).toEqual(['wave', 'idea'])
+    await expect.poll(() => emotesSeen(bob)).toEqual(['wave', 'yes', 'idea'])
     await bob.screenshot({ path: 'artifacts/e2e-multiplayer/emote.png' })
     expect(await t(alice, 'locked()')).toBe(true)
   })
