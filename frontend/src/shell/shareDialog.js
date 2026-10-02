@@ -79,6 +79,19 @@ export function linkState(sharing, you) {
   }
 }
 
+/**
+ * Under a live link: what turning it off or replacing it does, and doesn't.
+ * People signed in who opened it became members (decision 6) and stay.
+ */
+export function linkNote(sharing) {
+  const joined = sharing.members.filter((member) => member.joined_by_link).length
+  const who = joined ? ` (${joined} joined by link)` : ''
+  return (
+    'The link is shown once, when it’s made. New link makes a fresh one; the old one stops working at once, ' +
+    `and guests on it are sent out. People signed in who opened it stay in People above${who}: remove them there if they shouldn’t.`
+  )
+}
+
 /** For "make a new link": the shortest allowed lifetime that still covers what's left. */
 export function daysLeft(expiresAt, now = Date.now() / 1000) {
   if (expiresAt === null || expiresAt === undefined) return null
@@ -189,7 +202,8 @@ export function createSharePanel({
   function memberRow(row, you, person) {
     const item = el('li', 'member')
     const yours = row.user_id === you.user_id
-    item.append(el('span', 'who', yours ? `${row.username} (you)` : row.username))
+    const name = yours ? `${row.username} (you)` : row.username
+    item.append(el('span', 'who', row.joined_by_link ? `${name} · joined by link` : name))
     if (row.canChangeRole) {
       const select = el('select', 'role')
       select.setAttribute('aria-label', `Role of ${row.username}`)
@@ -424,11 +438,7 @@ export function createSharePanel({
     wrap.append(form)
     if (state.mode !== 'off') {
       wrap.append(
-        el(
-          'p',
-          'note',
-          'The link is shown once, when it’s made. New link makes a fresh one; the old one stops working at once, and anyone in on it is sent out.',
-        ),
+        el('p', 'note', linkNote(sharing)),
         smallButton('Turn off', async (event) => {
           event.currentTarget.disabled = true
           freshLink = null

@@ -77,7 +77,8 @@ def sharing_info(map_id: str) -> Response:
             (map_id,),
         ).fetchone()
         members = conn.execute(
-            "SELECT map_members.user_id, users.username, map_members.role, map_members.perms_json "
+            "SELECT map_members.user_id, users.username, map_members.role, map_members.perms_json, "
+            "map_members.added_by IS NULL AS joined_by_link "
             "FROM map_members JOIN users ON users.id = map_members.user_id "
             "WHERE map_members.map_id = ? ORDER BY map_members.added_at, users.username",
             (map_id,),
@@ -104,6 +105,9 @@ def sharing_info(map_id: str) -> Response:
                 "role": row["role"],
                 "perms_override": access.parse_perms(row["perms_json"]),
                 "effective": effective(row["role"], stored[row["role"]], access.parse_perms(row["perms_json"])),
+                # Opened a share link while signed in (/join): turning the link
+                # off doesn't remove them, so the panel says who they are.
+                "joined_by_link": bool(row["joined_by_link"]),
             }
             for row in members
         ],

@@ -132,6 +132,7 @@ async def map_socket(websocket: WebSocket) -> None:
         user_id=access.user_id,
         guest_key=access.guest_key,
         link_token=who.link_token,
+        link_expires_at=access.link_expires_at,
     )
     writer = asyncio.create_task(_write(websocket, peer))
     room = await registry.join(map_id, peer, websocket.query_params.get("epoch", ""))

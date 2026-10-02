@@ -148,3 +148,11 @@ def test_revoking_the_link_tells_the_room(three, rooms):
 )
 def test_review_focus_4_guest_names(raw, expected):
     assert clean_guest_name(raw) == expected
+
+
+def test_members_who_joined_by_link_are_marked(three):
+    share(three, "vicky", "viewer")
+    token = token_of(make_link(three, role="editor"))
+    three["eddie"].post(f"/api/maps/{three['map']}/join", json={"link": token}, headers=CSRF)
+    members = {m["username"]: m for m in three["owner"].get(f"/api/maps/{three['map']}/sharing").json["members"]}
+    assert members["eddie"]["joined_by_link"] is True and members["vicky"]["joined_by_link"] is False

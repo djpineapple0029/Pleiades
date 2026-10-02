@@ -23,6 +23,7 @@ import json
 import logging
 import secrets
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple, Protocol
@@ -98,6 +99,8 @@ class Peer:
     guest_key: str | None
     # The share link a guest came in on, so a re-check can ask about it again.
     link_token: str | None = None
+    # When that link stops working (unix seconds): the room sends them out then.
+    link_expires_at: float | None = None
     colour: str = ""
     client_ids: set[int] = field(default_factory=set)
     outbox: asyncio.Queue = field(default_factory=asyncio.Queue)
@@ -107,6 +110,10 @@ class Peer:
     @property
     def can_edit(self) -> bool:
         return self.role in ("owner", "editor")
+
+    @property
+    def link_expired(self) -> bool:
+        return self.link_expires_at is not None and time.time() >= self.link_expires_at
 
     def send_text(self, value: dict[str, Any]) -> None:
         self.outbox.put_nowait(("text", json.dumps(value)))
@@ -240,6 +247,9 @@ class Room:
         # Review Focus 5: a removed peer's late frames are never acted on.
         if not data or self.closed or peer.closing or peer not in self.peers:
             return
+        if peer.link_expired:
+            await self._remove(peer)
+            return
         kind = data[0]
         if kind == YMessageType.SYNC and len(data) > 1:
             if data[1] == YSyncMessageType.SYNC_STEP1:
@@ -304,6 +314,9 @@ class Room:
         for the map list, which then shows what was just done). Chat and
         emotes join in milestone 3. Unknown types are ignored."""
         if peer.closing or self.closed or peer not in self.peers:
+            return
+        if peer.link_expired:
+            await self._remove(peer)
             return
         if message.get("type") == "flush":
             ok = await self.persist()
@@ -450,13 +463,19 @@ class Room:
             if peer not in self.peers:
                 continue  # left while we asked
             if found is None:
-                peer.send_text({"type": "kicked", "reason": "access removed"})
-                peer.close(4403, "access removed")
-                await self.leave(peer)  # their avatar and bubble go now, not when the socket does
-            elif found.role != peer.role or found.perms != peer.perms:
+                await self._remove(peer)
+                continue
+            peer.link_expires_at = found.link_expires_at
+            if found.role != peer.role or found.perms != peer.perms:
                 peer.role, peer.perms = found.role, dict(found.perms)
                 peer.send_text({"type": "access", "role": peer.role, "perms": peer.perms})
         self._broadcast_roster()
+
+    async def _remove(self, peer: Peer) -> None:
+        """Their access is gone (removed, banned, link revoked or expired)."""
+        peer.send_text({"type": "kicked", "reason": "access removed"})
+        peer.close(4403, "access removed")
+        await self.leave(peer)  # their avatar and bubble go now, not when the socket does
 
     async def kick(self, conn: str, reason: str) -> bool:
         """Sends one connection out (the owner's Kick): removed first, so
@@ -558,7 +577,13 @@ class RoomRegistry:
             peer.send_text({"type": "error", "code": "full"})
             peer.close(4429, "full")
             return None
-        return room if await room.join(peer, known_epoch) else None
+        if not await room.join(peer, known_epoch):
+            return None
+        if peer.link_expires_at is not None and self._loop is not None:
+            # Spec: an expired link sends its guests out, even idle ones.
+            delay = max(0.0, peer.link_expires_at - time.time()) + 0.05
+            self._loop.call_later(delay, lambda: asyncio.ensure_future(self._handle(map_id, "access")))
+        return room
 
     async def leave(self, map_id: str, peer: Peer) -> None:
         room = self.rooms.get(map_id)

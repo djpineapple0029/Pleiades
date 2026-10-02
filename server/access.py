@@ -33,6 +33,8 @@ class Access:
     user_id: int | None = None
     guest_key: str | None = None
     via_link: bool = False
+    # When the link this access came by stops working (unix seconds), if it does.
+    link_expires_at: int | None = None
 
     @property
     def can_edit(self) -> bool:
@@ -70,14 +72,20 @@ def banned(conn: sqlite3.Connection, map_id: str, *, user_id: int | None, guest_
     return False
 
 
-def link_role(conn: sqlite3.Connection, map_id: str, link_token: str) -> str | None:
-    """The role the map's link gives, if `link_token` is its live, unexpired token."""
+def live_link(conn: sqlite3.Connection, map_id: str, link_token: str) -> sqlite3.Row | None:
+    """The map's link row (role, expires_at), if `link_token` is its live, unexpired token."""
     link = conn.execute(
         "SELECT role, expires_at FROM map_links WHERE map_id = ? AND token_hash = ?", (map_id, token_hash(link_token))
     ).fetchone()
     if link is None or (link["expires_at"] is not None and link["expires_at"] <= dbmod.now()):
         return None
-    return link["role"]
+    return link
+
+
+def link_role(conn: sqlite3.Connection, map_id: str, link_token: str) -> str | None:
+    """The role the map's link gives, if `link_token` is its live, unexpired token."""
+    link = live_link(conn, map_id, link_token)
+    return link["role"] if link else None
 
 
 def resolve(
@@ -112,9 +120,18 @@ def resolve(
     if link_token:
         if user_id is None and not switches.guest_links:
             return None
-        role = link_role(conn, map_id, link_token)
-        if role is None:
+        link = live_link(conn, map_id, link_token)
+        if link is None:
             return None
+        role = link["role"]
         perms = effective(role, role_defaults(conn, map_id, role), None)
-        return Access(role, perms, owner_id, user_id=user_id, guest_key=guest_key, via_link=True)
+        return Access(
+            role,
+            perms,
+            owner_id,
+            user_id=user_id,
+            guest_key=guest_key,
+            via_link=True,
+            link_expires_at=link["expires_at"],
+        )
     return None

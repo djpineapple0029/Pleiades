@@ -601,3 +601,43 @@ async def test_disconnect_user_sends_them_out_and_closes_maps_they_owned(store):
     assert [p.name for p in theirs.peers] == ["stays"]
     assert {"type": "deleted"} in texts(other_map_guest)
     assert owned.closed and "owned" not in registry.rooms
+
+
+# --- Final review: an expiring link sends its guests out when it expires ------
+
+
+@pytest.mark.anyio
+async def test_a_guest_on_an_expired_link_cannot_edit(store):
+    import time
+
+    room = Room("m", store)
+    await room.open()
+    guest = peer("guest")
+    guest.guest, guest.link_expires_at = True, time.time() + 60
+    client = await joined(room, guest)
+    guest.link_expires_at = time.time() - 1  # the link ran out while they were in
+    await room.on_binary(guest, edit_message(client, set_label("after expiry")))
+    assert room.doc.get("nodes", type=Map)["a"]["label"] == "A"
+    assert guest not in room.peers
+    assert ("close", 4403, "access removed") in drain(guest)
+
+
+@pytest.mark.anyio
+async def test_the_registry_rechecks_a_link_guest_when_their_link_expires(store):
+    import time
+
+    expired = []
+
+    def resolve(map_id, p):
+        expired.append(p.name)
+        return None  # the link has expired by now
+
+    registry = RoomRegistry(store, resolve=resolve)
+    registry.bind_loop(asyncio.get_running_loop())
+    guest = peer("guest")
+    guest.guest, guest.link_expires_at = True, time.time() + 0.05
+    await registry.join("m", guest, "")
+    drain(guest)
+    await asyncio.sleep(0.3)
+    assert expired == ["guest"]
+    assert ("close", 4403, "access removed") in drain(guest)

@@ -109,3 +109,16 @@ describe('daysLeft', () => {
     expect(daysLeft(20 * 86400, 0)).toBe(30)
   })
 })
+
+describe('linkNote', () => {
+  it('is honest that people signed in who opened the link stay', async () => {
+    const { linkNote } = await import('../../src/shell/shareDialog.js')
+    const none = linkNote({ members: [{ joined_by_link: false }] })
+    expect(none).toMatch(/guests on it are sent out/)
+    expect(none).toMatch(/People signed in who opened it stay/)
+    expect(none).not.toMatch(/joined by link\)/)
+    expect(linkNote({ members: [{ joined_by_link: true }, { joined_by_link: true }] })).toMatch(
+      /2 joined by link/,
+    )
+  })
+})
