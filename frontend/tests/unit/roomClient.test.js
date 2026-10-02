@@ -56,10 +56,10 @@ function fakeServer({ role = 'editor' } = {}) {
         }
       }
     }
-    close() {
+    close(code = 1000) {
       this.readyState = 3
       sockets.delete(this)
-      this.onclose?.({ code: 1000 })
+      this.onclose?.({ code })
     }
     drop() {
       this.readyState = 3
@@ -160,5 +160,82 @@ describe('roomClient', () => {
     ;[...server.sockets][0].deliver(JSON.stringify({ type: 'read_only' }))
     expect(ca.state).toBe('read_only')
     expect(ca.canEdit).toBe(false)
+  })
+
+  it('a refusal from the server (4xxx) is final and says which', async () => {
+    const server = fakeServer()
+    const timers = []
+    const seen = []
+    const ca = createRoomClient({
+      url: 'ws://x',
+      doc: new Y.Doc(),
+      WebSocketImpl: server.FakeSocket,
+      setTimer: (fn) => timers.push(fn),
+      onControl: (m) => seen.push(m),
+    })
+    await ca.whenSynced
+    ;[...server.sockets][0].close(4404)
+    expect(ca.state).toBe('closed')
+    expect(timers).toHaveLength(0)
+    expect(seen.at(-1)).toEqual({ type: 'closed', code: 4404 })
+  })
+
+  it('flush asks the room to save now and resolves with its answer', async () => {
+    const server = fakeServer()
+    const ca = createRoomClient({ url: 'ws://x', doc: new Y.Doc(), WebSocketImpl: server.FakeSocket })
+    await ca.whenSynced
+    const socket = [...server.sockets][0]
+    const sent = []
+    const send = socket.send.bind(socket)
+    socket.send = (data) => {
+      if (typeof data === 'string') sent.push(JSON.parse(data))
+      send(data)
+    }
+    const flushed = ca.flush()
+    expect(sent).toEqual([{ type: 'flush' }])
+    socket.deliver(JSON.stringify({ type: 'flushed', ok: true }))
+    expect(await flushed).toBe(true)
+  })
+
+  it('flush gives up (false) when the room never answers or is gone', async () => {
+    const server = fakeServer()
+    const timers = []
+    const ca = createRoomClient({
+      url: 'ws://x',
+      doc: new Y.Doc(),
+      WebSocketImpl: server.FakeSocket,
+      setTimer: (fn) => timers.push(fn),
+    })
+    await ca.whenSynced
+    const flushed = ca.flush()
+    timers.shift()()
+    expect(await flushed).toBe(false)
+    ;[...server.sockets][0].drop()
+    expect(await ca.flush()).toBe(false)
+  })
+
+  it('the browser going offline drops to read-only at once; online reconnects at once', async () => {
+    const server = fakeServer()
+    const timers = []
+    const network = new EventTarget()
+    const ca = createRoomClient({
+      url: 'ws://x',
+      doc: new Y.Doc(),
+      WebSocketImpl: server.FakeSocket,
+      setTimer: (fn) => timers.push(fn),
+      network,
+    })
+    await ca.whenSynced
+    network.dispatchEvent(new Event('offline'))
+    expect(ca.state).toBe('offline')
+    expect(ca.canEdit).toBe(false)
+    network.dispatchEvent(new Event('online'))
+    await tick()
+    await tick()
+    expect(ca.state).toBe('live')
+    // The backoff timer set by the drop finds a live socket and does nothing.
+    const before = server.urls.length
+    for (const fn of timers.splice(0)) fn()
+    expect(server.urls.length).toBe(before)
   })
 })

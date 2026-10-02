@@ -1,57 +1,31 @@
-// The browser's copy of unsaved server-map edits (src/localBackup.js): what
-// opening a map does with one, and a store that fails quietly without
-// IndexedDB. The IndexedDB round trip itself runs in the accounts e2e suite.
+// What's left of localBackup.js once server maps moved into live rooms
+// (context/MOONSHOT.md): nothing is kept any more, but browsers that used an
+// older build may still hold plaintext edits, and sign-out must wipe them.
 import { describe, it, expect } from 'vitest'
-import { backupOffer, createBackupStore } from '../../src/localBackup.js'
+import { forgetKeptEdits } from '../../src/localBackup.js'
 
-const map = {
-  id: 'm1',
-  revision: 3,
-  payload: { schema: 1, nodes: [{ id: 'a' }], edges: [], camera: { position: [0, 0, 0] } },
+function fakeIndexedDB({ fail = false } = {}) {
+  const deleted = []
+  return {
+    deleted,
+    deleteDatabase(name) {
+      deleted.push(name)
+      const req = {}
+      queueMicrotask(() => (fail ? req.onerror?.() : req.onsuccess?.()))
+      return req
+    },
+  }
 }
-const record = (overrides) => ({
-  mapId: 'm1',
-  baseRevision: 3,
-  savedAt: 0,
-  payload: { schema: 1, nodes: [{ id: 'a' }, { id: 'b' }], edges: [], camera: { position: [9, 9, 9] } },
-  ...overrides,
-})
 
-describe('backupOffer', () => {
-  it('nothing stored, or stored for another map', () => {
-    expect(backupOffer(null, map)).toBe(null)
-    expect(backupOffer(record({ mapId: 'm2' }), map)).toBe(null)
-    expect(backupOffer(record({ payload: null }), map)).toBe(null)
+describe('forgetKeptEdits', () => {
+  it('deletes both databases older builds kept edits in', async () => {
+    const indexedDB = fakeIndexedDB()
+    expect(await forgetKeptEdits({ indexedDB })).toBe(true)
+    expect(indexedDB.deleted.sort()).toEqual(['atlasmap', 'pleiades'])
   })
 
-  it('restore when the server has not moved since', () => {
-    expect(backupOffer(record(), map)).toBe('restore')
-  })
-
-  it('copy when the server has a newer version', () => {
-    expect(backupOffer(record({ baseRevision: 2 }), map)).toBe('copy')
-  })
-
-  it('same when the server already has the content, whatever the camera', () => {
-    const payload = { ...map.payload, camera: { position: [5, 5, 5] } }
-    expect(backupOffer(record({ payload }), map)).toBe('same')
-    expect(backupOffer(record({ payload, baseRevision: 2 }), map)).toBe('same')
-  })
-
-  it('same whatever order the keys come in (the server sorts them)', () => {
-    const payload = { edges: [], nodes: [{ id: 'a' }], schema: 1 }
-    expect(backupOffer(record({ payload }), map)).toBe('same')
-    const moved = { edges: [], nodes: [{ id: 'b' }], schema: 1 }
-    expect(backupOffer(record({ payload: moved }), map)).toBe('restore')
-  })
-})
-
-describe('createBackupStore without IndexedDB', () => {
-  it('resolves to nothing and never throws', async () => {
-    const store = createBackupStore({ indexedDB: undefined })
-    expect(await store.put(record())).toBe(false)
-    expect(await store.get('m1')).toBe(null)
-    expect(await store.remove('m1')).toBe(false)
-    expect(await store.clear()).toBe(false)
+  it('without IndexedDB, or when it fails, resolves false and never throws', async () => {
+    expect(await forgetKeptEdits({ indexedDB: undefined })).toBe(false)
+    expect(await forgetKeptEdits({ indexedDB: fakeIndexedDB({ fail: true }) })).toBe(false)
   })
 })

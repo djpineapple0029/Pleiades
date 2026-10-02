@@ -149,3 +149,20 @@ describe('files.js isDirty', () => {
     }
   })
 })
+
+describe('files.applyPayload into a live room', () => {
+  it('keepDoc loads the graph from the doc it was given and leaves that doc alone', async () => {
+    const { createMapDoc } = await import('../../src/mapDoc.js')
+    const { docToPayload } = await import('../../src/format/ydoc.js')
+    const mapDoc = createMapDoc()
+    mapDoc.replace({ nodes: [{ id: 'n-shared', x: 1, y: 2, z: 3 }], edges: [] })
+    const before = mapDoc.nodes.get('n-shared')
+    const graph = createGraph({ newId: sequentialIds() })
+    const files = createFiles({ graph, view: fakeView, camera: fakeCamera(), physics: fakePhysics, mapDoc })
+    files.applyPayload(docToPayload(mapDoc.doc), { keepDoc: true })
+    expect(graph.getNode('n-shared').x).toBe(1)
+    // The same Y.Map, not a fresh copy: a replace would have made new ones.
+    expect(mapDoc.nodes.get('n-shared')).toBe(before)
+    expect(files.isDirty).toBe(false)
+  })
+})

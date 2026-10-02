@@ -28,6 +28,9 @@ export function createRoomClient({
   onState = () => {},
   backoff = { min: 1000, max: 15000 },
   setTimer = (fn, ms) => setTimeout(fn, ms),
+  // Where the browser's `online`/`offline` events come from. An open socket
+  // can sit unaware of a dead network for a long while; these say at once.
+  network = globalThis,
 }) {
   const awareness = new awarenessProtocol.Awareness(doc)
   let socket = null
@@ -40,6 +43,7 @@ export function createRoomClient({
   let map = null
   let epoch = ''
   let roster = []
+  const flushes = [] // resolvers waiting for the room's `flushed`
   let resolveSynced
   const whenSynced = new Promise((resolve) => (resolveSynced = resolve))
 
@@ -67,7 +71,8 @@ export function createRoomClient({
     )
 
   function connect() {
-    if (finished) return
+    // A backoff timer can fire after `online` already reconnected.
+    if (finished || (socket && socket.readyState <= 1)) return
     const target = epoch ? `${url}${url.includes('?') ? '&' : '?'}epoch=${encodeURIComponent(epoch)}` : url
     const ws = new WebSocketImpl(target)
     socket = ws
@@ -88,21 +93,57 @@ export function createRoomClient({
         control(message)
       } else binary(new Uint8Array(event.data))
     }
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (ws !== socket) return
-      synced = false
-      gotStep2 = false
-      const others = [...awareness.getStates().keys()].filter((id) => id !== doc.clientID)
-      awarenessProtocol.removeAwarenessStates(awareness, others, REMOTE)
-      if (finished) {
+      forgetConnection()
+      // 4xxx is the room refusing us on purpose (no access, full, a bad
+      // frame…): trying again would only be refused again.
+      const refused = event?.code >= 4000 && event.code < 5000
+      if (finished || refused) {
+        finished = true
         setState('closed')
+        if (refused) onControl({ type: 'closed', code: event.code })
         return
       }
-      setState('offline')
-      setTimer(connect, delay)
-      delay = Math.min(delay * 2, backoff.max)
+      lost()
     }
   }
+
+  /** What only held for the connection that just ended: sync, pending flushes, other people. */
+  function forgetConnection() {
+    synced = false
+    gotStep2 = false
+    settleFlushes(false)
+    const others = [...awareness.getStates().keys()].filter((id) => id !== doc.clientID)
+    awarenessProtocol.removeAwarenessStates(awareness, others, REMOTE)
+  }
+
+  /** The connection is gone, but not for good: read-only, and try again. */
+  function lost() {
+    setState('offline')
+    setTimer(connect, delay)
+    delay = Math.min(delay * 2, backoff.max)
+  }
+
+  function goneOffline() {
+    if (finished || !socket) return
+    const ws = socket
+    socket = null // its close event, whenever it comes, is then ignored
+    forgetConnection()
+    try {
+      ws.close()
+    } catch {
+      // already closing
+    }
+    lost()
+  }
+
+  function backOnline() {
+    delay = backoff.min
+    connect()
+  }
+  network?.addEventListener?.('offline', goneOffline)
+  network?.addEventListener?.('online', backOnline)
 
   function binary(data) {
     const decoder = decoding.createDecoder(data)
@@ -144,8 +185,13 @@ export function createRoomClient({
     if (['welcome', 'access', 'read_only'].includes(message.type) && synced) {
       setState(roleCanEdit() ? 'live' : 'read_only')
     }
+    if (message.type === 'flushed') settleFlushes(Boolean(message.ok))
     if (FINAL.has(message.type)) finished = true
     onControl(message)
+  }
+
+  function settleFlushes(ok) {
+    for (const resolve of flushes.splice(0)) resolve(ok)
   }
 
   doc.on('update', (update, origin) => {
@@ -185,8 +231,26 @@ export function createRoomClient({
     send(message) {
       if (socket && socket.readyState === 1) socket.send(JSON.stringify(message))
     },
+    /**
+     * Asks the room to save now. Resolves true once it has, false if it
+     * couldn't, isn't reachable, or doesn't answer within `timeoutMs`.
+     */
+    flush(timeoutMs = 3000) {
+      if (!socket || socket.readyState !== 1) return Promise.resolve(false)
+      return new Promise((resolve) => {
+        flushes.push(resolve)
+        socket.send(JSON.stringify({ type: 'flush' }))
+        setTimer(() => {
+          const at = flushes.indexOf(resolve)
+          if (at >= 0) flushes.splice(at, 1)
+          resolve(false)
+        }, timeoutMs)
+      })
+    },
     destroy() {
       finished = true
+      network?.removeEventListener?.('offline', goneOffline)
+      network?.removeEventListener?.('online', backOnline)
       awarenessProtocol.removeAwarenessStates(awareness, [doc.clientID], 'local')
       awareness.destroy()
       socket?.close()

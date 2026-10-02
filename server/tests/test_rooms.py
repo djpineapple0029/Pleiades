@@ -327,3 +327,27 @@ async def test_deleted_tells_everyone_and_closes(store):
     items = drain(a)
     assert any(kind == "text" and json.loads(rest[0])["type"] == "deleted" for kind, *rest in items)
     assert items[-1][0] == "close"
+
+
+@pytest.mark.anyio
+async def test_flush_saves_now_and_answers(store):
+    room = Room("m", store, persist_delay=60)
+    await room.open()
+    a = peer("a")
+    client = await joined(room, a)
+    await room.on_binary(a, edit_message(client, set_label("now")))
+    await room.on_text(a, {"type": "flush"})
+    assert store.saves[-1]["nodes"][0]["label"] == "now"
+    assert {"type": "flushed", "ok": True} in texts(a)
+
+
+@pytest.mark.anyio
+async def test_flush_that_cannot_save_says_so(store):
+    room = Room("m", store, persist_delay=60)
+    await room.open()
+    a = peer("a")
+    client = await joined(room, a)
+    await room.on_binary(a, edit_message(client, set_label("now")))
+    store.fail = True
+    await room.on_text(a, {"type": "flush"})
+    assert {"type": "flushed", "ok": False} in texts(a)

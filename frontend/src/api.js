@@ -83,3 +83,9 @@ export async function request(
   }
   return { ok: true, status: response.status, data }
 }
+
+/** The live room of a server map (context/MOONSHOT.md): a WebSocket on this host. */
+export function roomUrl(mapId, where = globalThis.location, base = BASE) {
+  const scheme = where.protocol === 'https:' ? 'wss' : 'ws'
+  return `${scheme}://${where.host}${base}ws/maps/${encodeURIComponent(mapId)}`
+}

@@ -12,7 +12,7 @@ import '@fontsource/jost/500.css'
 import './shell.css'
 import { BASE, appUrl, homeUrl, request } from '../api.js'
 import { triggerDownload } from '../files.js'
-import { createBackupStore } from '../localBackup.js'
+import { forgetKeptEdits } from '../localBackup.js'
 import { fetchSettings } from '../settings.js'
 import { createAccountPage } from './accountPage.js'
 import { dateTime, mapSummary, relativeTime, versionSummary } from './format.js'
@@ -21,7 +21,6 @@ import { ACCEPT, fileName, mapFileBlob, nameFromFile, probe, readMapFile, readsH
 import { createSettingsPage } from './settingsPage.js'
 
 const $ = (id) => document.getElementById(id)
-const backups = createBackupStore()
 const views = [
   'loading',
   'off',
@@ -174,8 +173,8 @@ $('sign-up-form').addEventListener('submit', async (event) => {
 
 $('sign-out').addEventListener('click', async () => {
   await request('api/auth/logout', { method: 'POST' })
-  // Unsaved edits this browser kept are plaintext, and belong to whoever signed in.
-  await backups.clear()
+  // Unsaved edits older builds kept here are plaintext, and belong to whoever signed in.
+  await forgetKeptEdits()
   start()
 })
 
@@ -282,7 +281,7 @@ const accountPage = createAccountPage({
   },
   onDeleted: async () => {
     // Nothing of the account stays behind in this browser either.
-    await backups.clear()
+    await forgetKeptEdits()
     notice('Your account and its maps were deleted.')
     // Not `location.hash = ''`: its hashchange would route a page that's
     // still signed in, find the session gone and say "you were signed out".
@@ -586,7 +585,6 @@ function confirmDelete(row, map) {
         yes.disabled = false
         return signedOutBy(result) || rowError(row, result.error)
       }
-      await backups.remove(map.id)
       refreshList()
     },
     'danger small',

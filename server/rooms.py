@@ -276,8 +276,16 @@ class Room:
             self._broadcast_roster()
 
     async def on_text(self, peer: Peer, message: dict[str, Any]) -> None:
-        """Chat and emotes (milestone 3). Unknown types are ignored."""
-        return
+        """`flush`: save now and say whether it worked (Ctrl+S, and leaving
+        for the map list, which then shows what was just done). Chat and
+        emotes join in milestone 3. Unknown types are ignored."""
+        if peer.closing or self.closed:
+            return
+        if message.get("type") == "flush":
+            await self.persist()
+            async with self._lock:
+                pass  # a save already under way when this came in has finished too
+            peer.send_text({"type": "flushed", "ok": not self._dirty})
 
     # --- validation --------------------------------------------------------
 
