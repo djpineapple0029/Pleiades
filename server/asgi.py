@@ -26,7 +26,7 @@ from .ws import map_socket, resolve_peer
 
 def create_asgi(config_path: Path | str | None = None) -> Starlette:
     flask_app = create_app(config_path)
-    # Read once: changing it in /admin applies after a restart (its help says so).
+    # From then on /admin's save updates it (admin.write_config).
     max_people = int(flask_app.extensions["pleiades_config"].get("sharing", "max_people_per_map"))
 
     def resolve(map_id: str, peer: Peer) -> Access | None:

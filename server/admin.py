@@ -282,9 +282,17 @@ def write_config() -> Response | tuple[Response, int]:
                 400,
                 errors=[f"admin.allowed_networks: your own address ({ip}) isn't in it, so this would lock you out"],
             )
+    before = dict(store().all_values().get("sharing", {}))
     errors = store().save(body)
     if errors:
         return fail("Save refused.", 400, errors=errors)
+    after = store().all_values().get("sharing", {})
+    rooms = current_app.extensions.get("pleiades_rooms")
+    if rooms is not None and after != before:
+        # Applies at once (context/MOONSHOT.md decision 23): the cap to the
+        # next join, the switches to everyone already in a map.
+        rooms.max_people = int(after["max_people_per_map"])
+        rooms.notify_all("access")
     return jsonify(ok=True, values=store().all_values())
 
 

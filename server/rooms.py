@@ -579,6 +579,13 @@ class RoomRegistry:
             return
         self._loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self._handle(map_id, event)))
 
+    def notify_all(self, event: str) -> None:
+        """From any thread: `notify` every open room (an admin switch changed)."""
+        with self._guard:
+            map_ids = list(self.rooms)
+        for map_id in map_ids:
+            self.notify(map_id, event)
+
     async def _handle(self, map_id: str, event: str) -> None:
         room = self.rooms.get(map_id)
         if room is None:
