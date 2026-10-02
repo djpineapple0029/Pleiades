@@ -142,12 +142,15 @@ body {
 }
 
 /* The way out of a map without the right-button menu (main.js). A button,
-   not a hint: the one thing on the overlay that leaves the map. */
+   not a hint: the one thing on the overlay that leaves the map, so it sits
+   apart in the corner the HUD and roster leave free. */
 #overlay .prompt-home {
-  margin-top: 8px;
+  position: fixed;
+  top: 12px;
+  left: 16px;
   padding: 6px 16px;
   border: 1px solid #2a3140;
-  border-radius: 999px;
+  border-radius: 6px;
   background: rgba(9, 11, 17, 0.85);
   color: var(--ink);
   font-size: 12px;
