@@ -34,7 +34,7 @@ class Access:
         return self.role in ("owner", "editor")
 
 
-def _json(raw: str | None) -> dict | None:
+def parse_perms(raw: str | None) -> dict | None:
     if not raw:
         return None
     try:
@@ -46,7 +46,7 @@ def _json(raw: str | None) -> dict | None:
 
 def role_defaults(conn: sqlite3.Connection, map_id: str, role: str) -> dict | None:
     row = conn.execute("SELECT perms_json FROM map_roles WHERE map_id = ? AND role = ?", (map_id, role)).fetchone()
-    return _json(row["perms_json"]) if row else None
+    return parse_perms(row["perms_json"]) if row else None
 
 
 DEFAULT_SWITCHES = Switches()
@@ -76,6 +76,6 @@ def resolve(
         ).fetchone()
         if member is not None:
             role = member["role"]
-            perms = effective(role, role_defaults(conn, map_id, role), _json(member["perms_json"]))
+            perms = effective(role, role_defaults(conn, map_id, role), parse_perms(member["perms_json"]))
             return Access(role, perms, owner_id, user_id=user_id)
     return None

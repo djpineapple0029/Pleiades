@@ -14,12 +14,14 @@ const SECTION_TITLES = {
   visuals: 'Visual effects',
   server: 'Server',
   accounts: 'Accounts',
+  sharing: 'Sharing',
   admin: 'Admin access',
 }
 const SECTION_NOTES = {
   server: 'Applies to the next request, no restart needed.',
   accounts:
     'Applies to the next request. Maps kept here are readable by whoever runs the server; local files with a password stay private.',
+  sharing: "Applies to the next request or connection. Shared maps count against their owner's map limit only.",
   admin: 'Applies to this panel at once. The allowed networks must include your own address.',
 }
 // Schema entries marked `user`: this panel sets the default a signed-in user

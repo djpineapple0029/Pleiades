@@ -6,10 +6,17 @@ The server keeps the same JSON payload that goes inside a `.plm` file,
 zlib-compressed and otherwise untouched: unknown fields pass straight through,
 since the frontend owns the payload's shape (format/schema.js).
 
-Every query is scoped to the signed-in user, and a map that belongs to someone
-else is a 404, never a 403. Saves carry the revision they were based on in
+Who may do what to a map is server/access.py's answer (owner, or a member
+it was shared with; see context/MOONSHOT.md). A map you can't see at all is
+a 404, never a 403; one you can see but lack the permission for is a 403
+naming the permission. Saves carry the revision they were based on in
 `If-Match`; a save based on an older revision is refused with 409 and the
 current revision, so two tabs never silently overwrite each other.
+
+A map open in a live room (server/rooms.py) saves itself through
+`write_payload`. Anything else that replaces its content clears the stored
+Yjs state and tells the room to reload, so nobody in it writes old content
+back over the change.
 """
 
 from __future__ import annotations
@@ -20,10 +27,10 @@ import secrets
 import sqlite3
 import zlib
 
-from flask import Blueprint, Response, abort, jsonify, request
+from flask import Blueprint, Response, abort, current_app, jsonify, make_response, request
 
+from . import access, history
 from . import db as dbmod
-from . import history
 from .accounts import current_user, database, fail, finish, gate, json_body, signed_in, store
 from .atlasfile import FormatError, PasswordError, decode_any
 from .filenames import map_name
@@ -56,6 +63,39 @@ def check_id(map_id: str) -> str:
     if not MAP_ID_RE.fullmatch(map_id):
         abort(404)
     return map_id
+
+
+def switches() -> access.Switches:
+    return access.Switches(
+        sharing=bool(store().get("sharing", "enabled")), guest_links=bool(store().get("sharing", "guest_links"))
+    )
+
+
+def require(map_id: str, permission: str | None = None, *, edit: bool = False, owner: bool = False) -> access.Access:
+    """The signed-in user's access to a map, or the request ends: 404 when
+    they can't see it, 403 (naming what's missing) when they can but may not
+    do this."""
+    check_id(map_id)
+    with database().connect() as conn:
+        found = access.resolve(conn, map_id, user_id=user_id(), switches=switches())
+    if found is None:
+        abort(404)
+    if owner and found.role != "owner":
+        abort(make_response(*fail("Only the map's owner can do that.", 403, permission="owner")))
+    if edit and not found.can_edit:
+        abort(make_response(*fail("You can view this map but not edit it.", 403, permission="edit")))
+    if permission and not found.perms.get(permission):
+        abort(
+            make_response(*fail(f"You don't have the {permission} permission on this map.", 403, permission=permission))
+        )
+    return found
+
+
+def notify(map_id: str, event: str) -> None:
+    """Tells the map's live room, if it has one: 'reload', 'deleted' or 'access'."""
+    rooms = current_app.extensions.get("pleiades_rooms")
+    if rooms is not None:
+        rooms.notify(map_id, event)
 
 
 def clean_name(raw: object) -> str | None:
@@ -95,6 +135,48 @@ def insert_map(conn: sqlite3.Connection, owner: int, name: str, blob: bytes, nod
 def quota_full() -> tuple[Response, int]:
     limit = store().get("accounts", "max_maps_per_user")
     return fail(f"You have the most maps this server allows ({limit}). Delete one first.", 409)
+
+
+def write_payload(
+    conn: sqlite3.Connection,
+    map_id: str,
+    payload: dict,
+    *,
+    now: int,
+    ydoc: bytes | None,
+    ydoc_epoch: str | None,
+    base_revision: int | None,
+) -> int | None:
+    """Replaces a map's content inside the caller's transaction: the hourly
+    snapshot rule, then the new payload as the next revision. The new revision,
+    or None when the map is gone or `base_revision` is given and stale.
+
+    `ydoc` is the room's Yjs state to keep beside the payload; None (every
+    write that isn't a room's) clears it, so the next room builds from this
+    payload. Raises ValueError for a payload JSON can't represent."""
+    blob, node_count = pack(payload)
+    row = conn.execute(
+        "SELECT revision, payload, node_count FROM maps WHERE id = ?",
+        (map_id,),
+    ).fetchone()
+    if row is None or (base_revision is not None and row["revision"] != base_revision):
+        return None
+    if history.rolling_due(conn, map_id, now):
+        history.add(
+            conn,
+            map_id,
+            revision=row["revision"],
+            payload=row["payload"],
+            node_count=row["node_count"],
+            reason="rolling",
+            now=now,
+        )
+    conn.execute(
+        "UPDATE maps SET payload = ?, size_bytes = ?, node_count = ?, revision = revision + 1, updated_at = ?, "
+        "ydoc = ?, ydoc_epoch = ? WHERE id = ?",
+        (blob, len(blob), node_count, now, ydoc, ydoc_epoch if ydoc is not None else None, map_id),
+    )
+    return row["revision"] + 1
 
 
 def parse_revision(header: str) -> int | None:
@@ -177,17 +259,13 @@ def import_map() -> Response | tuple[Response, int]:
 @maps.get("/<map_id>")
 @signed_in
 def get_map(map_id: str) -> Response:
-    check_id(map_id)
+    found = require(map_id, "export")
     with database().connect() as conn:
-        row = conn.execute(
-            "SELECT name, revision, updated_at, payload FROM maps WHERE id = ? AND user_id = ?",
-            (map_id, user_id()),
-        ).fetchone()
+        row = conn.execute("SELECT name, revision, updated_at, payload FROM maps WHERE id = ?", (map_id,)).fetchone()
         if row is None:
             abort(404)
-        conn.execute(
-            "UPDATE maps SET last_opened_at = ? WHERE id = ? AND user_id = ?", (dbmod.now(), map_id, user_id())
-        )
+        if found.role == "owner":
+            conn.execute("UPDATE maps SET last_opened_at = ? WHERE id = ?", (dbmod.now(), map_id))
     return jsonify(
         id=map_id,
         name=row["name"],
@@ -200,7 +278,7 @@ def get_map(map_id: str) -> Response:
 @maps.put("/<map_id>")
 @signed_in
 def save_map(map_id: str) -> Response | tuple[Response, int]:
-    check_id(map_id)
+    require(map_id, edit=True)
     header = request.headers.get("If-Match")
     if header is None:
         return fail("Saves need an If-Match header with the revision they were based on.", 428)
@@ -210,55 +288,36 @@ def save_map(map_id: str) -> Response | tuple[Response, int]:
     payload = json_body().get("payload")
     if not isinstance(payload, dict):
         return fail("`payload` must be a JSON object.", 400)
+
     try:
-        blob, node_count = pack(payload)
+        with database().transaction() as conn:
+            now = dbmod.now()
+            revision = write_payload(conn, map_id, payload, now=now, ydoc=None, ydoc_epoch=None, base_revision=base)
+            if revision is None:
+                row = conn.execute("SELECT revision, updated_at FROM maps WHERE id = ?", (map_id,)).fetchone()
+                if row is None:
+                    abort(404)
+                return fail(
+                    "This map was changed in another tab or device.",
+                    409,
+                    revision=row["revision"],
+                    updated_at=row["updated_at"],
+                )
     except ValueError:
         return fail("`payload` holds a number JSON can't represent.", 400)
-
-    with database().transaction() as conn:
-        now = dbmod.now()
-        row = conn.execute(
-            "SELECT revision, updated_at, payload, node_count FROM maps WHERE id = ? AND user_id = ?",
-            (map_id, user_id()),
-        ).fetchone()
-        if row is None:
-            abort(404)
-        if row["revision"] != base:
-            return fail(
-                "This map was changed in another tab or device.",
-                409,
-                revision=row["revision"],
-                updated_at=row["updated_at"],
-            )
-        if history.rolling_due(conn, map_id, now):
-            history.add(
-                conn,
-                map_id,
-                revision=row["revision"],
-                payload=row["payload"],
-                node_count=row["node_count"],
-                reason="rolling",
-                now=now,
-            )
-        conn.execute(
-            "UPDATE maps SET payload = ?, size_bytes = ?, node_count = ?, revision = revision + 1, updated_at = ? "
-            "WHERE id = ?",
-            (blob, len(blob), node_count, now, map_id),
-        )
-    return jsonify(revision=base + 1, updated_at=now)
+    notify(map_id, "reload")
+    return jsonify(revision=revision, updated_at=now)
 
 
 @maps.patch("/<map_id>")
 @signed_in
 def rename_map(map_id: str) -> Response | tuple[Response, int]:
-    check_id(map_id)
+    require(map_id, owner=True)
     name = clean_name(json_body().get("name"))
     if name is None:
         return fail("A map needs a name.", 400)
     with database().connect() as conn:
-        changed = conn.execute(
-            "UPDATE maps SET name = ? WHERE id = ? AND user_id = ?", (name, map_id, user_id())
-        ).rowcount
+        changed = conn.execute("UPDATE maps SET name = ? WHERE id = ?", (name, map_id)).rowcount
     if not changed:
         abort(404)
     return jsonify(id=map_id, name=name)
@@ -267,11 +326,10 @@ def rename_map(map_id: str) -> Response | tuple[Response, int]:
 @maps.post("/<map_id>/duplicate")
 @signed_in
 def duplicate_map(map_id: str) -> Response | tuple[Response, int]:
-    check_id(map_id)
+    require(map_id, "export")
     with database().transaction() as conn:
-        row = conn.execute(
-            "SELECT name, payload, node_count FROM maps WHERE id = ? AND user_id = ?", (map_id, user_id())
-        ).fetchone()
+        # The copy is yours: your list, your quota.
+        row = conn.execute("SELECT name, payload, node_count FROM maps WHERE id = ?", (map_id,)).fetchone()
         if row is None:
             abort(404)
         name = row["name"][: MAX_NAME_LENGTH - len(COPY_SUFFIX)].rstrip() + COPY_SUFFIX
@@ -284,21 +342,22 @@ def duplicate_map(map_id: str) -> Response | tuple[Response, int]:
 @maps.delete("/<map_id>")
 @signed_in
 def delete_map(map_id: str) -> Response:
-    check_id(map_id)
+    require(map_id, owner=True)
     with database().connect() as conn:
-        changed = conn.execute("DELETE FROM maps WHERE id = ? AND user_id = ?", (map_id, user_id())).rowcount
+        changed = conn.execute("DELETE FROM maps WHERE id = ?", (map_id,)).rowcount
     if not changed:
         abort(404)
+    notify(map_id, "deleted")
     return jsonify(ok=True)
 
 
 # --- History (server/history.py) -----------------------------------------------
 
 
-def owned_map(conn: sqlite3.Connection, map_id: str) -> sqlite3.Row:
+def map_row(conn: sqlite3.Connection, map_id: str) -> sqlite3.Row:
+    """The map's current version; the caller has already checked access."""
     row = conn.execute(
-        "SELECT revision, updated_at, payload, node_count FROM maps WHERE id = ? AND user_id = ?",
-        (check_id(map_id), user_id()),
+        "SELECT revision, updated_at, payload, node_count FROM maps WHERE id = ?", (check_id(map_id),)
     ).fetchone()
     if row is None:
         abort(404)
@@ -308,8 +367,9 @@ def owned_map(conn: sqlite3.Connection, map_id: str) -> sqlite3.Row:
 @maps.get("/<map_id>/snapshots")
 @signed_in
 def list_snapshots(map_id: str) -> Response:
+    require(map_id, "history")
     with database().connect() as conn:
-        row = owned_map(conn, map_id)
+        row = map_row(conn, map_id)
         snapshots = history.listing(conn, map_id)
     return jsonify(revision=row["revision"], updated_at=row["updated_at"], snapshots=snapshots)
 
@@ -329,8 +389,9 @@ def keep_unsaved_edits(map_id: str) -> Response | tuple[Response, int]:
     except ValueError:
         return fail("`payload` holds a number JSON can't represent.", 400)
     base = body.get("revision")
+    require(map_id, edit=True)
     with database().transaction() as conn:
-        row = owned_map(conn, map_id)
+        row = map_row(conn, map_id)
         if not isinstance(base, int) or isinstance(base, bool) or not 1 <= base <= row["revision"]:
             base = row["revision"]
         snapshot_id = history.add(
@@ -350,9 +411,11 @@ def keep_unsaved_edits(map_id: str) -> Response | tuple[Response, int]:
 def restore_snapshot(map_id: str, snapshot_id: int) -> Response:
     """Makes a snapshot the current version, as a new revision. The version it
     replaces is kept first, so a restore can be undone the same way. A tab
-    still open on the map finds out at its next save (409)."""
+    still open on the map finds out at its next save (409); a live room is told
+    to reload."""
+    require(map_id, "history")
     with database().transaction() as conn:
-        row = owned_map(conn, map_id)
+        row = map_row(conn, map_id)
         snapshot = conn.execute(
             "SELECT payload, node_count FROM snapshots WHERE id = ? AND map_id = ?", (snapshot_id, map_id)
         ).fetchone()
@@ -370,7 +433,9 @@ def restore_snapshot(map_id: str, snapshot_id: int) -> Response:
         )
         revision = row["revision"] + 1
         conn.execute(
-            "UPDATE maps SET payload = ?, size_bytes = ?, node_count = ?, revision = ?, updated_at = ? WHERE id = ?",
+            "UPDATE maps SET payload = ?, size_bytes = ?, node_count = ?, revision = ?, updated_at = ?, "
+            "ydoc = NULL, ydoc_epoch = NULL WHERE id = ?",
             (snapshot["payload"], len(snapshot["payload"]), snapshot["node_count"], revision, now, map_id),
         )
+    notify(map_id, "reload")
     return jsonify(revision=revision, updated_at=now)

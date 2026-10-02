@@ -318,7 +318,13 @@ def me() -> Response:
         signup_open=bool(store().get("accounts", "signup_open")),
         min_password_length=store().get("accounts", "min_password_length"),
         user=(
-            {"username": user["username"], "must_change_password": bool(user["must_change_password"])} if user else None
+            {
+                "id": user["id"],
+                "username": user["username"],
+                "must_change_password": bool(user["must_change_password"]),
+            }
+            if user
+            else None
         ),
     )
 

@@ -21,6 +21,7 @@ from .config import ConfigStore
 from .db import FILENAME, Database
 from .env import env, legacy
 from .maps import maps
+from .sharing import sharing
 from .stats import Stats, instrument
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -55,6 +56,7 @@ def create_app(config_path: Path | str | None = None) -> Flask:
     app.register_blueprint(admin_users)
     app.register_blueprint(accounts)
     app.register_blueprint(maps)
+    app.register_blueprint(sharing)
     app.register_blueprint(account)
 
     @app.get("/")
