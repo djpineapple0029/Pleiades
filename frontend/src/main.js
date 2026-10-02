@@ -463,7 +463,6 @@ function onRoomMessage(message) {
   } else if (message.type === 'roster') {
     showPeople()
   } else if (message.type === 'access') {
-    showShareLink()
     roomPanel.setCanChat(can(room, 'chat'))
   } else if (message.type === 'chat') {
     chat.receive(message)
@@ -527,16 +526,6 @@ async function setMapLook(id) {
   mapLook = result.data.default_look
   showLookLine()
 }
-
-// The Esc screen's "Share this map…", for anyone with the Invite permission
-// (live: it follows `access` messages): My maps, with this map's sharing
-// open. Not for guests: they have no My maps.
-function showShareLink() {
-  if (!room) return
-  document.getElementById('share-link').href = accountUrl(`share=${mapId}`)
-  document.getElementById('share-hint').hidden = !(can(room, 'invite') && !room.you?.guest)
-}
-showShareLink()
 
 // Home: a server map saves and goes back to My maps (a guest's is the
 // homepage), like the map menu's "My maps". Without an account it's plain `/`,

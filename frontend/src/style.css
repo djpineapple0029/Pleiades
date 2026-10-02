@@ -130,17 +130,6 @@ body {
   pointer-events: auto;
 }
 
-/* "Share this map…", for people who may invite (main.js). Clickable, like Help. */
-#overlay .prompt-share {
-  margin: 6px 0 0;
-  font-size: 12px;
-}
-
-#overlay .prompt-share a {
-  color: var(--ink);
-  pointer-events: auto;
-}
-
 /* The way out of a map without the right-button menu (main.js). A button,
    not a hint: the one thing on the overlay that leaves the map, so it sits
    apart in the corner the HUD and roster leave free. */
