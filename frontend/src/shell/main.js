@@ -19,6 +19,7 @@ import { dateTime, mapSummary, relativeTime, versionSummary } from './format.js'
 import { renderHelp } from './helpPage.js'
 import { ACCEPT, fileName, mapFileBlob, nameFromFile, probe, readMapFile, readsHere } from './mapFiles.js'
 import { createSettingsPage } from './settingsPage.js'
+import { createSharePanel } from './shareDialog.js'
 
 const $ = (id) => document.getElementById(id)
 const views = [
@@ -230,7 +231,11 @@ function signedOutBy(result) {
   return true
 }
 
+// The signed-in account's id: "Leave" on a map shared with you removes this.
+let myId = null
+
 async function showSignedIn(me) {
+  myId = me.user.id ?? null
   $('who-name').textContent = me.user.username
   accountPage.setMinPasswordLength(me.min_password_length)
   await route()
@@ -301,13 +306,98 @@ window.addEventListener('beforeunload', (event) => {
 })
 
 async function refreshList() {
-  const result = await request('api/maps')
+  const [result, shared] = await Promise.all([request('api/maps'), request('api/maps/shared')])
   if (!result.ok) {
     if (!signedOutBy(result)) setError('list-error', `Could not load your maps: ${result.error}`)
     return
   }
   setError('list-error', '')
   renderList(result.data.maps)
+  renderShared(shared.ok ? shared.data.maps : [])
+  openShareFromHash()
+}
+
+/** `#share=<id>` (the app's Esc menu "Share…"): that map's sharing, open. */
+function openShareFromHash() {
+  const match = /^share=([\w-]{16})$/.exec(location.hash.slice(1))
+  if (!match) return
+  history.replaceState(null, '', location.pathname + location.search)
+  const row = document.querySelector(`.map[data-id="${match[1]}"]`)
+  const map = mapsById.get(match[1]) ?? sharedById.get(match[1])
+  if (row && map && !row.querySelector('.sharing')) toggleShare(row, map)
+  row?.scrollIntoView({ block: 'nearest' })
+}
+
+// --- Shared with me (context/MOONSHOT.md) -----------------------------------------
+
+const sharedById = new Map()
+
+function renderShared(maps) {
+  const now = Date.now() / 1000
+  sharedById.clear()
+  for (const map of maps) sharedById.set(map.id, map)
+  $('shared-maps').replaceChildren(...maps.map((map) => sharedRow(map, now)))
+  $('shared-section').hidden = maps.length === 0
+}
+
+function sharedRow(map, now) {
+  const row = document.createElement('li')
+  row.className = 'map shared'
+  row.dataset.id = map.id
+
+  const info = document.createElement('div')
+  info.className = 'info'
+  const link = document.createElement('a')
+  link.className = 'name'
+  link.href = appUrl(map.id)
+  link.textContent = map.name
+  if (map.new) {
+    const badge = document.createElement('span')
+    badge.className = 'badge'
+    badge.textContent = 'new'
+    link.append(' ', badge)
+  }
+  const meta = document.createElement('span')
+  meta.className = 'meta'
+  meta.textContent = `${map.owner}'s · ${map.role} · ${mapSummary(map, now)}`
+  info.append(link, meta)
+
+  const actions = document.createElement('div')
+  actions.className = 'actions'
+  actions.append(
+    button('Share', () => toggleShare(row, map)),
+    button('Leave', () => leave(row, map)),
+  )
+  const error = document.createElement('p')
+  error.className = 'error'
+  error.setAttribute('role', 'alert')
+  row.append(info, actions, error)
+  return row
+}
+
+async function leave(row, map) {
+  if (myId === null) return
+  const result = await request(`api/maps/${encodeURIComponent(map.id)}/members/${myId}`, { method: 'DELETE' })
+  if (!result.ok) return signedOutBy(result) || rowError(row, `Could not leave it: ${result.error}`)
+  refreshList()
+}
+
+/** Opens or closes who a map is shared with, under its row. */
+function toggleShare(row, map) {
+  const open = row.querySelector('.sharing')
+  if (open) {
+    open.remove()
+    return
+  }
+  const share = createSharePanel({
+    request,
+    mapId: map.id,
+    mapName: map.name,
+    onSignedOut: signedOutBy,
+    onLeft: () => refreshList(),
+  })
+  row.querySelector('.error').before(share.element)
+  share.load()
 }
 
 // The list as last shown, by id.
@@ -350,6 +440,7 @@ function mapRow(map, now) {
   const actions = document.createElement('div')
   actions.className = 'actions'
   actions.append(
+    button('Share', () => toggleShare(row, map)),
     button('History', () => toggleHistory(row, map)),
     button('Download', () => toggleDownload(row, map)),
     button('Rename', () => startRename(row, map)),

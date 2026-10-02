@@ -961,3 +961,80 @@ kbd {
 .card.danger-zone h2 {
   color: var(--red);
 }
+
+/* Maps other accounts shared with you, under your own. */
+.shared-section {
+  margin-top: 28px;
+}
+
+.shared-section h2 {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.map .badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--panel);
+  font-size: 12px;
+  font-weight: 500;
+  vertical-align: 2px;
+}
+
+/* Who a map is shared with, opened under its row. */
+.map .sharing {
+  flex-basis: 100%;
+  margin: 2px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--row);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--soft);
+}
+
+.sharing p {
+  margin: 0;
+}
+
+.sharing .members {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.sharing .member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--row);
+}
+
+.sharing .member:first-child {
+  border-top: none;
+}
+
+.sharing .who {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sharing .add {
+  flex-wrap: wrap;
+}
+
+.sharing .add input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.sharing .note {
+  font-size: 13px;
+}

@@ -376,6 +376,13 @@ function showPeople() {
   roster.render(room.roster, room.you)
 }
 
+// The Esc screen's "Share this map…", for anyone with the Invite permission:
+// My maps, with this map's sharing open.
+if (room?.you?.perms?.invite) {
+  document.getElementById('share-link').href = accountUrl(`share=${mapId}`)
+  document.getElementById('share-hint').hidden = false
+}
+
 if (room) {
   room.awareness.on('change', ({ added, updated }) => {
     const states = room.awareness.getStates()
