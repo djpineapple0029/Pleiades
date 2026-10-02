@@ -18,6 +18,7 @@
     "test:e2e:headed": "playwright test --project=headed-lock",
     "test:e2e:prod": "playwright test --config=playwright.prod.config.js",
     "test:e2e:accounts": "playwright test --config=playwright.accounts.config.js",
+    "test:e2e:multiplayer": "playwright test --config=playwright.multiplayer.config.js",
     "test:all": "npm run test && npm run test:e2e"
   },
   "dependencies": {
