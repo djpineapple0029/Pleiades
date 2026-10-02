@@ -12,6 +12,7 @@ const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
 const SECTION_TITLES = {
   flight: 'Flight & feel',
   visuals: 'Visual effects',
+  multiplayer: 'Shared maps',
   server: 'Server',
   accounts: 'Accounts',
   sharing: 'Sharing',

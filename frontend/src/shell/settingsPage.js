@@ -12,8 +12,14 @@ import schema from '../../../server/settings_schema.json'
 import { chordCaps, chordFromEvent, parseChord } from '../keymap.js'
 import { LOOKS } from '../looks.js'
 
-const SECTION_TITLES = { flight: 'Flight', visuals: 'Visuals' }
-const GROUP_TITLES = { Flight: 'Moving', View: 'Viewing', Edit: 'Editing', File: 'Files' }
+const SECTION_TITLES = { flight: 'Flight', visuals: 'Visuals', multiplayer: 'Shared maps' }
+const GROUP_TITLES = {
+  Flight: 'Moving',
+  View: 'Viewing',
+  Edit: 'Editing',
+  File: 'Files',
+  Multiplayer: 'Shared maps',
+}
 // This page's own wording: shorter and plainer than the schema's help, which
 // is written for the admin panel.
 // Short names for the keys, like a game's controls screen; the schema's
@@ -37,6 +43,9 @@ const KEY_NAMES = {
   save_as: 'Save as',
   open: 'Open a file',
   export: 'Export a view-only page',
+  chat: 'Chat',
+  emote: 'Emote (hold)',
+  follow: 'Follow someone',
 }
 const DESCRIPTIONS = {
   'flight.mouse_sensitivity': 'How far the view turns when you move the mouse. 1 is the original feel.',
@@ -54,6 +63,10 @@ const DESCRIPTIONS = {
   'visuals.label_count': 'Roughly how many star names show at once.',
   'visuals.connection_heat':
     'Colour links from cool blue to hot red by how connected their stars are. H switches it in a map.',
+  'multiplayer.show_editor_avatars':
+    "In a shared map, draw the people who can edit it. They're still there when hidden. The Esc screen switches it too.",
+  'multiplayer.show_viewer_avatars':
+    "In a shared map, draw the people who can only look. They're still there when hidden. The Esc screen switches it too.",
 }
 const MAX_BINDINGS = 3
 const SAVED_NOTE_MS = 4000

@@ -236,4 +236,54 @@ test.describe('social', () => {
     await alice.waitForTimeout(1000)
     expect((await following()).filter(Boolean)).toHaveLength(1)
   })
+
+  /** Alice a little ahead of Bob, side on to him, so her shape shows. */
+  async function aliceSideOn() {
+    await alice.keyboard.down('w')
+    await alice.waitForTimeout(450)
+    await alice.keyboard.up('w')
+    await alice.evaluate(() => window.__t.look(800, 0))
+    await expect.poll(() => bob.evaluate(() => window.__pleiades.avatars.drawn)).toBe(1)
+    await bob.waitForTimeout(400) // past the 150 ms the avatars are drawn behind
+  }
+
+  test('avatars match the Look: ships, a submarine, a cursor, a marker', async () => {
+    await aliceSideOn()
+    const expected = {
+      'deep-space': 'ship',
+      'deep-sea': 'sub',
+      terminal: 'cursor',
+      minimal: 'marker',
+      'shallow-space': 'ship',
+    }
+    for (const [look, style] of Object.entries(expected)) {
+      await bob.evaluate((id) => window.__pleiades.looks.set(id, { instant: true, remember: false }), look)
+      await expect.poll(() => bob.evaluate(() => window.__pleiades.avatars.style)).toBe(style)
+      // The cursor blinks: catch it in the half second it's on.
+      await bob.waitForFunction(() => performance.now() % 1000 < 250)
+      await bob.screenshot({ path: `artifacts/avatars/${look}.png` })
+    }
+  })
+
+  test("Show editors off hides Alice's ship, and stays off after a reload", async () => {
+    await aliceSideOn()
+    await escape(bob)
+    const editors = bob.getByLabel('Show editors')
+    await expect(editors).toBeChecked()
+    await editors.uncheck()
+    await expect.poll(() => bob.evaluate(() => window.__pleiades.avatars.drawn)).toBe(0)
+    // Kept in Bob's account.
+    await expect
+      .poll(async () => (await bob.request.get('/api/account/settings')).json())
+      .toMatchObject({ overrides: { multiplayer: { show_editor_avatars: false } } })
+    await openMap(bob, mapId)
+    await escape(bob)
+    await expect(bob.getByLabel('Show editors')).not.toBeChecked()
+    await bob.waitForTimeout(800)
+    expect(await bob.evaluate(() => window.__pleiades.avatars.drawn)).toBe(0)
+    // Viewers' switch is separate: Alice is an owner, so it changes nothing.
+    await bob.getByLabel('Show editors').check()
+    await bob.getByLabel('Show viewers').uncheck()
+    await expect.poll(() => bob.evaluate(() => window.__pleiades.avatars.drawn)).toBe(1)
+  })
 })

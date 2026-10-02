@@ -422,6 +422,25 @@ kbd {
   font-size: 11px;
 }
 
+.room-toggles {
+  display: flex;
+  gap: 14px;
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+
+.room-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.room-toggle input {
+  margin: 0;
+  accent-color: var(--ink-dim);
+}
+
 .room-follow {
   padding: 1px 8px;
   border: 1px solid #2a3140;

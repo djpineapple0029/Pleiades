@@ -27,7 +27,10 @@ const el = (tag, className, text) => {
   return node
 }
 
-export function createRoomPanel(element, { onSend = () => {}, onFollow = null } = {}) {
+export function createRoomPanel(
+  element,
+  { onSend = () => {}, onFollow = null, shown = { editors: true, viewers: true }, onShow = () => {} } = {},
+) {
   const people = el('ul', 'room-people')
   const log = el('div', 'room-chat-log')
   log.setAttribute('role', 'log')
@@ -41,9 +44,26 @@ export function createRoomPanel(element, { onSend = () => {}, onFollow = null } 
   form.append(field)
   const chatOff = el('p', 'room-note', 'Chat is off for you on this map')
   chatOff.hidden = true
+  // Show editors / Show viewers (decision 14a): who gets drawn, for you only.
+  const showing = { ...shown }
+  const toggle = (key, text) => {
+    const label = el('label', 'room-toggle')
+    const box = el('input')
+    box.type = 'checkbox'
+    box.checked = showing[key]
+    box.addEventListener('change', () => {
+      showing[key] = box.checked
+      onShow({ ...showing })
+    })
+    label.append(box, document.createTextNode(text))
+    return label
+  }
+  const toggles = el('div', 'room-toggles')
+  toggles.append(toggle('editors', 'Show editors'), toggle('viewers', 'Show viewers'))
   element.replaceChildren(
     el('h2', 'room-heading', 'In this map'),
     people,
+    toggles,
     el('h2', 'room-heading', 'Chat'),
     log,
     form,

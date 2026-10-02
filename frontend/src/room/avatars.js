@@ -1,24 +1,26 @@
 /**
  * Everyone else in the map, drawn where they are (context/MOONSHOT.md
- * decision 14). Milestone 1 has one style for every Look: a small cone in
+ * decision 14), in the style of the Look (room/avatarStyles.js: a ship, a
+ * submarine, a blinking cursor, a plain cone), in
  * the person's colour pointing where they look, with their name over it.
  *
  * What people say in chat floats over them for a few seconds (`say`), and
  * their emotes for two (`emote`).
  *
  * Poses come in through `push` (awareness, ~10 Hz) and are drawn smoothly a
- * moment in the past (room/presence.js). The cones are one instanced mesh —
+ * moment in the past (room/presence.js). They are one instanced mesh —
  * no draw call per person — on the layer that never blooms, and nothing here
  * is in graphView's raycast, so the crosshair never picks a person.
  */
 import * as THREE from 'three'
 import { LABEL_LAYER } from '../bloom.js'
 import { createPoseBuffer } from './presence.js'
+import { avatarGeometry, avatarTint, blinkOn } from './avatarStyles.js'
 
 const MAX_PEOPLE = 16
-// Names fade out past this distance; the cone stays.
+// Names fade out past this distance; the avatar stays.
 const NAME_RANGE = 900
-const NAME_HEIGHT = 2.2 // world units over the cone's centre
+const NAME_HEIGHT = 2.2 // world units over the avatar's centre
 const NAME_SCALE = 0.06 // world units per canvas pixel
 
 const FONT = '600 28px system-ui, sans-serif'
@@ -108,10 +110,11 @@ function disposeSprite(scene, sprite) {
 }
 
 export function createAvatars({ scene, size = 2 }) {
-  const geometry = new THREE.ConeGeometry(1.2 * size, 3.5 * size, 12)
-  geometry.rotateX(-Math.PI / 2) // the tip along -Z: a camera's forward
-  const material = new THREE.MeshBasicMaterial({ depthWrite: false })
-  const mesh = new THREE.InstancedMesh(geometry, material, MAX_PEOPLE)
+  // Wings and fins are single triangles: drawn from both sides.
+  const material = new THREE.MeshBasicMaterial({ depthWrite: false, side: THREE.DoubleSide })
+  let style = 'marker'
+  let ink = null
+  const mesh = new THREE.InstancedMesh(avatarGeometry(style, size), material, MAX_PEOPLE)
   mesh.count = 0
   mesh.frustumCulled = false
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
@@ -219,7 +222,7 @@ export function createAvatars({ scene, size = 2 }) {
       quaternion.fromArray(pose.q)
       matrix.compose(position, quaternion, scale)
       mesh.setMatrixAt(slot, matrix)
-      mesh.setColorAt(slot, colour.set(person.colour))
+      mesh.setColorAt(slot, colour.set(avatarTint(style, person.colour, ink)))
       slot++
       person.sprite.position.set(position.x, position.y + NAME_HEIGHT * size, position.z)
       person.sprite.visible = !camera || camera.position.distanceTo(position) < NAME_RANGE
@@ -236,6 +239,7 @@ export function createAvatars({ scene, size = 2 }) {
     }
     for (let i = slot; i < mesh.count; i++) mesh.setMatrixAt(i, matrix.compose(hidden, quaternion, hidden))
     mesh.count = slot
+    mesh.visible = style !== 'cursor' || blinkOn(now)
     mesh.instanceMatrix.needsUpdate = true
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
   }
@@ -246,10 +250,21 @@ export function createAvatars({ scene, size = 2 }) {
     visible.viewers = viewers
   }
 
+  /** The Look changed: everyone is drawn in its style (`look.avatar`). */
+  function setLook(look) {
+    const next = look?.avatar ?? 'marker'
+    ink = look?.avatarInk ?? null
+    if (next === style) return
+    style = next
+    const old = mesh.geometry
+    mesh.geometry = avatarGeometry(style, size)
+    old.dispose()
+  }
+
   function dispose() {
     sync([])
     scene.remove(mesh)
-    geometry.dispose()
+    mesh.geometry.dispose()
     material.dispose()
     mesh.dispose()
   }
@@ -261,8 +276,13 @@ export function createAvatars({ scene, size = 2 }) {
     sampleOf,
     say,
     emote,
+    setLook,
     setVisible,
     dispose,
+    /** The style everyone is drawn in now. */
+    get style() {
+      return style
+    },
     /** How many avatars the last `update` drew. */
     get drawn() {
       return mesh.count

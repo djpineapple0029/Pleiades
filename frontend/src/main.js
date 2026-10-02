@@ -262,6 +262,8 @@ const clock = new THREE.Clock()
 // whether anything moves. A look without motion freezes the star-pulse clock
 // read by the frame loop below; the others carry on from where it stopped.
 let frozenElapsed = 0
+// Other people are drawn in the look's style; the avatars arrive below.
+let lookForAvatars = () => {}
 const looks = createLooks({
   renderer,
   skybox,
@@ -274,6 +276,7 @@ const looks = createLooks({
   bloomStrength: visuals.bloom_strength,
   onChange: (look) => {
     if (!look.motion) frozenElapsed = clock.elapsedTime
+    lookForAvatars(look)
   },
   // Signed in, a V pick is kept in the account, not this browser, and the
   // account's look (the config's, for them) is where every map starts.
@@ -315,6 +318,26 @@ const renderSettings = {
 // Presence and chat (context/MOONSHOT.md): everyone else as avatars, what
 // they say over them, in a feed over the HUD and in the Esc screen's panel.
 const avatars = room ? createAvatars({ scene }) : null
+if (avatars) {
+  lookForAvatars = (look) => avatars.setLook(look)
+  lookForAvatars(looks.current)
+}
+// Show editors / Show viewers (decision 14a): the account's settings, and
+// the Esc screen's switches, which keep a change in the account too.
+const shown = {
+  editors: settings.multiplayer.show_editor_avatars,
+  viewers: settings.multiplayer.show_viewer_avatars,
+}
+avatars?.setVisible(shown)
+async function keepShown(next) {
+  avatars.setVisible(next)
+  if (!settings.account) return
+  const result = await request('api/account/settings', {
+    method: 'PATCH',
+    body: { multiplayer: { show_editor_avatars: next.editors, show_viewer_avatars: next.viewers } },
+  })
+  if (!result.ok) interaction.reportError(`not saved to your account: ${result.error}`)
+}
 const chatLog = room ? createChatLog() : null
 const chat = room
   ? createChat({
@@ -348,6 +371,8 @@ function followables() {
 const roomPanel = room
   ? createRoomPanel(document.getElementById('room-panel'), {
       onSend: (text) => chat.send(text),
+      shown,
+      onShow: keepShown,
       // The Esc screen's Follow: start trailing them, and fly (a click may lock).
       onFollow: (person) => {
         const people = followables()
@@ -521,6 +546,7 @@ if (import.meta.env.DEV) {
     chatLog,
     emotes,
     follow,
+    looks,
     commands: interaction.commands,
   }
 }

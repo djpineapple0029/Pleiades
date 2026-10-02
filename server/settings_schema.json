@@ -52,6 +52,9 @@
     { "section": "visuals", "key": "label_count", "label": "Names at once", "type": "integer", "min": 5, "max": 150, "default": 35, "scope": "client", "help": "About how many star names to show at once. Names reach further out until about this many are on screen; label distance sets the nearest they ever stop.", "user": true },
     { "section": "visuals", "key": "connection_heat", "label": "Connection heat", "type": "boolean", "default": true, "scope": "client", "help": "Colour links by how connected their stars are, cool blue to hot red. H switches it in the map.", "user": true },
 
+    { "section": "multiplayer", "key": "show_editor_avatars", "label": "Show editors' ships", "type": "boolean", "default": true, "scope": "client", "help": "In a shared map, draw the people who can edit it. Off: they're still in the map, just not drawn.", "user": true },
+    { "section": "multiplayer", "key": "show_viewer_avatars", "label": "Show viewers' ships", "type": "boolean", "default": true, "scope": "client", "help": "In a shared map, draw the people who can only look. Off: they're still in the map, just not drawn.", "user": true },
+
     { "section": "server", "key": "max_upload_mb", "label": "Largest file Open accepts (MB)", "type": "integer", "min": 1, "max": 1024, "default": 64, "scope": "server", "help": "Uploads over this are refused before they're read." },
 
     { "section": "accounts", "key": "enabled", "label": "Accounts", "type": "boolean", "default": false, "scope": "server", "help": "Lets people sign up and keep their maps on this server. Over plain HTTP (no HTTPS and no TLS proxy counted in Reverse proxies in front) they are warned before signing in, since passwords and maps then cross the network unencrypted." },

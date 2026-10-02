@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createLooks } from '../../src/looks.js'
+import { LOOKS, createLooks } from '../../src/looks.js'
 
 // Just enough of each scene part for a look to land on.
 function parts() {
@@ -35,5 +35,22 @@ describe('createLooks', () => {
     await looks.set('minimal', { instant: true, remember: false })
     expect(store).not.toHaveBeenCalled()
     expect(globalThis.document.documentElement.dataset.look).toBe('minimal')
+  })
+})
+
+describe('avatars per look (MOONSHOT decision 14)', () => {
+  it('every look says how it draws other people', () => {
+    for (const look of LOOKS) expect(['ship', 'sub', 'cursor', 'marker'], look.id).toContain(look.avatar)
+  })
+
+  it('space flies ships, the sea a submarine, the terminal a cursor, minimal a marker', () => {
+    const avatarOf = Object.fromEntries(LOOKS.map((look) => [look.id, look.avatar]))
+    expect(avatarOf).toEqual({
+      'deep-space': 'ship',
+      'shallow-space': 'ship',
+      'deep-sea': 'sub',
+      terminal: 'cursor',
+      minimal: 'marker',
+    })
   })
 })
